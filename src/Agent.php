@@ -37,4 +37,10 @@ interface Agent
     public function startEpisode(int $episode) : void;
 
     public function endEpisode(int $episode) : void;
+
+    public function fileExists(string $filename) : bool;
+
+    public function saveWeightsToFile(string $filename) : void;
+
+    public function loadWeightsFromFile(string $filename) : void;
 }

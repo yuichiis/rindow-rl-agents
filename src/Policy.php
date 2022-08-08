@@ -17,5 +17,5 @@ interface Policy
     * @param NDArray $values
     * @return int $action
     */
-    public function action($values,int $time=null);
+    public function action($values, bool $training, int $time=null);
 }

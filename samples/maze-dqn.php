@@ -81,36 +81,47 @@ $driver4 = new EpisodeDriver($la,$env,$dqn,$experienceSize,null,$episodeAnnealin
 $driver4->setCustomObservationFunction($customObservationFunction);
 $drivers = [$driver4];
 
+$filenamePattern = __DIR__.'\\maze-dqn-%d.model';
 $arts = [];
-foreach ($drivers as $driver) {
-    $driver->agent()->initialize();
-    $history = $driver->train(
-        $episodes,null,$metrics=['steps','reward','val_steps','epsilon'],
-        $evalInterval,$numEvalEpisodes,null,$verbose=1);
-    $ep = $mo->arange((int)floor($episodes/$evalInterval),$evalInterval,$evalInterval);
-    $arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(-1,$la->array($history['reward'])))[0];
-    $arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
-    $arts[] = $plt->plot($ep,$la->scal($maxEpisodeSteps,$la->array($history['epsilon'])))[0];
+foreach ($drivers as $i => $driver) {
+    $agent = $driver->agent();
+    $filename = sprintf($filenamePattern,$i);
+    if(!file_exists($filename)) {
+        // $agent->initialize();
+        $history = $driver->train(
+            $episodes,null,$metrics=['steps','reward','val_steps','epsilon'],
+            $evalInterval,$numEvalEpisodes,null,$verbose=1);
+        $ep = $mo->arange((int)floor($episodes/$evalInterval),$evalInterval,$evalInterval);
+        $arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
+        $arts[] = $plt->plot($ep,$la->scal(-1,$la->array($history['reward'])))[0];
+        $arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
+        $arts[] = $plt->plot($ep,$la->scal($maxEpisodeSteps,$la->array($history['epsilon'])))[0];
+
+        $plt->legend($arts,['steps','reward','val_steps','epsilon']);
+        $plt->xlabel('episodes');
+        $plt->ylabel('avg steps');
+        $plt->show();
+        $agent->saveWeightsToFile($filename);
+    } else {
+        $agent->loadWeightsFromFile($filename);
+    }
 }
 
-$plt->legend($arts,['steps','reward','val_steps','epsilon']);
-$plt->xlabel('episodes');
-$plt->ylabel('avg steps');
-$plt->show();
-
 echo "Creating demo animation.\n";
-for($i=0;$i<1;$i++) {
-    echo ".";
-    $observation = $env->reset();
-    $observation = $customObservationFunction($env,$observation,false);
-    $env->render();
-    $done=false;
-    while(!$done) {
-        $action = $dqn->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
-        $observation = $customObservationFunction($env,$observation,$done);
+foreach($drivers as $i => $driver) {
+    $agent = $driver->agent();
+    for($i=0;$i<1;$i++) {
+        echo ".";
+        $observation = $env->reset();
+        $observation = $customObservationFunction($env,$observation,false);
         $env->render();
+        $done=false;
+        while(!$done) {
+            $action = $agent->action($observation,$training=false);
+            [$observation,$reward,$done,$info] = $env->step($action);
+            $observation = $customObservationFunction($env,$observation,$done);
+            $env->render();
+        }
     }
 }
 echo "\n";

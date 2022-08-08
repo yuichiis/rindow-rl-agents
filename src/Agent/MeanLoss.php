@@ -5,7 +5,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 use DomainException;
 
-class MeanLoss extends AbstractGradient implements Loss
+class MeanLoss extends AbstractLoss implements Loss
 {
     protected $backend;
     protected $trues;

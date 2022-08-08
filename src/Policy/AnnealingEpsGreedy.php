@@ -55,18 +55,20 @@ class AnnealingEpsGreedy implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,$time=null)
+    public function action($state,bool $training,$time=null)
     {
         $epsilon = $this->getEpsilon($time);
         $threshold = (int)floor($epsilon * getrandmax());
         $numActions = $this->numActions;
-        if($threshold > mt_rand()) {
+        if($training && $threshold > mt_rand()) {
             $action = $this->qPolicy->sample($state);
         } else {
             $qValues = $this->qPolicy->getQValues($state);
             $action = $this->la->imax($qValues);
         }
-        $this->currentTime++;
+        if($training) {
+            $this->currentTime++;
+        }
         return $action;
     }
 }

@@ -45,11 +45,16 @@ class Boltzmann implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,int $time=null)
+    public function action($state,bool $training,int $time=null)
     {
         $la = $this->la;
         // get probabilities
         $qValues = $this->qPolicy->getQValues($state);
+        if(!$training) {
+            $action = $la->imax($qValues);
+            return $action;
+        }
+
         $expValues = $la->exp($la->minimum($la->maximum(
             $la->scal(1/$this->tau,$la->copy($qValues)),$this->min),$this->max));
         $probabilities = $la->scal(1/$la->sum($expValues),$expValues);

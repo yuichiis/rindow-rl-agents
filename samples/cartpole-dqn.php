@@ -60,18 +60,18 @@ $evalEnv = new CartPoleV0($la);
 $network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers,$convType,$fcLayers);
 $policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
 $dqnAgent = new Dqn(
-    $la,$network,$policy,
-    $batchSize,$gamma,$targetUpdatePeriod,$targetUpdateTau,
-    $ddqn,null,$lossFn,null,null,['lr'=>$learningRate],
-    null,null,null,null,null,null,$mo
+    $la,network:$network,policy:$policy,batchSize:$batchSize,gamma:$gamma,
+    targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
+    ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
 $dqnAgent->summary();
-//$driver3 = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize);
-$driver3 = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,null,null,$evalEnv);
-$drivers = [$driver3];
-$arts = [];
-foreach ($drivers as $driver) {
-    $driver->agent()->initialize();
+
+$filename = __DIR__.'\\cartpole-dqn';
+if(!$dqnAgent->fileExists($filename)) {
+    //$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize);
+    $driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
+    $arts = [];
+    //$driver->agent()->initialize();
     $history = $driver->train($numIterations,$maxSteps=null,
         $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
         $evalInterval,$numEvalEpisodes,$logInterval,$verbose=1);
@@ -83,14 +83,17 @@ foreach ($drivers as $driver) {
     //$arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['val_reward']))[0];
     $arts[] = $plt->plot($ep,$la->scal(200,$la->array($history['epsilon'])))[0];
+    $plt->xlabel('Iterations');
+    $plt->ylabel('Reward');
+    //$plt->legend($arts,['Policy Gradient','Sarsa']);
+    #$plt->legend($arts,['steps','reward','epsilon','loss','val_steps','val_reward']);
+    $plt->legend($arts,['reward','loss','val_reward','epsilon']);
+    //$plt->legend($arts,['steps','val_steps']);
+    $plt->show();
+    $dqnAgent->saveWeightsToFile($filename);
+} else {
+    $dqnAgent->loadWeightsFromFile($filename);
 }
-$plt->xlabel('Iterations');
-$plt->ylabel('Reward');
-//$plt->legend($arts,['Policy Gradient','Sarsa']);
-#$plt->legend($arts,['steps','reward','epsilon','loss','val_steps','val_reward']);
-$plt->legend($arts,['reward','loss','val_reward','epsilon']);
-//$plt->legend($arts,['steps','val_steps']);
-$plt->show();
 
 
 echo "Creating demo animation.\n";
@@ -107,3 +110,4 @@ for($i=0;$i<5;$i++) {
 }
 echo "\n";
 $env->show();
+

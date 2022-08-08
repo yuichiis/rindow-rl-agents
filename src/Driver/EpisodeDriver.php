@@ -163,10 +163,11 @@ class EpisodeDriver extends AbstractDriver
                 $epsilon = '';
             }
             if($verbose>1) {
+                $strEpisodeReward =  sprintf('%1.2f',$episodeReward);
                 $lossLog = sprintf('%3.2e',$episodeLoss/$episodeSteps);
                 $qLog = sprintf('%1.1f',$agent->getQValue($observation));
                 $msPerStep = sprintf('%1.1f',(microtime(true) - $epStartTime)/$episodeSteps*1000);
-                $this->console("Ep ".($episode+1).": rw=${episodeReward}, st=${episodeSteps} loss=${lossLog}${epsilon}, q=${qLog}, ${msPerStep}ms/step\n");
+                $this->console("Ep ".($episode+1).": rw=${strEpisodeReward}, st=${episodeSteps} loss=${lossLog}${epsilon}, q=${qLog}, ${msPerStep}ms/step\n");
             } elseif($verbose==1) {
                 $this->progressBar('Episode',$episode,$numEpisodes,$evalInterval,$startTime,25);
             }

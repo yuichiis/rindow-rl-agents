@@ -35,7 +35,7 @@ class ReplayBuffer implements ReplayBufferInterface
         return $this->size;
     }
 
-    public function count()
+    public function count() : int
     {
         return $this->size();
     }

@@ -17,9 +17,9 @@ class DiscreteTrainingModel extends AbstractModel
     {
         parent::__construct($builder->backend(),$builder);
         $this->la = $la;
+        $this->idxInput = $builder->layers->Input(shape:[]);
         $this->qNetwork = $qNetwork;
-        $this->idxInput = $builder->layers->Input(['shape'=>[]]);
-        $this->gather = $builder->layers->Gather(['axis'=>-1]);
+        $this->gather = $builder->layers->Gather(axis:-1);
     }
 
     public function compileQModel(
@@ -34,18 +34,18 @@ class DiscreteTrainingModel extends AbstractModel
             $optimizerOpts=[];
         }
         if($loss===null) {
-            $loss=$nn->losses->Huber($lossOpts);
+            $loss=$nn->losses->Huber(...$lossOpts);
         }
         if($optimizer===null) {
-            $optimizer=$nn->optimizers->Adam($optimizerOpts);
+            $optimizer=$nn->optimizers->Adam(...$optimizerOpts);
         }
         $loss = clone $loss;
         $optimizer = clone $optimizer;
         $nn = $this->builder;
-        $this->compile([
-            'loss'=>clone $loss,
-            'optimizer'=>$optimizer,
-            'numInputs'=>2]);
+        $this->compile(
+            loss:$loss,
+            optimizer:$optimizer,
+            numInputs:2);
     }
 
     public function qNetwork()
@@ -53,12 +53,8 @@ class DiscreteTrainingModel extends AbstractModel
         return $this->qNetwork;
     }
 
-    protected function call($inputs,$training)
+    protected function call($states,$actions,$training)
     {
-        if(!is_array($inputs)) {
-            throw new InvalidArgumentException('inputs must be set of states and actions');
-        }
-        [$states,$actions] = $inputs;
         $actions = $this->idxInput->forward($actions,$training);
         $qValues = $this->qNetwork->forward($states,$training);
         $qValues = $this->gather->forward([$qValues,$actions],$training);
@@ -71,13 +67,13 @@ class DiscreteTrainingModel extends AbstractModel
         if($tau===null) {
             $tau = 1.0;
         }
-        $source = $sourceNetwork->params();
-        $target = $this->params();
+        $source = $sourceNetwork->variables();
+        $target = $this->variables();
         $tTau = (1.0-$tau);
         foreach (array_map(null,$source,$target) as $p) {
             [$srcParam,$targParam] = $p;
-            $K->update_scale($targParam,$tTau);
-            $K->update_add($targParam,$srcParam,$tau);
+            $K->update_scale($targParam->value(),$tTau);
+            $K->update_add($targParam->value(),$srcParam->value(),$tau);
         }
     }
 }

@@ -1,20 +1,26 @@
 <?php
 namespace Rindow\RL\Agents\Agent;
 
+use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\Model\AbstractModel;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
-use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\RL\Agents\Policy\OUNoise;
+use Rindow\RL\Agents\Network\ActorNetwork;
+use Rindow\RL\Agents\Network\CriticNetwork;
+
 use InvalidArgumentException;
 
 class Ddpg extends AbstractAgent
 {
+    const ACTOR_FILENAME = '%s-actor.model';
+    const CRITIC_FILENAME = '%s-critic.model';
     protected $la;
     protected $policy;
     protected $gamma;
-    protected $rewardScaleFactor;
     protected $obsSize;
-    protected $numActions;
-    protected $ddqn;
+    protected $actionSize;
     protected $targetUpdatePeriod;
     protected $targetUpdateTimer;
     protected $lossFn;
@@ -26,123 +32,232 @@ class Ddpg extends AbstractAgent
     protected $trainModel;
     protected $targetModel;
     protected $enabledShapeInspection = true;
+    protected $nn;
 
     public function __construct(
         object $la,
-        Network $network=null,
-        Policy $policy=null,
+        object $nn,
+        array $obsSize,
+        array $actionSize,
+        NDArray $lower_bound,
+        NDArray $upper_bound,
         int $batchSize=null,
+        NDArray $mean=null,
+        float|NDArray $std_dev=null,
+        NDArray $x_initial=null,
         float $gamma=null,
+        float $theta=null,
+        float $dt=null,
         int $targetUpdatePeriod=null,
         float $targetUpdateTau=null,
-        bool $ddqn=null,
-        object $nn=null,
-        object $lossFn=null,
-        array $lossOpts=null,
-        object $optimizer=null,
-        array $optimizerOpts=null,
-        array $obsSize=null, int $numActions=null,
+        object $criticOptimizer=null,
+        array $criticOptimizerOpts=null,
+        object $actorOptimizer=null,
+        array $actorOptimizerOpts=null,
         array $fcLayers=null,
-        int $epsStart=null, int $epsStop=null, int $epsDecayRate=null,
-        object $mo = null
+        array $obsFcLayers=null,
+        array $actFcLayers=null,
+        array $conFcLayers=null,
+        float $actorInitMin=null, float $actorInitMax=null,
+        object $mo = null,
         )
     {
+        $batchSize = $batchSize ?? 32;
+        $std_dev = $std_dev ?? 0.2;
+        $gamma = $gamma ?? 0.99;
+        $targetUpdatePeriod = $targetUpdatePeriod ?? 1;
+        $targetUpdateTau    = $targetUpdateTau ?? 0.005;
+        $criticOptimizerOpts = $criticOptimizerOpts ?? ['lr'=>0.002];
+        $actorOptimizerOpts  = $actorOptimizerOpts ?? ['lr'=>0.001];
+
+        $mean = $mean ?? $la->zeros($la->alloc($actionSize));
+        if(is_numeric($std_dev)) {
+            $std_dev = $la->fill($std_dev,$la->zeros($la->alloc($actionSize)));
+        }
+        $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
+        $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
+
         $this->la = $la;
-        if($network===null) {
-            $network = $this->buildNetwork($nn,$obsSize,$numActions,$fcLayers);
-        }
-        if($policy===null) {
-            $policy = $this->buildPolicy($network,$epsStart,$epsStop,$epsDecayRate);
-        }
-        if($obsSize===null) {
-            $obsSize = $network->obsSize();
-        }
-        if($numActions===null) {
-            $numActions = $network->numActions();
-        }
-        if($batchSize===null) {
-            $batchSize = 32;
-        }
-        if($gamma===null) {
-            $gamma = 0.99;
-        }
-        if($targetUpdatePeriod===null) {
-            $targetUpdatePeriod = 100;
-        }
-        if($targetUpdateTau===null) {
-            $targetUpdateTau = 1.0;
-        }
-        if($ddqn===null) {
-            $ddqn = false;
-        }
-        $this->network = $network;
-        $this->policy = $policy;
         $this->obsSize = $obsSize;
-        $this->numActions = $numActions;
+        $this->actionSize = $actionSize;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
+        $this->lower_bound = $lower_bound;
+        $this->upper_bound = $upper_bound;
         $this->targetUpdatePeriod = $targetUpdatePeriod;
         $this->targetUpdateTau = $targetUpdateTau;
-        $this->ddqn = $ddqn;
-        $this->lossFn = $lossFn;
-        $this->lossOpts = $lossOpts;
-        $this->optimizer = $optimizer;
-        $this->optimizerOpts = $optimizerOpts;
+        $this->criticOptimizer = $criticOptimizer;
+        $this->actorOptimizer = $actorOptimizer;
         $this->mo = $mo;
-        if($nn===null) {
-            $nn = $this->network->builder();
-        }
-        $this->trainModel = $this->buildTrainingModel($la,$nn,$this->network,);
-        $this->targetModel = clone $this->trainModel;
+        $this->nn = $nn;
+        $this->backend = $nn->backend();
+        $this->actor_model   = $this->buildActorNetwork($obsSize, $actionSize,
+             fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
+        $this->critic_model  = $this->buildCriticNetwork($obsSize, $actionSize,
+            obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
+        $this->actor_model->compile(optimizer:$actorOptimizer);
+        $this->critic_model->compile(optimizer:$criticOptimizer);
+        $this->target_actor  = $this->buildActorNetwork($obsSize, $actionSize,
+            fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
+        $this->target_critic  = $this->buildCriticNetwork($obsSize, $actionSize,
+            obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
+
+        $this->policy = $this->buildPolicy(
+            $this->actor_model,$mean,$std_dev,$lower_bound,$upper_bound,
+            $theta,$dt,$x_initial);
+
+        //$this->actorTrainableVariables = $this->actor_model->trainableVariables();
+        //$this->criticTrainableVariables = $this->critic_model->trainableVariables();
+
+        //$this->actorVariables = $this->actor_model->variables();
+        //$this->criticVariables = $this->critic_model->variables();
+        //$this->targetActorVariables = $this->target_actor->variables();
+        //$this->targetCriticVariables = $this->target_critic->variables();
+
+
+        //$this->actorModelGraph = $nn->gradient->function([$this->actor_model,'forward']);
+        //$this->criticModelGraph = $nn->gradient->function([$this->critic_model,'forward']);
+        //$this->targetActorGraph = $nn->gradient->function([$this->target_actor,'forward']);
+        //$this->targetCriticGraph = $nn->gradient->function([$this->target_critic,'forward']);
         $this->initialize();
+        $this->actor_model_graph = null;
+        $this->critic_model_graph = null;
     }
 
-    protected function buildNetwork($nn,$obsSize,$numActions,$fcLayers)
+    protected function buildActorNetwork(
+        array $obsSize, array $actionSize,
+        array $convLayers=null,string $convType=null,array $fcLayers=null,
+        $activation=null,$kernelInitializer=null,
+        float $minval=null, float $maxval=null
+    )
     {
-        if($nn===null) {
-            throw new InvalidArgumentException('nn must be specifed.');
-        }
-        if($obsSize===null) {
-            throw new InvalidArgumentException('obsSize must be specifed.');
-        }
-        if($numActions===null) {
-            throw new InvalidArgumentException('numActions must be specifed.');
-        }
-        $network = new QNetwork(
-            $nn, $obsSize, $numActions,$fcLayers);
+        $network = new ActorNetwork($this->la,$this->nn,
+            $obsSize, $actionSize,
+            convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,
+            activation:$activation,kernelInitializer:$kernelInitializer,
+            minval:$minval, maxval:$maxval,
+            );
+        $network->build(array_merge([1],$obsSize),true);
         return $network;
     }
 
-    protected function buildTrainingModel($la,$nn,$network)
+    protected function buildCriticNetwork(
+        array $obsSize, array $actionSize,
+        array $obsConvLayers=null,string $obsConvType=null,array $obsFcLayers=null,
+        array $actConvLayers=null,string $actConvType=null,array $actFcLayers=null,
+        array $conConvLayers=null,string $conConvType=null,array $conFcLayers=null,
+        string $activation=null, string $kernelInitializer=null
+    )
     {
-        $model = new NetworkTrainingModel($la,$nn,$network);
-        return $model;
+        $network = new CriticNetwork($this->la,$this->nn,
+            $obsSize, $actionSize,
+            obsConvLayers: $obsConvLayers, obsConvType:$obsConvType, obsFcLayers:$obsFcLayers,
+            actConvLayers: $actConvLayers, actConvType:$actConvType, actFcLayers:$actFcLayers,
+            conConvLayers: $conConvLayers, conConvType:$conConvType, conFcLayers:$conFcLayers,
+            activation: $activation,       kernelInitializer:$kernelInitializer
+            );
+        $network->build(array_merge([1],$obsSize),array_merge([1],$actionSize),true);
+        return $network;
+    }
+
+    protected function buildPolicy(
+        $network,$mean,$std_deviation,$lower_bound,$upper_bound,
+        $theta,$dt,$x_initial)
+    {
+        $policy = new OUNoise(
+            $this->la, $network,
+            $mean,
+            $std_deviation,
+            $lower_bound,
+            $upper_bound,
+            theta:$theta,
+            dt:$dt,
+            x_initial:$x_initial);
+        return $policy;
     }
 
     public function summary()
     {
-        $this->network->qmodel()->summary();
+        echo "***** Actor Network *****\n";
+        $this->actor_model->summary();
+        echo "\n";
+        echo "***** Critic Network *****\n";
+        $this->critic_model->summary();
     }
 
-    protected function buildPolicy($network,$start,$stop,$decayRate)
+    public function fileExists(string $filename) : bool
     {
-        $policy = new AnnealingEpsGreedy(
-            $this->la, $network,
-            $start,$stop,$decayRate);
-        return $policy;
+        $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
+        $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
+        if(file_exists($actormodel) && file_exists($criticmodel)) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public function saveWeightsToFile(string $filename) : void
+    {
+        $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
+        $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
+        $this->actor_model->saveWeightsToFile($actormodel);
+        $this->critic_model->saveWeightsToFile($criticmodel);
+    }
+
+    public function loadWeightsFromFile(string $filename) : void
+    {
+        $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
+        $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
+        $this->actor_model->loadWeightsFromFile($actormodel);
+        $this->critic_model->loadWeightsFromFile($criticmodel);
+        //$this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
+        //$this->trainableVariables = $this->trainModel->trainableVariables();
+        $this->initialize();
     }
 
     public function syncWeights($tau=null)
     {
-        $this->targetModel->copyWeights($this->trainModel,$tau);
+        //$this->copyWeights(
+        //    $this->targetActorVariables,
+        //    $this->actorVariables,
+        //    $tau);
+        //$this->copyWeights(
+        //    $this->targetCriticVariables,
+        //    $this->criticVariables,
+        //    $tau);
+
+        //$this->copyWeights(
+        //    $this->target_actor->variables(),
+        //    $this->actor_model->variables(),
+        //    $tau);
+        //$this->copyWeights(
+        //    $this->target_critic->variables(),
+        //    $this->critic_model->variables(),
+        //    $tau);
+
+        $this->target_actor->copyWeights($this->actor_model,$tau);
+        $this->target_critic->copyWeights($this->critic_model,$tau);
     }
+
+    //public function copyWeights($target,$source,float $tau=null) : void
+    //{
+    //    $K = $this->backend;
+    //    if($tau===null) {
+    //        $tau = 1.0;
+    //    }
+    //    $tTau = (1.0-$tau);
+    //    foreach (array_map(null,$target,$source) as [$targParam,$srcParam]) {
+    //        $K->update_scale($targParam->value(),$tTau);
+    //        $K->update_add($targParam->value(),$srcParam->value(),$tau);
+    //    }
+    //}
 
     public function initialize() // : Operation
     {
-        $this->trainModel->compileQModel(
-            $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
-        $this->targetModel->compileQModel(
-            $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
+        //$this->trainModel->compileQModel(
+        //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
+        //$this->targetModel->compileQModel(
+        //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
         if($this->targetUpdatePeriod>0) {
             $this->targetUpdateTimer = $this->targetUpdatePeriod;
         }
@@ -171,28 +286,21 @@ class Ddpg extends AbstractAgent
 
     public function action($observation,bool $training)
     {
-        //if(is_numeric($observation)) {
-        //    $observation = $this->la->array([$observation]);
-        //} elseif(!($observation instanceof NDArray)) {
-        //    throw new InvalidArgumentException('Observation must be NDArray');
-        //}
-        if($training) {
-            $action = $this->policy->action($observation,$this->elapsedTime);
-        } else {
-            $values = $this->network->getQValues($observation);
-            $action = $this->la->imax($values);
-        }
-        return $action;
+        $actions = $this->policy->action($observation,$training,$this->elapsedTime);
+        return $actions;
     }
 
     public function getQValue($observation)
     {
+        $la = $this->la;
         if(is_numeric($observation)) {
             $observation = $this->la->array([$observation]);
         } elseif(!($observation instanceof NDArray)) {
             throw new InvalidArgumentException('Observation must be NDArray');
         }
-        $qValues = $this->network->getQValues($observation);
+        $observation = $la->expandDims($observation,$axis=0);
+        $actions = $this->actor_model->predict($observation);
+        $qValues = $this->critic_model->predict([$observation, $actions]);
         $q = $this->la->max($qValues);
         return $q;
     }
@@ -200,68 +308,173 @@ class Ddpg extends AbstractAgent
     public function update($experience)
     {
         $la = $this->la;
+        $nn = $this->nn; 
+        $K = $this->backend; 
+        $g = $nn->gradient();
         $batchSize = $this->batchSize;
         $obsSize = $this->obsSize;
-        $numActions = $this->numActions;
+        $actionSize = $this->actionSize;
+        $gamma = $this->gamma;
 
         if($experience->size()<$batchSize) {
             return;
         }
-        $states = $la->alloc(array_merge([$batchSize], $obsSize));
-        $nextStates = $la->alloc(array_merge([$batchSize], $obsSize));
-        $rewards = $la->zeros($la->alloc([$batchSize]));
-        $discounts = $la->zeros($la->alloc([$batchSize]));
-        $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
+        $state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $obsSize)));
+        $action_batch = $la->zeros($la->alloc(array_merge([$batchSize], $actionSize)));
+        $next_state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $obsSize)));
+        $reward_batch = $la->zeros($la->alloc([$batchSize,1]));
+        //$discounts = $la->zeros($la->alloc([$batchSize]));
 
         $batch = $experience->sample($batchSize);
         $i = 0;
         foreach($batch as $transition) {
-            [$observation,$action,$nextObs,$reward,$done,$info] = $transition;
-            if(is_numeric($observation)) {
-                $states[$i][0] = $observation;
+            [$state,$action,$next_state,$reward,$done,$info] = $transition;
+            //$state_batch[] = $state;
+            //$action_batch[] = $action;
+            //$next_state_batch[] = $next_state;
+            //$reward_batch[] = $reward;
+
+            if(is_numeric($state)) {
+                $state_batch[$i][0] = $state;
             } else {
-                $la->copy($observation,$states[$i]);
+                $la->copy($state,$state_batch[$i]);
             }
-            if(is_numeric($nextObs)) {
-                $nextStates[$i][0] = $observation;
+            if(is_numeric($action)) {
+                $action_batch[$i][0] = $action;
             } else {
-                $la->copy($nextObs,$nextStates[$i]);
+                $la->copy($action,$action_batch[$i]);
             }
-            $rewards[$i] = $reward;
-            $discounts[$i] = $done ? 0.0 : 1.0;
-            $actions[$i] = $action;
+            if(is_numeric($next_state)) {
+                $next_state_batch[$i][0] = $next_state;
+            } else {
+                $la->copy($next_state,$next_state_batch[$i]);
+            }
+            $reward_batch[$i][0] = $reward;
+            //$discounts[$i] = $done ? 0.0 : 1.0;
             $i++;
         }
 
-        $targetActions = $this->targetActor->forward($nextStates, $training=true);
-        $targetValues = $this->targetCritic->forward([$nextStates, $targetActions], $training=true);
-        $nextCriticValues = $la->axpy($la->multiply($discounts,$targetValues), $la->copy($rewards), $gamma);
-        unset($targetValues);
+        $gamma = $g->Variable($gamma);
+        $state_batch = $g->Variable($state_batch);
+        $action_batch = $g->Variable($action_batch);
+        $next_state_batch = $g->Variable($next_state_batch);
+        $reward_batch = $g->Variable($reward_batch);
+        $training = $g->Variable(true);
 
-        // training critic model
-        $this->criticModel->fit([$states, $actions],$nextCriticValues,
-                                    ['batch_size'=>$batchSize,'epochs'=>1, 'verbose'=>0]);
+        $target_actor = $this->target_actor;
+        $target_critic = $this->target_critic;
+        $critic_model = $this->critic_model;
+        $actor_model = $this->actor_model;
 
-        // training actor model
-        $actorLoss = $nn->with($tape=$g->GradientTape(),
-            function() use ($g,$model,$lossfunc,$x,$t,$trues) {
-                $predictActions = $this->actorModel->forward($states, $training=true);
-                $criticValue = $this->criticModel->forward([$states, $predictActions], $training=true);
-                # Used `-value` as we want to maximize the value given
-                # by the critic for our actions
-                $actorLoss = $g->mul(-1,$g->mean($criticValue));
-                return $actorLoss;
+        //$target_actor = $this->targetActorGraph;
+        //$target_critic = $this->targetCriticGraph;
+        //$critic_model = $this->criticModelGraph;
+        //$actor_model = $this->actorModelGraph;
+
+
+        [$critic_loss,$q_values] = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$target_actor,$target_critic,$critic_model,
+                $next_state_batch,$reward_batch,$gamma,
+                $state_batch,$action_batch,$training,
+            ) {
+                $target_actions = $target_actor($next_state_batch, $training);
+                $target_q_values = $target_critic($next_state_batch, $target_actions, $training);
+
+                $td_targets = $g->add($reward_batch,$g->mul($gamma,$target_q_values));
+
+                $q_values = $critic_model($state_batch, $action_batch, $training);
+
+                $critic_loss = $g->reduceMean($g->square($g->sub($td_targets,$q_values)));
+                return [$critic_loss,$q_values];
             }
         );
-        $actorParams = $this->actorModel->trainableVariables();
-        $actorGrads = $tape->gradient($actorLoss, $actorParams);
-        $this->actorOptimizer->update($actorParams, $actorGrads);
+        $this->criticTrainableVariables = $this->critic_model->trainableVariables();
+        $critic_grad = $tape->gradient($critic_loss, $this->criticTrainableVariables);
+        $this->criticOptimizer->update($this->criticTrainableVariables,$critic_grad);
+        //echo $K->toString($q_values,null,true)."\n";
+
+
+
+        [$actor_loss,$critic_value] = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$actor_model,$critic_model,
+                $next_state_batch,$reward_batch,$gamma,
+                $state_batch,$action_batch,$training,
+            ) {
+                $actions = $actor_model($state_batch, $training);
+                $critic_value = $critic_model($state_batch, $actions, $training);
+                # Used `-value` as we want to maximize the value given
+                # by the critic for our actions
+                $actor_loss = $g->mul($g->Variable(-1),$g->reduceMean($critic_value));
+                return [$actor_loss,$critic_value];
+            }
+        );
+        $this->actorTrainableVariables = $this->actor_model->trainableVariables();
+        $actor_grad = $tape->gradient($actor_loss, $this->actorTrainableVariables);
+        $this->actorOptimizer->update($this->actorTrainableVariables,$actor_grad);
+        //echo $K->toString($critic_value,null,true)."\n";
+
+
+/*
+        # Training and updating Actor & Critic networks.
+        # See Pseudo Code.
+
+        if($this->critic_model_graph===null) {
+            $this->critic_model_graph = $g->function(function (
+                $next_state_batch,$reward_batch,$gamma,
+                $state_batch,$action_batch,$training,
+            ) use (
+                $g,$target_actor,$target_critic,$critic_model,
+            ) {
+                $target_actions = $target_actor($next_state_batch, $training);
+                $y = $g->add($reward_batch,$g->mul($gamma,
+                    $target_critic($next_state_batch, $target_actions, $training)));
+                $critic_value = $critic_model($state_batch, $action_batch, $training);
+                $critic_loss = $g->reduceMean($g->square($g->sub($y,$critic_value)));
+                return $critic_loss;
+            });
+        }
+        $critic_loss = $nn->with($tape=$g->GradientTape(),
+            args:[
+                $next_state_batch,$reward_batch,$gamma,
+                $state_batch,$action_batch,$training,
+            ],
+            without_ctx:true,
+            func:$this->critic_model_graph,
+        );
+
+        $critic_grad = $tape->gradient($critic_loss, $this->criticTrainableVariables);
+        $this->criticOptimizer->update($this->criticTrainableVariables,$critic_grad);
+
+        if($this->actor_model_graph===null) {
+            $this->actor_model_graph=$g->function(function(
+                $state_batch,$training,
+            ) use (
+                $g,$actor_model,$critic_model,
+            ) {
+                $actions = $actor_model($state_batch, $training);
+                $critic_value = $critic_model($state_batch, $actions, $training);
+                # Used `-value` as we want to maximize the value given
+                # by the critic for our actions
+                $actor_loss = $g->mul($g->Variable(-1),$g->reduceMean($critic_value));
+                return $actor_loss;
+            });
+        }
+        $actor_loss = $nn->with($tape=$g->GradientTape(),
+            args:[
+                $state_batch,$training,
+            ],
+            without_ctx:true,
+            func:$this->actor_model_graph,
+        );
+        $actor_grad = $tape->gradient($actor_loss, $this->actorTrainableVariables);
+        $this->actorOptimizer->update($this->actorTrainableVariables,$actor_grad);
+*/
 
         if($this->enabledShapeInspection) {
-            $this->targetActor->setShapeInspection(false);
-            $this->targetCritic->setShapeInspection(false);
-            $this->actorModel->setShapeInspection(false);
-            $this->criticModel->setShapeInspection(false);
+            $this->target_actor->setShapeInspection(false);
+            $this->target_critic->setShapeInspection(false);
+            $this->actor_model->setShapeInspection(false);
+            $this->critic_model->setShapeInspection(false);
             $this->enabledShapeInspection = false;
         }
         if($this->targetUpdatePeriod > 0) {
@@ -271,7 +484,8 @@ class Ddpg extends AbstractAgent
                 $this->targetUpdateTimer = $this->targetUpdatePeriod;
             }
         }
-        $loss = $K->scalar($actorLoss->value());
+        
+        $loss = $K->scalar($actor_loss->value());
         return $loss;
     }
 }

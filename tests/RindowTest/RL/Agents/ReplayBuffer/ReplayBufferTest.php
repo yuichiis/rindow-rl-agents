@@ -1,10 +1,10 @@
 <?php
-namespace RindowTest\ReinforcementLearning\Agent\Core\MemoryTest;
+namespace RindowTest\RL\Agents\ReplayBuffer\ReplayBufferTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
-use Rindow\ReinforcementLearning\Agent\Core\Memory;
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
 
@@ -24,7 +24,7 @@ class Test extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLa($mo);
-        $memory = new Memory($la,$maxSize=3);
+        $memory = new ReplayBuffer($la,$maxSize=3);
         $this->assertCount(0,$memory);
 
         $memory->add(['a','b']);
@@ -52,7 +52,7 @@ class Test extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLa($mo);
-        $memory = new Memory($la,$maxSize=3);
+        $memory = new ReplayBuffer($la,$maxSize=3);
         $this->assertCount(0,$memory);
 
         $this->expectException(LogicException::class);
@@ -64,7 +64,7 @@ class Test extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLa($mo);
-        $memory = new Memory($la,$maxSize=3);
+        $memory = new ReplayBuffer($la,$maxSize=3);
         $memory->add(['a','b']);
         $this->assertCount(1,$memory);
 

@@ -36,9 +36,9 @@ class EpsilonGreedy implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,int $time=null)
+    public function action($state,bool $training,int $time=null)
     {
-        if($this->threshold > mt_rand()) {
+        if($training && $this->threshold > mt_rand()) {
             $action = mt_rand(0,$this->numActions-1);
         } else {
             $qValues = $this->qPolicy->getQValues($state);

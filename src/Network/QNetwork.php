@@ -2,17 +2,14 @@
 namespace Rindow\RL\Agents\Network;
 
 use Rindow\RL\Agents\QPolicy;
-use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Util\Random;
-use Rindow\NeuralNetworks\Model\AbstractModel;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 
-class QNetwork extends AbstractModel implements QPolicy,Network
+class QNetwork extends AbstractNetwork implements QPolicy
 {
     use Random;
     protected $la;
-    protected $obsSize;
     protected $numActions;
     protected $qmodel;
     protected $thresholds;
@@ -26,9 +23,8 @@ class QNetwork extends AbstractModel implements QPolicy,Network
             NDArray $rules=null,$model=null,$mo=null
         )
     {
-        parent::__construct($builder->backend(),$builder);
+        parent::__construct($builder,$obsSize);
         $this->la = $la;
-        $this->obsSize = $obsSize;
         $this->numActions = $numActions;
         if($fcLayers===null) {
             $fcLayers = [32, 16];
@@ -50,19 +46,9 @@ class QNetwork extends AbstractModel implements QPolicy,Network
         }
     }
 
-    public function builder()
-    {
-        return $this->builder;
-    }
-
     public function qmodel()
     {
         return $this->qmodel;
-    }
-
-    public function obsSize()
-    {
-        return $this->obsSize;
     }
 
     public function numActions() : int
@@ -75,118 +61,28 @@ class QNetwork extends AbstractModel implements QPolicy,Network
         $activation,$kernelInitializer)
     {
         $nn = $this->builder;
-        if($nn===null || $fcLayers===null) {
-            throw new InvalidArgumentException('You need to specify the NeuralNetworks builder and the HiddenSize');
-        }
-        if($convType!==null&&$convType!='1d'&&$convType!='2d') {
-            throw new InvalidArgumentException('Unknown convType:'.$convType);
-        }
-        if($activation===null) {
-            $activation='relu';
-        }
-        if($kernelInitializer===null) {
-            $kernelInitializer = 'random_uniform';
-        }
-        $model = $nn->models->Sequential();
-        if($convLayers&&count($convLayers)) {
-            $model->add($nn->layers->Input(['shape'=>$obsSize]));
-            foreach ($convLayers as $config) {
-                $pooling = $batchNorm = $dropout = $activation = $globalPooling = null;
-                if(isset($config[2]['pooling'])) {
-                    if($convType=='1d') {
-                        $pooling = $nn->layers->MaxPooling1D(...$config[2]['pooling']);
-                    } else {
-                        $pooling = $nn->layers->MaxPooling2D(...$config[2]['pooling']);
-                    }
-                    unset($config[2]['pooling']);
-                }
-                if(isset($config[2]['batch_norm'])) {
-                    $batchNorm = $nn->layers->BatchNormalization($config[2]['batch_norm']);
-                    unset($config[2]['batch_norm']);
-                    if(isset($config[2]['activation'])) {
-                        $activation = $config[2]['activation'];
-                        unset($config[2]['activation']);
-                    }
-                }
-                if(isset($config[2]['dropout'])) {
-                    $dropout = $nn->layers->Dropout(...$config[2]['dropout']);
-                    unset($config[2]['dropout']);
-                }
-                if(isset($config[2]['global_pooling'])) {
-                    if($convType=='1d') {
-                        $globalPooling = $nn->layers->GlobalAveragePooling1D(...$config[2]['global_pooling']);
-                    } else {
-                        $globalPooling = $nn->layers->GlobalAveragePooling2D(...$config[2]['global_pooling']);
-                    }
-                    unset($config[2]['global_pooling']);
-                }
-                if($convType=='1d') {
-                    $conv = $nn->layers->Conv1D(...$config);
-                } else {
-                    $conv = $nn->layers->Conv2D(...$config);
-                }
-
-                $model->add($conv);
-                if($batchNorm!=null) {
-                    $model->add($batchNorm);
-                }
-                if($activation!=null) {
-                    $model->add($nn->layers->Activation($activation));
-                }
-                if($pooling!=null) {
-                    $model->add($pooling);
-                }
-                if($globalPooling!=null) {
-                    $model->add($globalPooling);
-                }
-                if($dropout!=null) {
-                    $model->add($dropout);
-                }
-            }
-            $flattenOptions = [];
-        } else {
-            $flattenOptions = ['input_shape'=>$obsSize];
-        }
-        $model->add($nn->layers->Flatten($flattenOptions));
-        foreach ($fcLayers as $units) {
-            $model->add($nn->layers->Dense($units,
-                ['activation'=>$activation,'kernel_initializer'=>$kernelInitializer]));
-        }
+        $model = $this->buildMlpLayers(
+            $obsSize,
+            $convLayers,$convType,$fcLayers,
+            $activation,$kernelInitializer);
         $model->add($nn->layers->Dense($numActions));
         return $model;
     }
 
-    public function compileQModel($learningRate=null)
-    {
-        if($learningRate===null) {
-            $learningRate = 1e-3;
-        }
-        $nn = $this->builder;
-        $this->compile(['optimizer'=>$nn->optimizers->Adam(['lr'=>$learningRate]),
-                    'loss'=>$nn->losses->Huber(), 'metrics'=>['loss']]);
-    }
+    //public function compileQModel($learningRate=null)
+    //{
+    //    if($learningRate===null) {
+    //        $learningRate = 1e-3;
+    //    }
+    //    $nn = $this->builder;
+    //    $this->compile(optimizer:$nn->optimizers->Adam(lr:$learningRate),
+    //                loss:$nn->losses->Huber(), metrics:['loss']);
+    //}
 
     protected function call($inputs,$training)
     {
         $outputs = $this->qmodel->forward($inputs,$training);
         return $outputs;
-    }
-
-    public function copyWeights($sourceNetwork,float $tau=null) : void
-    {
-        $K = $this->backend;
-        if($tau===null) {
-            $tau = 1.0;
-        }
-        $source = $sourceNetwork->params();
-        $target = $this->params();
-        $tTau = (1.0-$tau);
-        foreach (array_map(null,$source,$target) as $p) {
-            [$srcParam,$targParam] = $p;
-            $K->update_scale($targParam,$tTau);
-            $K->update_add($targParam,$srcParam,$tau);
-            //$la->axpy($srcParam,$la->scal($tTau,$targParam),$tau);
-        }
     }
 
     public function getQValues($observation) : NDArray

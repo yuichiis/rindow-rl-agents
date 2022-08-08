@@ -26,7 +26,7 @@ class Greedy implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,int $time=null)
+    public function action($state,bool $training=null,int $time=null)
     {
         $qValues = $this->qPolicy->getQValues($state);
         return $this->la->imax($qValues);

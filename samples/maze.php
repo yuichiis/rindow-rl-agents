@@ -51,14 +51,14 @@ $dqn = new Dqn(
     $ddqn=true,null,$lossFn=$nn->losses->MeanSquaredError(),null,null,['lr'=>$learningRate=1e-3],
     null,null,null,null,null,null,$mo
 );
-$dqn->summary();
+//$dqn->summary();
 
 $driver1 = new EpisodeDriver($la,$env,$pg,$experienceSize=10000);
 $driver2 = new EpisodeDriver($la,$env,$sarsa,$experienceSize=2,null,$episodeAnnealing=true);
 $driver3 = new EpisodeDriver($la,$env,$qlearning,$experienceSize=2,null,$episodeAnnealing=true);
 $driver4 = new EpisodeDriver($la,$env,$dqn,$experienceSize=10000,null,$episodeAnnealing=true);
-//$drivers = [$driver1,$driver2,$driver3];
-$drivers = [$driver4];
+$drivers = [$driver1,$driver2,$driver3];
+//$drivers = [$driver4];
 
 $episodes = 100;#250;#15;#
 $epochs = 50;#500;#
@@ -73,7 +73,7 @@ foreach ($drivers as $driver) {
         $driver->agent()->initialize();
         $history = $driver->train(
             $episodes,null,$metrics=['steps','val_steps','epsilon'],
-            $evalInterval,$numEvalEpisodes,null,$verbose=1);
+            $evalInterval,$numEvalEpisodes,null,$verbose=0);
         $stepslog = $la->array($history['steps'],NDArray::float32);
         $la->axpy($stepslog,$avgsteps);
         $stepslog = $la->array($history['val_steps'],NDArray::float32);

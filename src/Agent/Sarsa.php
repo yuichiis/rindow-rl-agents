@@ -59,12 +59,12 @@ class Sarsa extends AbstractAgent
     public function action($observation,bool $training)
     {
         $la = $this->la;
-        if($training) {
+        //if($training) {
             $action = $this->policy->action($observation,$this->elapsedTime);
-        } else {
-            $qValues = $this->qTable->getQValues($observation);
-            $action = $la->imax($qValues);
-        }
+        //} else {
+        //    $qValues = $this->qTable->getQValues($observation);
+        //    $action = $la->imax($qValues);
+        //}
         return $action;
     }
 

@@ -5,65 +5,67 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 class OUProcess
 {
-    protected $initialValue;
-    protected $damping;
-    protected $stddev;
-    protected $seed;
-
     public function __construct(
-        $la,
-        NDArray $initialValue=null,
-        float $damping=null,
-        float $stddev=null,
-        int $seed=null
-    )
+        object $la,
+        NDArray $mean,
+        NDArray $std_deviation,
+        float $theta=null,
+        float $dt=null,
+        NDArray $x_initial=null)
     {
-        if($damping===null) {
-            $damping=0.15;
-        }
-        if($stddev===null) {
-            $stddev=0.2;
-        }
-        if($initialValue===null) {
-            $initialValue=$la->array([0]);
-        }
-        $this->la = $la;
-        $this->damping = min(max($damping,0),1);
-        $this->stddev = max($stddev,0);
-        $this->seed = $seed;
-        $this->initialValue = $initialValue;
-        $this->reset();
-    }
+        $theta = $theta ?? 0.15;
+        $dt = $dt ?? 1e-2;
 
-    public function reset()
-    {
-        $this->x = $la->copy($initialValue);
+        $this->la = $la;
+        $this->theta = $theta;
+        $this->mean = $mean;
+        $this->std_dev = $std_deviation;
+        $this->dt = $dt;
+        $this->x_initial = $x_initial;
+        if($std_deviation!==null) {
+            if($mean->shape()!=$std_deviation->shape()) {
+                throw new InvalidArgumentException('The shape of mean and std_deviation must be the same');
+            }
+        }
+        if($x_initial!==null) {
+            if($mean->shape()!=$x_initial->shape()) {
+                throw new InvalidArgumentException('The shape of mean and x_initail must be the same');
+            }
+        }
+        $this->reset();
     }
 
     public function __invoke()
     {
         return $this->process();
     }
- 
+    
     public function process()
     {
         $la = $this->la;
-        $noise = $la->randomNormal(
-            $this->x->shape(),
-            0,
-            $this->stddev,
-            $this->x->dtype(),
-            $this->seed);
-        // x = prev_x * (1-dampling) + N(0,stddev)
-        $la->increment($this->x, 0, 1-$this->damping);
-        $la->axpy($noise,$this->x);
-
-        // mean = 0 
-        // dampling = theta*dt
-        // stddev = stddev_*sqrt(dt)
-        // x = prev_x + theta*(mean-prev_x)*dt + N(0,stddev_)*sqrt(dt)
-        //   = prev_x * (1-theta*dt) + N(0,stddev_)*sqrt(dt)
-        //   = prev_x * (1-theta*dt) + N(0,stddev_*sqrt(dt))
+        # Formula taken from https://www.wikipedia.org/wiki/Ornstein-Uhlenbeck_process.
+        // x = x_prev + theta*(mean-x_prev)*dt + std_dev*sqrt(dt)*random(mean.shape)
+        $x = $la->axpy(
+            $this->x_prev,
+            $la->axpy(
+                $la->axpy($this->x_prev,$la->copy($this->mean),-1),
+                $la->multiply($this->std_dev,$la->randomNormal($this->mean->shape(),0.0, sqrt($this->dt))),
+                $this->dt*$this->theta
+            )
+        );
+        # Store x into x_prev
+        # Makes next noise dependent on current one
+        $this->x_prev = $x;
         return $x;
+    }
+
+    public function reset()
+    {
+        $la = $this->la;
+        if($this->x_initial!==null) {
+            $this->x_prev = $this->x_initial;
+        } else {
+            $this->x_prev = $la->zerosLike($this->mean);
+        }
     }
 }

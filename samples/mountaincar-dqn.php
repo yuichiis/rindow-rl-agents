@@ -144,13 +144,13 @@ $dqnAgent = new Dqn(
     null,null,null,null,null,null,$mo
 );
 $dqnAgent->summary();
-$driver3 = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize,null,$episodeAnnealing);
-//$driver3 = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,null,$episodeAnnealing,$evalEnv);
-$driver3->setCustomRewardFunction($customReward);
-$drivers = [$driver3];
-$arts = [];
-foreach ($drivers as $driver) {
-    $driver->agent()->initialize();
+$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize,null,$episodeAnnealing);
+//$driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,null,$episodeAnnealing,$evalEnv);
+$driver->setCustomRewardFunction($customReward);
+$filename = __DIR__.'\\mountaincar-dqn.model';
+if(!file_exists($filename)) {
+    $arts = [];
+    //$driver->agent()->initialize();
     $history = $driver->train($numIterations,$maxSteps=null,
         $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
         $evalInterval,$numEvalEpisodes,$logInterval,$verbose=1);
@@ -162,15 +162,19 @@ foreach ($drivers as $driver) {
     //$arts[] = $plt->plot($ep,$la->array($history['val_reward']))[0];
     //$arts[] = $plt->plot($ep,$la->increment($la->array($history['loss']),-100,100/max($history['loss'])))[0];
     //$arts[] = $plt->plot($ep,$la->increment($la->array($history['epsilon']),-100,100))[0];
+
+    $plt->xlabel('Iterations');
+    $plt->ylabel('Reward');
+    //$plt->legend($arts,['Policy Gradient','Sarsa']);
+    //$plt->legend($arts,['steps','val_steps','reward','val_reward','loss','epsilon']);
+    //$plt->legend($arts,['reward','loss','val_reward','epsilon']);
+    //$plt->legend($arts,['steps','val_steps']);
+    $plt->legend($arts,['steps','reward']);
+    $plt->show();
+    $dqnAgent->saveWeightsToFile($filename);
+} else {
+    $dqnAgent->loadWeightsFromFile($filename);
 }
-$plt->xlabel('Iterations');
-$plt->ylabel('Reward');
-//$plt->legend($arts,['Policy Gradient','Sarsa']);
-//$plt->legend($arts,['steps','val_steps','reward','val_reward','loss','epsilon']);
-//$plt->legend($arts,['reward','loss','val_reward','epsilon']);
-//$plt->legend($arts,['steps','val_steps']);
-$plt->legend($arts,['steps','reward']);
-$plt->show();
 
 
 echo "Creating demo animation.\n";
