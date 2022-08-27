@@ -75,7 +75,7 @@ class Test extends TestCase
         $avg = [];
         for($i=0;$i<1000;$i++) {
             $epsilon[] = $policy->getEpsilon();
-            $buf->add($policy->action([0]));
+            $buf->add($policy->action([0],true));
             $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
         }
         $epsilon = $la->array($epsilon);
@@ -96,8 +96,8 @@ class Test extends TestCase
         $qpolicy = new TestQPolicy($la);
         $policy = new AnnealingEpsGreedy($la,$qpolicy,start:0,stop:0);
 
-        $this->assertEquals(0,$policy->action([1,0,0]));
-        $this->assertEquals(1,$policy->action([0,1,0]));
-        $this->assertEquals(2,$policy->action([0,0,1]));
+        $this->assertEquals(0,$policy->action([1,0,0],true));
+        $this->assertEquals(1,$policy->action([0,1,0],true));
+        $this->assertEquals(2,$policy->action([0,0,1],true));
     }
 }

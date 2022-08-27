@@ -51,7 +51,7 @@ class UCB1 extends AbstractAgent
     {
     }
 
-    public function getQValue($observation)
+    public function getQValue($observation) : float
     {
         $q = $this->la->max($this->values);
         return $q;

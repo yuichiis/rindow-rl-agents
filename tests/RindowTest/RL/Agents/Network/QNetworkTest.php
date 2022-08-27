@@ -69,6 +69,7 @@ class Test extends TestCase
         $plt->legend(['losses']);
         $plt->title('QNetwork');
         $plt->show();
+        $this->assertTrue(true);
     }
 
     public function testSample()
@@ -101,13 +102,13 @@ class Test extends TestCase
         $qValues = $network->getQValues(1);
         $this->assertEquals([2],$qValues->shape());
         $qValues2 = $network->getQValues([1]);
-        $this->assertEquals([2],$qValues2->shape());
+        $this->assertEquals([1,2],$qValues2->shape());
         $qValues3 = $network->getQValues($la->array([1]));
         $this->assertEquals([2],$qValues3->shape());
         $qValues4 = $network->getQValues(2);
         $this->assertEquals([2],$qValues4->shape());
         
-        $this->assertEquals($qValues->toArray(),$qValues2->toArray());
+        $this->assertEquals($qValues->toArray(),$qValues2->toArray()[0]);
         $this->assertEquals($qValues->toArray(),$qValues3->toArray());
         $this->assertNotEquals($qValues->toArray(),$qValues4->toArray());
     }

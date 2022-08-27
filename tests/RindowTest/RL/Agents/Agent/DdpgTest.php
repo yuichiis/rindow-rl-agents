@@ -11,6 +11,8 @@ use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Agent\Ddpg;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\Network\ActorNetwork;
+use Rindow\RL\Agents\Network\CriticNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -26,7 +28,7 @@ class TestPolicy implements Policy
     public function initialize() // : Operation
     {}
 
-    public function action($values,int $time=null)
+    public function action($values,bool $training, int $time=null)
     {
         return $this->fixedAction;
     }
@@ -71,7 +73,7 @@ class Test extends TestCase
         $upper_bound=$la->array([2]);
         $agent = new Ddpg($la,$nn,
             $obsSize,$actionSize,$lower_bound,$upper_bound,
-            std_deviation:0.2,
+            std_dev:0.2,
             batchSize:2,
             gamma:0.99,
             targetUpdatePeriod:1,
@@ -79,7 +81,10 @@ class Test extends TestCase
             criticOptimizerOpts:['lr'=>$critic_lr=0.002],
             actorOptimizerOpts:['lr'=>$actor_lr=0.001],
         );
-        $network = $agent->get_actor($obsSize);
+        $this->assertInstanceof(ActorNetwork::class,$agent->actorNetwork());
+        $this->assertInstanceof(ActorNetwork::class,$agent->targetActorNetwork());
+        $this->assertInstanceof(CriticNetwork::class,$agent->criticNetwork());
+        $this->assertInstanceof(CriticNetwork::class,$agent->targetcriticNetwork());
         //$actor->summary();
         $this->assertTrue(true);
     }
@@ -113,7 +118,7 @@ class Test extends TestCase
         $upper_bound=$la->array([2]);
         $agent = new Ddpg($la,$nn,
             $obsSize,$actionSize,$lower_bound,$upper_bound,
-            std_deviation:0.2,
+            std_dev:0.2,
             batchSize:2,
             gamma:0.99,
             targetUpdatePeriod:1,

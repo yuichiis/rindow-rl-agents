@@ -176,6 +176,26 @@ class Ddpg extends AbstractAgent
         return $policy;
     }
 
+    public function actorNetwork()
+    {
+        return $this->actor_model;
+    }
+
+    public function targetActorNetwork()
+    {
+        return $this->target_actor;
+    }
+
+    public function criticNetwork()
+    {
+        return $this->critic_model;
+    }
+
+    public function targetCriticNetwork()
+    {
+        return $this->target_critic;
+    }
+
     public function summary()
     {
         echo "***** Actor Network *****\n";
@@ -290,7 +310,7 @@ class Ddpg extends AbstractAgent
         return $actions;
     }
 
-    public function getQValue($observation)
+    public function getQValue($observation) : float
     {
         $la = $this->la;
         if(is_numeric($observation)) {
@@ -305,7 +325,7 @@ class Ddpg extends AbstractAgent
         return $q;
     }
 
-    public function update($experience)
+    public function update($experience) : float
     {
         $la = $this->la;
         $nn = $this->nn; 
@@ -317,7 +337,7 @@ class Ddpg extends AbstractAgent
         $gamma = $this->gamma;
 
         if($experience->size()<$batchSize) {
-            return;
+            return 0.0;
         }
         $state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $obsSize)));
         $action_batch = $la->zeros($la->alloc(array_merge([$batchSize], $actionSize)));

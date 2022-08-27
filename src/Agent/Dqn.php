@@ -240,7 +240,7 @@ class Dqn extends AbstractAgent
         return $action;
     }
 
-    public function getQValue($observation)
+    public function getQValue($observation) : float
     {
         if(is_numeric($observation)) {
             $observation = $this->la->array([$observation]);
@@ -252,7 +252,7 @@ class Dqn extends AbstractAgent
         return $q;
     }
 
-    public function update($experience)
+    public function update($experience) : float
     {
         $la = $this->la;
         $nn = $this->nn;
@@ -262,7 +262,7 @@ class Dqn extends AbstractAgent
         $numActions = $this->numActions;
 
         if($experience->size()<$batchSize) {
-            return;
+            return 0.0;
         }
         $states = $la->alloc(array_merge([$batchSize], $obsSize));
         $nextStates = $la->alloc(array_merge([$batchSize], $obsSize));

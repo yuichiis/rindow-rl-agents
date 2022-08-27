@@ -26,7 +26,7 @@ class TestPolicy implements Policy
     public function initialize() // : Operation
     {}
 
-    public function action($values,int $time=null)
+    public function action($values,bool $training, int $time=null)
     {
         return $this->fixedAction;
     }

@@ -22,11 +22,11 @@ class EpisodeDriver extends AbstractDriver
     }
 
     public function train(
-        $numEpisodes=null,$maxSteps=null,array $metrics=null,
+        $numIterations=null,$maxSteps=null,array $metrics=null,
         $evalInterval=null,$numEvalEpisodes=null,$logInterval=null,$verbose=null) : array
     {
-        if($numEpisodes===null || $numEpisodes<=0) {
-            $numEpisodes = 1000;
+        if($numIterations===null || $numIterations<=0) {
+            $numIterations = 1000;
         }
         if($evalInterval===null || $evalInterval<=0) {
             $evalInterval = 100;
@@ -58,11 +58,11 @@ class EpisodeDriver extends AbstractDriver
         $epStartTime = 0.0;
         $episodeCount = $sumReward = $sumSteps = $sumLoss = $countLoss = 0;
         if($verbose>0) {
-            $this->console("Train on ${numEpisodes} episodes with ${numEvalEpisodes} evaluation each aggregation.\n");
+            $this->console("Train on ${numIterations} episodes with ${numEvalEpisodes} evaluation each aggregation.\n");
         }
-        for($episode=0;$episode<$numEpisodes;$episode++) {
+        for($episode=0;$episode<$numIterations;$episode++) {
             if($verbose==1&&$episode==0) {
-                $this->progressBar('Episode',$episode,$numEpisodes,$evalInterval,$startTime,25);
+                $this->progressBar('Episode',$episode,$numIterations,$evalInterval,$startTime,25);
             }
             if($verbose>1) {
                 $epStartTime = microtime(true);
@@ -154,7 +154,9 @@ class EpisodeDriver extends AbstractDriver
                     $history['loss'][] = $avgLoss;
                 }
                 foreach ($evalReport as $key => $value) {
-                    $history[$key][] = $value;
+                    if(in_array($key, $metrics)) {
+                        $history[$key][] = $value;
+                    }
                 }
             }
             if($epsilon!==null) {
@@ -169,7 +171,7 @@ class EpisodeDriver extends AbstractDriver
                 $msPerStep = sprintf('%1.1f',(microtime(true) - $epStartTime)/$episodeSteps*1000);
                 $this->console("Ep ".($episode+1).": rw=${strEpisodeReward}, st=${episodeSteps} loss=${lossLog}${epsilon}, q=${qLog}, ${msPerStep}ms/step\n");
             } elseif($verbose==1) {
-                $this->progressBar('Episode',$episode,$numEpisodes,$evalInterval,$startTime,25);
+                $this->progressBar('Episode',$episode,$numIterations,$evalInterval,$startTime,25);
             }
             if($verbose>0) {
                 if($episodeCount >= $evalInterval) {

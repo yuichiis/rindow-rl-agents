@@ -17,12 +17,13 @@ interface Agent
     */
     public function action($observation,bool $training);
 
-    public function getQValue($observation);
+    public function getQValue($observation) : float;
 
     /**
     * @param iterable $experience
+    * @return float $loss
     */
-    public function update($experience);
+    public function update($experience) : float;
 
     /**
     * @return bool $stepUpdate

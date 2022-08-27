@@ -172,7 +172,9 @@ class StepDriver extends AbstractDriver
                     $history['loss'][] = $avgLoss;
                 }
                 foreach ($evalReport as $key => $value) {
-                    $history[$key][] = $value;
+                    if(in_array($key, $metrics)) {
+                        $history[$key][] = $value;
+                    }
                 }
                 if($verbose>0) {
                     if($epsilon!==null) {

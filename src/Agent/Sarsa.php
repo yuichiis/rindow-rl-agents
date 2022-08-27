@@ -68,7 +68,7 @@ class Sarsa extends AbstractAgent
         return $action;
     }
 
-    public function getQValue($observation)
+    public function getQValue($observation) : float
     {
         $qValues = $this->qTable->getQValues($observation);
         $q = $this->la->max($qValues);

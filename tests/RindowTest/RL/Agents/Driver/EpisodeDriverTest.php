@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Driver\StepDriverTest;
+namespace RindowTest\RL\Agents\Driver\EpisodeDriverTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -9,14 +9,14 @@ use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\ReplayBuffer;
-use Rindow\RL\Agents\Driver\StepDriver;
+use Rindow\RL\Agents\Driver\EpisodeDriver;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
 class TestEnv implements Environment
 {
-    protected $maxEpisodeSteps=200;
+    protected $maxEpisodeSteps=5;
     protected $rewardThreshold=195.0;
 
     public function __construct(array $data)
@@ -123,8 +123,10 @@ class TestAgent implements Agent
     public function update($experience) : float
     {
         if($experience->last()!=current($this->assertUpdateLast)) {
-            var_dump(current($this->assertUpdateLast));
+            echo "exp::last:";
             var_dump($experience->last());
+            echo "assertUpdateLast:";
+            var_dump(current($this->assertUpdateLast));
             throw new \Exception('invalid update experience');
         }
         next($this->assertUpdateLast);
@@ -191,7 +193,7 @@ class Test extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
         $experienceSize = 3;
         $batchSize = 1;
-        $steps = 4;
+        $episodes = 2;
         $envdata = [
             //[$Obs,$reward,$done,$info]
             [100, null, null,   null],
@@ -200,18 +202,26 @@ class Test extends TestCase
             [103, 0,    true,   []],
         ];
         $env = new TestEnv($envdata);
-        $assertActionObs =  [100, 101, 102, 100];
-        $actionResult    =  [10,   11,  12,  20];
+        $assertActionObs =  [
+            100, 101, 102,
+            100, 101, 102,
+        ];
+        $actionResult    =  [
+            10,   11,  12,
+            20,   21,  22,
+        ];
         $assertUpdateLast = [
             //[$observation,$action,$nextObs,$reward,$done,$info]
             [100, 10, 101, 1,   false, []],
             [101, 11, 102, 0.5, false, []],
             [102, 12, 103, 0,   true,  []],
             [100, 20, 101, 1,   false, []],
+            [101, 21, 102, 0.5, false, []],
+            [102, 22, 103, 0,   true,  []],
         ];
         $agent = new TestAgent($assertActionObs,$actionResult,$assertUpdateLast);
-        $driver = new StepDriver($la,$env, $agent, $experienceSize);
-        $losses = $driver->train(numIterations:$steps);
+        $driver = new EpisodeDriver($la,$env, $agent, $experienceSize);
+        $losses = $driver->train(numIterations:$episodes);
         $this->assertEquals([],$losses);
         $this->assertEquals([false,false,false],$agent->currents());
         $this->assertTrue(true);
@@ -224,7 +234,7 @@ class Test extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
         $experienceSize = 3;
         $batchSize = 1;
-        $steps = 4;
+        $episodes = 4;
         $evalInterval = 2;
         $numEvalEpisodes = 2;
         $envdata = [
@@ -234,50 +244,61 @@ class Test extends TestCase
             [   102,  0.5,  false, []],
             [   103,  0,    true,  []],
         ];
-        $evalEnvdata = [
-            //[$Obs,$reward,$done, $info]
-            [   200, null,  null,  null],
-            [   201,  1,    false, []],
-            [   202,  0.5,  false, []],
-            [   203,  0,    true,  []],
-        ];
         $env = new TestEnv($envdata);
-        $evalEnv = new TestEnv($evalEnvdata);
         $assertActionObs =  [
-            100, 101,
-            200, 201, 202,
-            200, 201, 202,
-            102, 100,
-            200, 201, 202,
-            200, 201, 202,
+            100, 101, 102,
+            100, 101, 102,
+
+            100, 101, 102, // eval
+            100, 101, 102, // eval
+
+            100, 101, 102,
+            100, 101, 102,
+
+            100, 101, 102, // eval
+            100, 101, 102, // eval
         ];
         $actionResult = [
-            10, 11,
-            20, 21, 22,
-            20, 21, 22,
-            12, 20,
-            20, 21, 22,
-            20, 21, 22,
+            10,   11,  12,
+            20,   21,  22,
+
+            110,  111, 112, // eval
+            120,  121, 122, // eval
+
+            30,   31,  32,
+            40,   41,  42,
+
+            130,  131, 132, // eval
+            140,  141, 142, // eval
         ];
         $assertUpdateLast = [
             //[$obs,$action,$nextObs,$reward, $done, $info]
-            [   100,     10,     101,    1,   false, []],
-            [   101,     11,     102,    0.5, false, []],
-            [   102,     12,     103,    0,    true, []],
-            [   100,     20,     101,    1,   false, []],
+            [100, 10, 101, 1,   false, []],
+            [101, 11, 102, 0.5, false, []],
+            [102, 12, 103, 0,   true,  []],
+            [100, 20, 101, 1,   false, []],
+            [101, 21, 102, 0.5, false, []],
+            [102, 22, 103, 0,   true,  []],
+
+            [100, 30, 101, 1,   false, []],
+            [101, 31, 102, 0.5, false, []],
+            [102, 32, 103, 0,   true,  []],
+            [100, 40, 101, 1,   false, []],
+            [101, 41, 102, 0.5, false, []],
+            [102, 42, 103, 0,   true,  []],
         ];
         $agent = new TestAgent($assertActionObs,$actionResult,$assertUpdateLast);
-        $driver = new StepDriver($la,$env, $agent, $experienceSize, evalEnv:$evalEnv);
+        $driver = new EpisodeDriver($la,$env, $agent, $experienceSize);
         $losses = $driver->train(
-            numIterations:$steps,
+            numIterations:$episodes,
             evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
             metrics:['steps','reward','loss','val_steps','val_reward']
         );
         $this->assertEquals([
-            'steps'     => [0,   3],
-            'reward'    => [0,   1.5],
+            'steps'     => [3,   3  ],
+            'reward'    => [1.5, 1.5],
             'loss'      => [1.0, 1.0],
-            'val_steps' => [3,   3],
+            'val_steps' => [3,   3  ],
             'val_reward'=> [1.5, 1.5],
         ],$losses);
         $this->assertEquals([false,false,false],$agent->currents());

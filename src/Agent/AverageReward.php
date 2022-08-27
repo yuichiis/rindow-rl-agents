@@ -53,7 +53,7 @@ class AverageReward extends AbstractAgent
     {
     }
 
-    public function getQValue($observation)
+    public function getQValue($observation) : float
     {
         $qValues = $this->qpolicy->getQValues($observation);
         $q = $this->la->max($qValues);
@@ -78,7 +78,7 @@ class AverageReward extends AbstractAgent
     * @param Any $params
     * @return Any $action
     */
-    public function update($experience) : void
+    public function update($experience) : float
     {
         $la = $this->la;
         [$observation,$action,$nextObs,$reward,$done,$info] = $experience->last();
@@ -98,5 +98,7 @@ class AverageReward extends AbstractAgent
         $la->axpy(
             $la->scal($reward,$la->reciprocal($la->copy($n))),
             $v);
+
+        return 0.0;
     }
 }
