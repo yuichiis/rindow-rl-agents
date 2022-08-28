@@ -29,7 +29,7 @@ class TestEnv implements Environment
         return $this->maxEpisodeSteps;
     }
 
-    public function rewardThreshold() : int
+    public function rewardThreshold() : float
     {
         return $this->rewardThreshold;
     }

@@ -3,7 +3,6 @@ namespace RindowTest\RL\Agents\Agent\DdpgTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
-use Interop\Polite\AI\RL\Environment;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Policy;
