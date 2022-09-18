@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 //use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\MultiarmedBandit\Slots;
+use Rindow\RL\Gym\ClassicControl\MultiarmedBandit\Slots;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Policy\EpsilonGreedy;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;

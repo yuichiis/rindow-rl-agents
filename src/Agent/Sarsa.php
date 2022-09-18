@@ -97,7 +97,7 @@ class Sarsa extends AbstractAgent
     * @param Any $params
     * @return Any $action
     */
-    public function update($experience)
+    public function update($experience) : float
     {
         $la = $this->la;
 

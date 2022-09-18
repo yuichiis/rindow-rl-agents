@@ -39,7 +39,7 @@ class TestEnv implements Environment
         return next($this->data);
     }
 
-    public function reset()
+    public function reset() : mixed
     {
         [$obs,$reward,$done,$info] = reset($this->data);
         return $obs;
@@ -48,7 +48,7 @@ class TestEnv implements Environment
     //public function legals($observation=null) : array
     //{}
 
-    public function render(string $mode=null)
+    public function render(string $mode=null) : mixed
     {}
 
     public function close() : void
@@ -57,7 +57,7 @@ class TestEnv implements Environment
     public function seed(int $seed=null) : array
     {}
 
-    public function show(bool $loop=null, int $delay=null)
+    public function show(bool $loop=null, int $delay=null) : mixed
     {}
 
     public function toString() : string

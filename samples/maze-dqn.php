@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 //use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\Maze\Maze;
+use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Agent\DQN;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
@@ -81,12 +81,12 @@ $driver4 = new EpisodeDriver($la,$env,$dqn,$experienceSize,null,$episodeAnnealin
 $driver4->setCustomObservationFunction($customObservationFunction);
 $drivers = [$driver4];
 
-$filenamePattern = __DIR__.'\\maze-dqn-%d.model';
+$filenamePattern = __DIR__.'\\maze-dqn-%d';
 $arts = [];
 foreach ($drivers as $i => $driver) {
     $agent = $driver->agent();
     $filename = sprintf($filenamePattern,$i);
-    if(!file_exists($filename)) {
+    if(!$agent->fileExists($filename)) {
         // $agent->initialize();
         $history = $driver->train(
             $episodes,null,$metrics=['steps','reward','val_steps','epsilon'],

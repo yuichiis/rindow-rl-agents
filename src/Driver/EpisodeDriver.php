@@ -134,7 +134,7 @@ class EpisodeDriver extends AbstractDriver
                 } else {
                     $evalReport = [];
                 }
-                if(in_array('epsilon',$metrics)) {
+                if($epsilon!==null && in_array('epsilon',$metrics)) {
                     $history['epsilon'][] = $epsilon;
                 }
                 $avgSteps = $sumSteps/$episodeCount;

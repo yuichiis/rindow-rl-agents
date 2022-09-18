@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 //use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\CartPole\CartPoleV0;
+use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Agent\QLearning;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;

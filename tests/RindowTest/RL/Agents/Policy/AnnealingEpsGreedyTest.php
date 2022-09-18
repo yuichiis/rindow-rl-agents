@@ -13,9 +13,11 @@ use InvalidArgumentException;
 
 class TestQPolicy implements QPolicy
 {
-    public function __construct($la) {
+    public function __construct($la)
+    {
         $this->la = $la;
     }
+
     public function obsSize()
     {
         return [1];
@@ -25,6 +27,7 @@ class TestQPolicy implements QPolicy
     {
         return 2;
     }
+
     /**
     * @param NDArray $state
     * @return NDArray $qValues
@@ -38,7 +41,6 @@ class TestQPolicy implements QPolicy
     {
         return 1;
     }
-
 }
 
 class Test extends TestCase

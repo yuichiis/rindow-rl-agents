@@ -12,7 +12,7 @@ trait Random
         if($rules->ndim()!=2) {
             throw new InvalidArgumentException('rules must be 2D NDArray');
         }
-        $p = $la->zeros($la->alloc($rules->shape()));
+        // p[i] = exp(rules[i])/sum(exp(rules[i]))
         $prob = $la->exp($la->copy($rules));
         $prob = $la->nan2num($prob);
         $sum = $la->reduceSum($prob,$axis=1);

@@ -9,7 +9,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Driver\StepDriver;
 use Rindow\RL\Agents\Agent\Ddpg;
-use Rindow\RL\Gym\Pendulum\PendulumV1;
+use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 use Rindow\RL\Gym\Core\Rendering\RenderFactory;
 
 $mo = new MatrixOperator();

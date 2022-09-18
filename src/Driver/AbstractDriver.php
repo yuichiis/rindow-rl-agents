@@ -112,7 +112,7 @@ abstract class AbstractDriver implements Driver
             $estimated = $elapsed / $completion;
             $remaining = $estimated - $elapsed;
             $dot = (int)ceil($maxDot*$progressOfAgg);
-            $sec = $remaining % 60;
+            $sec = (int)floor($remaining) % 60;
             $min = (int)floor($remaining/60) % 60;
             $hour = (int)floor($remaining/3600);
             $rem_string = ($hour?$hour.':':'').sprintf('%02d:%02d',$min,$sec);
