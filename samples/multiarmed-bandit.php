@@ -42,9 +42,10 @@ $epochs = 1000;#50;
 $dot = 100;
 $arts = [];
 $drivers = [$driver0,$driver1,$driver2,$driver3,$driver4];
-//$drivers = [$driver1,$driver2];
+//$drivers = [$driver0,$driver1,$driver2,$driver3];
 //$drivers = [$driver0];
 //$drivers = [$driver4];
+
 foreach($drivers as $driver) {
     $avg = $la->zeros($la->alloc([$episodes]));
     for($i=0;$i<$epochs;$i++) {
@@ -71,7 +72,7 @@ foreach([0.1,0.03] as $rate) {
     $eps = [];
     for($i=0;$i<$episodes;$i++) {
         $eps[] = $policy->getEpsilon();
-        $policy->action($dmystate=0);
+        $policy->action($dmystate=0,false);
     }
     $arts[] = $plt->plot($la->array($eps))[0];
 }

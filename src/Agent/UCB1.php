@@ -14,12 +14,19 @@ class UCB1 extends AbstractAgent
     protected $values;
     protected $customRewardFunction;
     protected $step;
+    protected $mo;
 
-    public function __construct($la,QPolicy $qpolicy)
+    public function __construct($la,QPolicy $qpolicy,$mo=null)
     {
         $this->la = $la;
+        $this->mo = $mo;
         $this->numActions = $qpolicy->numActions();
         $this->initialize();
+    }
+
+    public function policy()
+    {
+        return null;
     }
 
     public function initialize() // : Operation
@@ -65,13 +72,16 @@ class UCB1 extends AbstractAgent
     {
         $la = $this->la;
         if($training) {
-            $i = $this->la->imin($this->numTrials);
+            $i = $la->imin($this->numTrials);
             if($this->numTrials[$i]==0.0) {
+                //echo "*".$i;
                 return $i;
             }
             $action = $la->imax($this->values);
+            //echo "#".$action;
         } else {
             $action = $la->imax($this->values);
+            //echo "@".$action;
         }
         return $action;
     }
@@ -80,7 +90,7 @@ class UCB1 extends AbstractAgent
     * @param Any $params
     * @return Any $action
     */
-    public function update($experience) : void
+    public function update($experience) : float
     {
         $la = $this->la;
         [$observation,$action,$nextObs,$reward,$done,$info] = $experience->last();
@@ -92,7 +102,8 @@ class UCB1 extends AbstractAgent
         $la->increment($n1,1.0);
         $la->increment($w,$reward);
         if($this->la->min($this->numTrials)==0.0) {
-            return;
+            //echo "\n".$this->mo->toString($this->values,'%4.4f',true);
+            return 0.0;
         }
 
         $n = $this->numTrials;
@@ -105,5 +116,27 @@ class UCB1 extends AbstractAgent
             $la->sqrt($la->scal(2*log($this->step+1),$la->copy($rn))));
 
         $this->step++;
+        //echo "\n".$this->mo->toString($this->values,'%4.4f',true);
+        return 0.0;
+    }
+
+    public function fileExists(string $filename) : bool
+    {
+        return $this->qpolicy->fileExists($filename);
+    }
+
+    public function setPortableSerializeMode(bool $mode) : void
+    {
+        $this->qpolicy->setPortableSerializeMode($mode);
+    }
+
+    public function saveWeightsToFile(string $filename) : void
+    {
+        $this->qpolicy->saveWeightsToFile($filename);
+    }
+
+    public function loadWeightsFromFile(string $filename) : void
+    {
+        $this->qpolicy->loadWeightsFromFile($filename);
     }
 }

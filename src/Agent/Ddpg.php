@@ -17,7 +17,6 @@ class Ddpg extends AbstractAgent
     const ACTOR_FILENAME = '%s-actor.model';
     const CRITIC_FILENAME = '%s-critic.model';
     protected $la;
-    protected $policy;
     protected $gamma;
     protected $obsSize;
     protected $actionSize;
@@ -102,9 +101,10 @@ class Ddpg extends AbstractAgent
         $this->target_critic  = $this->buildCriticNetwork($obsSize, $actionSize,
             obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
 
-        $this->policy = $this->buildPolicy(
+        $this->setPolicy($this->buildPolicy(
             $this->actor_model,$mean,$std_dev,$lower_bound,$upper_bound,
-            $theta,$dt,$x_initial);
+            $theta,$dt,$x_initial)
+        );
 
         //$this->actorTrainableVariables = $this->actor_model->trainableVariables();
         //$this->criticTrainableVariables = $this->critic_model->trainableVariables();

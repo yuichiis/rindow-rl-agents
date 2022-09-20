@@ -17,7 +17,6 @@ class PolicyGradient extends AbstractAgent
     protected $initialPolicy;
     protected $eta;
     protected $p;
-    protected $policy;
     public $thresholds;
     protected $mo;
 
@@ -56,7 +55,7 @@ class PolicyGradient extends AbstractAgent
     public function initialize() // : Operation
     {
         $la = $this->la;
-        $this->policy = $la->copy($this->initialPolicy);
+        $this->setPolicy($la->copy($this->initialPolicy));
         $this->p = $this->generateProbabilities($this->policy);
         $this->thresholds = $this->generateThresholds($this->p);
     }
@@ -138,7 +137,7 @@ class PolicyGradient extends AbstractAgent
         $filename = sprintf(self::MODEL_FILENAME,$filename);
         $dump = file_get_contents($filename);
         $policy = unserialize($dump);
-        $this->policy = $policy;
+        $this->setPolicy($policy);
         $this->p = $this->generateProbabilities($this->policy);
         $this->thresholds = $this->generateThresholds($this->p);
     }

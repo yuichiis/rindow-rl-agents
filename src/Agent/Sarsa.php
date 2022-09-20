@@ -11,7 +11,6 @@ class Sarsa extends AbstractAgent
 {
     protected $la;
     protected $qTable;
-    protected $policy;
     protected $eta;
     protected $gamma;
     protected $threshold;
@@ -22,7 +21,7 @@ class Sarsa extends AbstractAgent
     {
         $this->la = $la;
         $this->qTable = $qTable;
-        $this->policy = $policy;
+        $this->setPolicy($policy);
         $this->eta = $eta;
         $this->gamma = $gamma;
     }
@@ -60,7 +59,7 @@ class Sarsa extends AbstractAgent
     {
         $la = $this->la;
         //if($training) {
-            $action = $this->policy->action($observation,$this->elapsedTime);
+            $action = $this->policy->action($observation,$training,$this->elapsedTime);
         //} else {
         //    $qValues = $this->qTable->getQValues($observation);
         //    $action = $la->imax($qValues);
@@ -123,5 +122,25 @@ class Sarsa extends AbstractAgent
             $error = $la->nrm2($tdError);
         }
         return $error;
+    }
+
+    public function fileExists(string $filename) : bool
+    {
+        return $this->qTable->fileExists($filename);
+    }
+
+    public function setPortableSerializeMode(bool $mode) : void
+    {
+        $this->qTable->setPortableSerializeMode($mode);
+    }
+
+    public function saveWeightsToFile(string $filename) : void
+    {
+        $this->qTable->saveWeightsToFile($filename);
+    }
+
+    public function loadWeightsFromFile(string $filename) : void
+    {
+        $this->qTable->loadWeightsFromFile($filename);
     }
 }

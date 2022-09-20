@@ -11,7 +11,6 @@ class AverageReward extends AbstractAgent
     protected $la;
     protected $qpolicy;
     protected $numActions;
-    protected $policy;
     protected $numTrials;
     protected $values;
     protected $customRewardFunction;
@@ -21,7 +20,7 @@ class AverageReward extends AbstractAgent
         $this->la = $la;
         $this->qpolicy = $qpolicy;
         $this->numActions = $qpolicy->numActions();
-        $this->policy = $policy;
+        $this->setPolicy($policy);
         $this->initialize();
     }
 
@@ -64,13 +63,14 @@ class AverageReward extends AbstractAgent
     * @param Any $states
     * @return Any $action
     */
-    public function action($observation,$training=null)
+    public function action($observation,bool $training)
     {
-        if($training) {
-            $action = $this->policy->action($observation,$this->elapsedTime);
-        } else {
-            $action = $la->imax($this->values);
-        }
+        //$la = $this->la;
+        //if($training) {
+            $action = $this->policy->action($observation,$training,$this->elapsedTime);
+        //} else {
+        //    $action = $la->imax($this->values);
+        //}
         return $action;
     }
 
@@ -100,5 +100,25 @@ class AverageReward extends AbstractAgent
             $v);
 
         return 0.0;
+    }
+
+    public function fileExists(string $filename) : bool
+    {
+        return $this->qpolicy->fileExists($filename);
+    }
+
+    public function setPortableSerializeMode(bool $mode) : void
+    {
+        $this->qpolicy->setPortableSerializeMode($mode);
+    }
+
+    public function saveWeightsToFile(string $filename) : void
+    {
+        $this->qpolicy->saveWeightsToFile($filename);
+    }
+
+    public function loadWeightsFromFile(string $filename) : void
+    {
+        $this->qpolicy->loadWeightsFromFile($filename);
     }
 }

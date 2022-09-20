@@ -1,11 +1,13 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\PolicyGradientTest;
+namespace RindowTest\RL\Agents\Agent\SarsaTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\PolicyGradient;
+use Rindow\RL\Agents\Agent\Sarsa;
+use Rindow\RL\Agents\Network\QTable;
+use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
@@ -61,7 +63,9 @@ class Test extends TestCase
             [3],
             [0,3],
         ];
-        $agent = new PolicyGradient($la,$rules,$eta=0.1,$mo);
+        $qtable = new QTable($la,$rules);
+        $policy = new AnnealingEpsGreedy($la,$qtable,$espstart=1.0,$stop=0.01,$decayRate=0.01);
+        $agent = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,$mo);
         foreach($fixedActions as $obs => $actions) {
             for($i=0;$i<100;$i++) {
                 $action = $agent->action($obs,$training=true);
@@ -94,7 +98,9 @@ class Test extends TestCase
         ]);
         [$width,$height,$exit] = [3,3,8];
         $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
-        $agent = new PolicyGradient($la,$rules,$eta=0.1,$mo);
+        $qtable = new QTable($la,$rules);
+        $policy = new AnnealingEpsGreedy($la,$qtable,$espstart=1.0,$stop=0.01,$decayRate=0.01);
+        $agent = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,$mo);
         $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
 
         $numIterations=200;
@@ -106,7 +112,7 @@ class Test extends TestCase
         $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
         $plt->plot($ep,$la->array($history['steps']))[0];
         $plt->legend(['steps']);
-        $plt->title('PolicyGradient');
+        $plt->title('Sarsa');
         $plt->show();
         $this->assertTrue(true);
     }

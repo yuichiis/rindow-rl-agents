@@ -13,7 +13,6 @@ class Dqn extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
     protected $la;
-    protected $policy;
     protected $gamma;
     protected $rewardScaleFactor;
     protected $obsSize;
@@ -84,7 +83,7 @@ class Dqn extends AbstractAgent
         if($ddqn===null) {
             $ddqn = false;
         }
-        $this->policy = $policy;
+        $this->setPolicy($policy);
         $this->obsSize = $obsSize;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
