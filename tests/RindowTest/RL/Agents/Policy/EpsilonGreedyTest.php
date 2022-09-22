@@ -1,12 +1,12 @@
 <?php
-namespace RindowTest\RL\Agents\Policy\AnnealingEpsGreedyTest;
+namespace RindowTest\RL\Agents\Policy\EpsilonGreedyTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\QPolicy;
-use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
+use Rindow\RL\Agents\Policy\EpsilonGreedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
@@ -69,23 +69,21 @@ class Test extends TestCase
         $la = $this->newLa($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
+        $epsilon = 0.2;
         $qpolicy = new TestQPolicy($la);
-        $policy = new AnnealingEpsGreedy($la,$qpolicy,decayRate:0.005);
+        $policy = new EpsilonGreedy($la,$qpolicy,epsilon:$epsilon);
         $buf = new ReplayBuffer($la,$maxSize=100);
 
-        $epsilon = [];
         $avg = [];
         for($i=0;$i<1000;$i++) {
-            $epsilon[] = $policy->getEpsilon();
             $buf->add($policy->action([0],true));
             $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
         }
-        $epsilon = $la->array($epsilon);
         $avg = $la->array($avg);
-        $plt->plot($epsilon);
         $plt->plot($avg);
-        $plt->legend(['epsilon','action']);
-        $plt->title('AnnealingEpsGreedy');
+        $plt->plot($la->fill(1/$qpolicy->numActions()*$epsilon,$la->alloc([1000])));
+        $plt->legend(['action','epsilon']);
+        $plt->title('EpsilonGreedy');
         $plt->show();
         $this->assertTrue(true);
     }
@@ -97,12 +95,12 @@ class Test extends TestCase
 
         $qpolicy = new TestQPolicy($la);
 
-        $policy = new AnnealingEpsGreedy($la,$qpolicy,start:0,stop:0);
+        $policy = new EpsilonGreedy($la,$qpolicy,epsilon:0.0);
         $this->assertEquals(0,$policy->action([1,0,0],true));
         $this->assertEquals(1,$policy->action([0,1,0],true));
         $this->assertEquals(2,$policy->action([0,0,1],true));
 
-        $policy = new AnnealingEpsGreedy($la,$qpolicy,start:1,stop:1);
+        $policy = new EpsilonGreedy($la,$qpolicy,epsilon:1.0);
         $this->assertEquals(0,$policy->action([1,0,0],false));
         $this->assertEquals(1,$policy->action([0,1,0],false));
         $this->assertEquals(2,$policy->action([0,0,1],false));

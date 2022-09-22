@@ -66,7 +66,7 @@ class QTable implements QPolicy
         if(!is_int($state)) {
             throw new InvalidArgumentException('state must be integer. '.gettype($state).' given.');
         }
-        $action = $this->randomChoice($this->thresholds[$state]);
+        $action = $this->randomChoice($this->thresholds[$state], isThresholds:true);
         return $action;
     }
 

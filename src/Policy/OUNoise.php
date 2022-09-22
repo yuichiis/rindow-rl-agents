@@ -58,7 +58,7 @@ class OUNoise implements Policy
 
         if($training) {
             $noise = $this->noise->process();
-            $actions = $la->axpy($noise,$actions);
+            $actions = $la->axpy($noise,$la->copy($actions));
             $this->noiseMax = max($this->noiseMax,$noise[0]);
             $this->noiseMin = min($this->noiseMin,$noise[0]);
         }

@@ -1,12 +1,12 @@
 <?php
-namespace RindowTest\RL\Agents\Policy\AnnealingEpsGreedyTest;
+namespace RindowTest\RL\Agents\Policy\GreedyTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\QPolicy;
-use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
+use Rindow\RL\Agents\Policy\Greedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
@@ -70,22 +70,18 @@ class Test extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
 
         $qpolicy = new TestQPolicy($la);
-        $policy = new AnnealingEpsGreedy($la,$qpolicy,decayRate:0.005);
+        $policy = new Greedy($la,$qpolicy);
         $buf = new ReplayBuffer($la,$maxSize=100);
 
-        $epsilon = [];
         $avg = [];
-        for($i=0;$i<1000;$i++) {
-            $epsilon[] = $policy->getEpsilon();
+        for($i=0;$i<10;$i++) {
             $buf->add($policy->action([0],true));
             $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
         }
-        $epsilon = $la->array($epsilon);
         $avg = $la->array($avg);
-        $plt->plot($epsilon);
         $plt->plot($avg);
-        $plt->legend(['epsilon','action']);
-        $plt->title('AnnealingEpsGreedy');
+        $plt->legend(['action']);
+        $plt->title('Greedy');
         $plt->show();
         $this->assertTrue(true);
     }
@@ -96,15 +92,10 @@ class Test extends TestCase
         $la = $this->newLa($mo);
 
         $qpolicy = new TestQPolicy($la);
+        $policy = new Greedy($la,$qpolicy);
 
-        $policy = new AnnealingEpsGreedy($la,$qpolicy,start:0,stop:0);
         $this->assertEquals(0,$policy->action([1,0,0],true));
         $this->assertEquals(1,$policy->action([0,1,0],true));
         $this->assertEquals(2,$policy->action([0,0,1],true));
-
-        $policy = new AnnealingEpsGreedy($la,$qpolicy,start:1,stop:1);
-        $this->assertEquals(0,$policy->action([1,0,0],false));
-        $this->assertEquals(1,$policy->action([0,1,0],false));
-        $this->assertEquals(2,$policy->action([0,0,1],false));
     }
 }

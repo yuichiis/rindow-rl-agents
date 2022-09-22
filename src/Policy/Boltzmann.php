@@ -16,10 +16,11 @@ class Boltzmann implements Policy
     protected $tau;
     protected $min;
     protected $max;
+    protected $softmax;
 
     public function __construct(
         $la, QPolicy $qPolicy,
-        float $tau=null, float $min=null, float $max=null)
+        float $tau=null, float $min=null, float $max=null, bool $softmax=null)
     {
         if($tau===null) {
             $tau=1.0;
@@ -35,6 +36,7 @@ class Boltzmann implements Policy
         $this->tau = $tau;
         $this->min = $min;
         $this->max = $max;
+        $this->softmax = $softmax;
     }
 
     public function initialize()
@@ -55,16 +57,25 @@ class Boltzmann implements Policy
             return $action;
         }
 
-        $expValues = $la->exp($la->minimum($la->maximum(
-            $la->scal(1/$this->tau,$la->copy($qValues)),$this->min),$this->max));
-        $probabilities = $la->scal(1/$la->sum($expValues),$expValues);
-        unset($expValues);
+        if($this->softmax) {
+            $qValues = $la->expandDims($qValues,$axis=0);
+            $probabilities = $la->softmax($la->pow($la->copy($qValues),$this->tau));
+            $probabilities = $la->squeeze($probabilities);
+        } else {
+            // q ** tau / sum(q ** tau)
+            $expValues = $la->minimum($la->maximum(
+                $la->pow($la->copy($qValues),$this->tau),$this->min),$this->max);
+            $sum = $la->sum($expValues);
+            if($sum==0) {
+                $probabilities = $la->fill(1/$expValues->size(),$la->alloc($expValues->shape()));
+            } else {
+                $probabilities = $la->scal(1/$sum,$expValues);
+            }
+            unset($expValues);
+        }
 
         // random choice with probabilities
-        $probabilities = $la->expandDims($probabilities,$axis=0);
-        $thresholds = $this->generateThresholds($probabilities);
-        $thresholds = $la->squeeze($thresholds,$axis=0);
-        $action = $this->randomChoice($thresholds);
+        $action = $this->randomChoice($probabilities);
         return $action;
     }
 }

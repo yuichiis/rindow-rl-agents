@@ -125,7 +125,7 @@ class QNetwork extends AbstractNetwork implements QPolicy
             if($state instanceof NDArray) {
                 $state = (int)$state[0];
             }
-            $action = $this->randomChoice($this->thresholds[$state]);
+            $action = $this->randomChoice($this->thresholds[$state], isThresholds:true);
         } else {
             $action = mt_rand(0,$this->numActions-1);
         }

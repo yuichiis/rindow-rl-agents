@@ -28,8 +28,9 @@ class AverageReward extends AbstractAgent
     {
         $la = $this->la;
         $numActions = $this->numActions;
+        $this->qpolicy->initialize();
         $this->values = $this->qpolicy->table();
-        $la->zeros($this->values);
+        //$la->zeros($this->values);
         $this->numTrials = $la->zeros($la->alloc([$this->numActions],NDArray::float32));
         $this->policy->initialize();
     }
@@ -81,6 +82,9 @@ class AverageReward extends AbstractAgent
     public function update($experience) : float
     {
         $la = $this->la;
+        $backupValue = $la->copy($this->values);
+        $backupNumTrials = $la->copy($this->numTrials);
+
         [$observation,$action,$nextObs,$reward,$done,$info] = $experience->last();
         if($action<0 || $action>=$this->numActions) {
             throw new InvalidArgumentException('Invalid Action');
@@ -91,13 +95,14 @@ class AverageReward extends AbstractAgent
         $la->increment($n,1.0);
 
         // V(t) = ((n-1)/n)*V(t-1) + 1/n*R(t)
-        //      = ((1-1/n))*V(t-1) + 1/n*R(t)
+        //      =   (1-1/n)*V(t-1) + 1/n*R(t)
         $la->multiply(
-            $la->increment($la->reciprocal($la->copy($n),null,-1.0),1.0),
+            $la->increment($la->reciprocal($la->copy($n)),1.0,-1.0),
             $v);
+        $backupTmpV = $la->copy($v);
         $la->axpy(
-            $la->scal($reward,$la->reciprocal($la->copy($n))),
-            $v);
+        $la->scal($reward,$la->reciprocal($la->copy($n))),
+        $v);
 
         return 0.0;
     }

@@ -67,7 +67,7 @@ class PolicyGradient extends AbstractAgent
     public function action($observation,bool $training)
     {
         if($training) {
-            $action = $this->randomChoice($this->thresholds[$observation]);
+            $action = $this->randomChoice($this->thresholds[$observation], isThresholds:true);
         } else {
             $action = $this->la->imax($this->p[$observation]);
         }

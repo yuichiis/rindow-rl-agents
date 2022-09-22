@@ -34,9 +34,15 @@ trait Random
         return $p2;
     }
 
-    public function randomChoice(NDArray $thresholds) : int
+    public function randomChoice(NDArray $probabilities, bool $isThresholds=null) : int
     {
         $la = $this->la;
+        $thresholds = $probabilities;
+        if(!$isThresholds) {
+            $probabilities = $la->expandDims($probabilities,$axis=0);
+            $thresholds = $this->generateThresholds($probabilities);
+            $thresholds = $la->squeeze($thresholds,$axis=0);
+        }
         if($thresholds->ndim()!=1) {
             throw new InvalidArgumentException('thresholds must be 1D NDArray');
         }
