@@ -63,13 +63,13 @@ class Test extends TestCase
         ];
     }
 
-    public function testNormal()
+    public function testSingle()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLa($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $times = 1000;
+        $steps = 1000;
         $mean = $la->array([0.0]);
         $std_dev = $la->array([0.1]);
         $lower_bound = $la->array([-1.0]);
@@ -81,10 +81,10 @@ class Test extends TestCase
         );
 
         $actions = [];
-        $v = ($upper_bound[0]-$lower_bound[0])/$times;
+        $v = ($upper_bound[0]-$lower_bound[0])/$steps;
         $c = $lower_bound[0];
         $prods = [];
-        for($i=0;$i<$times;$i++) {
+        for($i=0;$i<$steps;$i++) {
             $q = $c+$v*$i;
             $actions[] = $policy->action([$q],true)[0];
             $prods[] = $policy->action([$q],false)[0];
@@ -93,10 +93,50 @@ class Test extends TestCase
         $prods = $la->array($prods);
         $plt->plot($actions);
         $plt->plot($prods);
-        $plt->plot($la->fill($upper_bound[0],$la->alloc([$times])));
-        $plt->plot($la->fill($mean[0],$la->alloc([$times])));
-        $plt->plot($la->fill($lower_bound[0],$la->alloc([$times])));
+        $plt->plot($la->fill($upper_bound[0],$la->alloc([$steps])));
+        $plt->plot($la->fill($mean[0],$la->alloc([$steps])));
+        $plt->plot($la->fill($lower_bound[0],$la->alloc([$steps])));
         $plt->legend(['action','prod','upper','mean','lower']);
+        $plt->title('OUNoise');
+        $plt->show();
+        $this->assertTrue(true);
+    }
+
+    public function testAvg()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLa($mo);
+        $plt = new Plot($this->getPlotConfig(),$mo);
+
+        $episodes = 100;
+        $steps = 200;
+        $mean = $la->array([0.0]);
+        $std_dev = $la->array([0.2]);
+        $lower_bound = $la->array([-2.0]);
+        $upper_bound = $la->array([ 2.0]);
+        $qpolicy = new TestQPolicy($la);
+        $policy = new OUNoise(
+            $la, $qpolicy,
+            $mean, $std_dev, $lower_bound, $upper_bound
+        );
+
+        $avg = $la->zeros($la->alloc([$steps]));
+        $v = ($upper_bound[0]-$lower_bound[0])/$steps;
+        $c = $lower_bound[0];
+        for($j=0;$j<$episodes;$j++) {
+            for($i=0;$i<$steps;$i++) {
+                $q = $c+$v*$i;
+                $la->axpy($policy->action([$q],true),$avg[[$i,$i]]);
+            }
+        }
+        $la->scal(1/$episodes,$avg);
+        $prods = $mo->arange($steps,$c,$v);
+        $plt->plot($avg);
+        $plt->plot($prods);
+        $plt->plot($la->fill($upper_bound[0],$la->alloc([$steps])));
+        $plt->plot($la->fill($mean[0],$la->alloc([$steps])));
+        $plt->plot($la->fill($lower_bound[0],$la->alloc([$steps])));
+        $plt->legend(['avg','prod','upper','mean','lower']);
         $plt->title('OUNoise');
         $plt->show();
         $this->assertTrue(true);

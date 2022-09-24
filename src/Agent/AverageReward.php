@@ -30,9 +30,9 @@ class AverageReward extends AbstractAgent
         $numActions = $this->numActions;
         $this->qpolicy->initialize();
         $this->values = $this->qpolicy->table();
-        //$la->zeros($this->values);
+        //$this->policy->initialize();
+        $la->zeros($this->values);
         $this->numTrials = $la->zeros($la->alloc([$this->numActions],NDArray::float32));
-        $this->policy->initialize();
     }
 
     public function isStepUpdate() : bool

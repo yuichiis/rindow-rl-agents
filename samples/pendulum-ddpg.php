@@ -76,9 +76,9 @@ if(!$ddpgAgent->fileExists($filename)) {
     $history = $driver->train($numIterations,$maxSteps=null,
         $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
         $evalInterval,$numEvalEpisodes,$logInterval,$verbose=2);
-    echo "\n";
-    [$noiseMin,$noiseMax,$actionMin,$actionMax] = $ddpgAgent->policy()->noiseActionMinMax();
-    var_dump([$noiseMin,$noiseMax,$actionMin,$actionMax]);
+    //echo "\n";
+    //[$noiseMin,$noiseMax,$actionMin,$actionMax] = $ddpgAgent->policy()->noiseActionMinMax();
+    //var_dump([$noiseMin,$noiseMax,$actionMin,$actionMax]);
     if($evalInterval>0) {
         $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
         //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
