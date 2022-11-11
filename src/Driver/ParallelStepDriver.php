@@ -4,20 +4,27 @@ namespace Rindow\RL\Agents\Driver;
 use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\RL\Agents\Driver;
 use Rindow\RL\Agents\Agent;
-use Rindow\RL\Agents\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 
-class StepDriver extends AbstractDriver
+class ParallelStepDriver extends AbstractDriver
 {
-    protected $env;
+    protected $envs;
     protected $evalEnv;
 
     public function __construct(object $la,
-        Env $env, Agent $agent, int $experienceSize, ReplayBuffer $replayBuffer=null,
+        array $envs, Agent $agent, int $experienceSize, array $replayBuffers=null,
         Env $evalEnv=null)
     {
-        parent::__construct($la,$agent,$experienceSize,$replayBuffer);
-        $this->env = $env;
+        parent::__construct($la,$agent,$experienceSize);
+        $this->envs = $envs;
         $this->evalEnv = $evalEnv;
+        $numEnvs = count($envs);
+        if($replayBuffers===null) {
+            for($i=0;$i<$numEnvs;$i++) {
+                $replayBuffers[] = new ReplayBuffer($this->la,$experienceSize);
+            }
+        }
+        $this->experiences = $replayBuffers;
         $this->initialize();
     }
 
@@ -43,7 +50,7 @@ class StepDriver extends AbstractDriver
         if($verbose===null) {
             $verbose = 0;
         }
-        $env = $this->env;
+        $envs = $this->envs;
         $agent = $this->agent;
         $history = [];
         if($metrics===null) {
@@ -54,65 +61,62 @@ class StepDriver extends AbstractDriver
         }
         $isStepUpdate = $agent->isStepUpdate();
         $subStepLen = $agent->subStepLength();
-        $totalStep = 0;
         $startTime = time();
-        $episode = 0;
-        $episodeCount = $sumReward = $sumSteps = $sumLoss = $countLoss = 0;
+        $stepCount = $episodeCount = $sumReward = $sumLoss = $countLoss = 0;
+        $numEnvs = count($envs);
         if($verbose>0) {
             $this->console("Train on ${numIterations} steps with ${numEvalEpisodes} evaluation each aggregation.\n");
         }
         // verbose=2 log
         $logStartTime = microtime(true);
-        $logCountLoss = $logSumLoss = $logEpisodeCount = 0;
+        $logCountLoss = $logSumReward = $logSumLoss = $logStepCount = $logEpisodeCount = 0;
+        $totalEpisodeCount = 0;
 
         // start episode
-        $this->onStartEpisode();
-        $observation = $env->reset();
-        $observation = $this->customObservation($env,$observation,false);
-        $experience = $this->experience;
-        $episodeReward = $reward = 0.0;
-        $episodeSteps = 0;
-        $done = false;
+        $obss = [];
+        $episodeSteps = [];
+        foreach($envs as $env) {
+            $observation = $env->reset();
+            $obss[] = $this->customObservation($env,$observation,false);
+            $episodeSteps[] = 0;
+        }
+        $experiences = $this->experiences;
 
         for($step=0;$step<$numIterations;$step++) {
+            $nextObss = [];
             if($verbose==1&&$step==0) {
                 $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
             }
-            $action = $agent->action($observation,$training=true);
-            [$nextObs,$reward,$done,$info] = $env->step($action);
-            $nextObs = $this->customObservation($env,$nextObs,$done);
-            $reward = $this->customReward($env,$episodeSteps,$nextObs,$reward,$done,$info);
-            $experience->add([$observation,$action,$nextObs,$reward,$done,$info]);
-            $totalStep++;
-            if($agent->isStepUpdate() && $totalStep>=$subStepLen) {
-                $loss = $agent->update($experience);
+            $actions = $agent->action($obss,$training=true);
+            foreach($envs as $i => $env) {
+                [$nextObs,$reward,$done,$info] = $env->step($actions[$i]);
+                $nextObss[$i] = $this->customObservation($env,$nextObs,$done);
+                $reward = $this->customReward($env,$episodeSteps[$i],$nextObs,$reward,$done,$info);
+                $experiences[$i]->add([$obss[$i],$actions[$i],$nextObss[$i],$reward,$done,$info]);
+                $loss = $agent->update($experiences[$i]);
                 if($loss!==null) {
                     $sumLoss += $loss;
                     $logSumLoss += $loss;
-                }
-                $countLoss++;
-                $logCountLoss++;
-            }
-            $observation = $nextObs;
-            $episodeReward += $reward;
-            $episodeSteps++;
-
-            if($done) {
-                if(!$agent->isStepUpdate()) {
-                    $loss = $agent->update($experience);
-                    if($loss!==null) {
-                        $sumLoss += $loss;
-                        $logSumLoss += $loss;
-                    }
                     $countLoss++;
                     $logCountLoss++;
                 }
-                $sumReward += $episodeReward;
-                $sumSteps += $episodeSteps;
-                $this->onEndEpisode();
-                $episodeCount++;
-                $logEpisodeCount++;
+                $sumReward += $reward;
+                $logSumReward += $reward;
+                $stepCount++;
+                $logStepCount++;
+                $episodeSteps[$i]++;
+                if($done || ($maxSteps!==null && $episodeSteps[$i]>=$maxSteps)) {
+                    // start episode
+                    $totalEpisodeCount++;
+                    $episodeCount++;
+                    $logEpisodeCount++;
+                    $nextObs = $env->reset();
+                    $nextObss[$i] = $this->customObservation($env,$nextObs,false);
+                    $episodeSteps[$i] = 0;
+                }
             }
+            $obss = $nextObss;
+
             $epsilon = null;
             if(($step+1)%$logInterval==0 || ($step+1)%$evalInterval==0) {
                 if(in_array('epsilon',$metrics)) {
@@ -131,16 +135,18 @@ class StepDriver extends AbstractDriver
                     $epsilonLog = '';
                 }
                 if($verbose>1) {
-                    $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
-                    $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
+                    $stepLog = sprintf('%d',($step+1)*$numEnvs);
+                    $episodeLog = sprintf('%d',$totalEpisodeCount);
+                    $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logStepCount/$logEpisodeCount) : 0);
+                    $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logSumReward/$logEpisodeCount) : 0);
                     $lossLog = sprintf('%3.2e',($logCountLoss>0)?($logSumLoss/$logCountLoss):0);
                     $qLog = sprintf('%1.1f',$agent->getQValue($observation));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);
-                    $this->console("Step:".($step+1)." ep:".($episode+1)." rw=${rewardLog}, st=${stepsLog} loss=${lossLog}${epsilonLog}, q=${qLog}, ${msPerStep}ms/st\n");
+                    $this->console("Step:${stepLog} ep:${episodeLog} rw=${rewardLog}, st=${stepsLog} loss=${lossLog}${epsilonLog}, q=${qLog}, ${msPerStep}ms/st\n");
                 } elseif($verbose==1) {
                     $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
                 }
-                $logEpisodeCount = $logSumLoss = $logCountLoss = 0;
+                $logEpisodeCount = $logSumLoss = $logCountLoss = $logStepCount = $logSumReward = 0;
             }
             if(($step+1)%$evalInterval==0) {
                 if($numEvalEpisodes!=0) {
@@ -151,7 +157,7 @@ class StepDriver extends AbstractDriver
                 if($epsilon!==null && in_array('epsilon',$metrics)) {
                     $history['epsilon'][] = $epsilon;
                 }
-                $avgSteps = ($episodeCount>0)? ($sumSteps/$episodeCount) : 0;
+                $avgSteps = ($episodeCount>0)? ($stepCount/$episodeCount) : 0;
                 $avgReward = ($episodeCount>0)? ($sumReward/$episodeCount) : 0;
                 $avgLoss = ($countLoss>0)? ($sumLoss/$countLoss) : 0;
                 if(in_array('steps',$metrics)) {
@@ -195,30 +201,13 @@ class StepDriver extends AbstractDriver
                                     " vRwd=${valReward}, vSt=${valSteps}${epsilon}\n");
                 }
                 $episodeCount = 0;
-                $sumSteps = 0;
+                $stepCount = 0;
                 $sumReward = 0;
                 $sumLoss = 0;
                 $countLoss = 0;
             }
             if(($step+1)%$logInterval==0) {
                 $logStartTime = microtime(true);
-            }
-            if($maxSteps!==null) {
-                if($episodeSteps>=$maxSteps) {
-                    $done=true;
-                }
-            }
-            if($done) {
-                // start episode
-                $episode++;
-                $this->onStartEpisode();
-                $observation = $env->reset();
-                $observation = $this->customObservation($env,$observation,false);
-                $experience = $this->experience;
-                $episodeReward = $reward = 0.0;
-                $episodeSteps = 0;
-                $episodeLoss = 0.0;
-                $done = false;
             }
         }
         return $history;

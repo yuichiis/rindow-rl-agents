@@ -43,7 +43,7 @@ $targetUpdateTau =    1.0;#0.025;#0.01;#0.05;#1.0;#
 $learningRate = 1e-3;#1e-5;#
 $epsStart = 1.0; #1.0; #0.9;#1.0; #
 $epsStop =  0.05;#0.01;#0.1;#0.05;#
-$decayRate = 0.001;#0.0005;#
+$epsDecayRate = 0.001;#0.0005;#
 $ddqn = false;#true;#
 $lossFn = $nn->losses->MeanSquaredError();
 
@@ -57,10 +57,13 @@ $numActions = $env->actionSpace()->n();
 //exit();
 
 $evalEnv = new CartPoleV0($la);
-$network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers,$convType,$fcLayers);
-$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
+//$network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers,$convType,$fcLayers);
+//$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $dqnAgent = new Dqn(
-    $la,network:$network,policy:$policy,batchSize:$batchSize,gamma:$gamma,
+    $la,
+    nn:$nn,obsSize:$obsSize,numActions:$numActions,fcLayers:$fcLayers,
+    epsStart:$epsStart,epsStop:$epsStop,epsDecayRate:$epsDecayRate,
+    batchSize:$batchSize,gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
     ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );

@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Agent;
 
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Util\Random;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
@@ -12,7 +13,6 @@ class PolicyGradient extends AbstractAgent
 
     const MODEL_FILENAME = '%s.model';
 
-    protected $la;
     protected $ones;
     protected $initialPolicy;
     protected $eta;
@@ -20,9 +20,12 @@ class PolicyGradient extends AbstractAgent
     public $thresholds;
     protected $mo;
 
-    public function __construct($la, NDArray $rules,$eta,$mo=null)
+    public function __construct($la,
+        NDArray $rules, float $eta,
+        EventManager $eventManager=null,
+        $mo=null)
     {
-        $this->la = $la;
+        parent::__construct($la,$rules,$eventManager);
         $this->eta = $eta;
         $this->mo = $mo; // for debug
         $this->initialPolicy = $la->copy($rules);
@@ -46,16 +49,10 @@ class PolicyGradient extends AbstractAgent
         return 1;
     }
 
-    public function startEpisode(int $episode) : void
-    {}
-
-    public function endEpisode(int $episode) : void
-    {}
-
     public function initialize() // : Operation
     {
         $la = $this->la;
-        $this->setPolicy($la->copy($this->initialPolicy));
+        $la->copy($this->initialPolicy,$this->policy);
         $this->p = $this->generateProbabilities($this->policy);
         $this->thresholds = $this->generateThresholds($this->p);
     }
@@ -137,7 +134,7 @@ class PolicyGradient extends AbstractAgent
         $filename = sprintf(self::MODEL_FILENAME,$filename);
         $dump = file_get_contents($filename);
         $policy = unserialize($dump);
-        $this->setPolicy($policy);
+        $la->copy($policy,$this->policy);
         $this->p = $this->generateProbabilities($this->policy);
         $this->thresholds = $this->generateThresholds($this->p);
     }

@@ -6,9 +6,10 @@ use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Model\AbstractModel;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
+use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Policy\OUNoise;
 use Rindow\RL\Agents\Network\ActorNetwork;
-use Rindow\RL\Agents\Network\CriticNetwork;
+use Rindow\RL\Agents\Agent\Ddpg\CriticNetwork;
 
 use InvalidArgumentException;
 
@@ -16,7 +17,6 @@ class Ddpg extends AbstractAgent
 {
     const ACTOR_FILENAME = '%s-actor.model';
     const CRITIC_FILENAME = '%s-critic.model';
-    protected $la;
     protected $gamma;
     protected $obsSize;
     protected $actionSize;
@@ -58,6 +58,7 @@ class Ddpg extends AbstractAgent
         array $actFcLayers=null,
         array $conFcLayers=null,
         float $actorInitMin=null, float $actorInitMax=null,
+        EventManager $eventManager=null,
         object $mo = null,
         )
     {
@@ -76,7 +77,24 @@ class Ddpg extends AbstractAgent
         $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
         $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
 
-        $this->la = $la;
+        $this->mo = $mo;
+        $this->actor_model   = $this->buildActorNetwork($la,$nn,$obsSize, $actionSize,
+             fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
+        $this->critic_model  = $this->buildCriticNetwork($la,$nn,$obsSize, $actionSize,
+            obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
+        $this->actor_model->compile(optimizer:$actorOptimizer);
+        $this->critic_model->compile(optimizer:$criticOptimizer);
+        $this->target_actor  = $this->buildActorNetwork($la,$nn,$obsSize, $actionSize,
+            fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
+        $this->target_critic  = $this->buildCriticNetwork($la,$nn,$obsSize, $actionSize,
+            obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
+
+        $policy = $this->buildPolicy($la,
+            $this->actor_model,$mean,$std_dev,$lower_bound,$upper_bound,
+            $theta,$dt,$x_initial
+        );
+        parent::__construct($la,$policy,$eventManager);
+        $this->nn = $nn;
         $this->obsSize = $obsSize;
         $this->actionSize = $actionSize;
         $this->batchSize = $batchSize;
@@ -87,24 +105,7 @@ class Ddpg extends AbstractAgent
         $this->targetUpdateTau = $targetUpdateTau;
         $this->criticOptimizer = $criticOptimizer;
         $this->actorOptimizer = $actorOptimizer;
-        $this->mo = $mo;
-        $this->nn = $nn;
         $this->backend = $nn->backend();
-        $this->actor_model   = $this->buildActorNetwork($obsSize, $actionSize,
-             fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
-        $this->critic_model  = $this->buildCriticNetwork($obsSize, $actionSize,
-            obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
-        $this->actor_model->compile(optimizer:$actorOptimizer);
-        $this->critic_model->compile(optimizer:$criticOptimizer);
-        $this->target_actor  = $this->buildActorNetwork($obsSize, $actionSize,
-            fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
-        $this->target_critic  = $this->buildCriticNetwork($obsSize, $actionSize,
-            obsFcLayers:$obsFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
-
-        $this->setPolicy($this->buildPolicy(
-            $this->actor_model,$mean,$std_dev,$lower_bound,$upper_bound,
-            $theta,$dt,$x_initial)
-        );
 
         //$this->actorTrainableVariables = $this->actor_model->trainableVariables();
         //$this->criticTrainableVariables = $this->critic_model->trainableVariables();
@@ -125,23 +126,35 @@ class Ddpg extends AbstractAgent
     }
 
     protected function buildActorNetwork(
+        $la,$nn,
         array $obsSize, array $actionSize,
         array $convLayers=null,string $convType=null,array $fcLayers=null,
         $activation=null,$kernelInitializer=null,
         float $minval=null, float $maxval=null
     )
     {
-        $network = new ActorNetwork($this->la,$this->nn,
+        $minval = $minval ?? -0.003;
+        $maxval = $maxval ?? 0.003;
+        $outputOptions = [
+            'initializer' => [
+                'kernelInitializer'=>'random_uniform',
+                'options'=> ['minval'=>$minval, 'maxval'=>$maxval],
+            ],
+            'activation' => 'tanh',
+        ];
+
+        $network = new ActorNetwork($la,$nn,
             $obsSize, $actionSize,
             convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,
             activation:$activation,kernelInitializer:$kernelInitializer,
-            minval:$minval, maxval:$maxval,
+            outputOptions:$outputOptions,
             );
         $network->build(array_merge([1],$obsSize),true);
         return $network;
     }
 
     protected function buildCriticNetwork(
+        $la,$nn,
         array $obsSize, array $actionSize,
         array $obsConvLayers=null,string $obsConvType=null,array $obsFcLayers=null,
         array $actConvLayers=null,string $actConvType=null,array $actFcLayers=null,
@@ -149,7 +162,7 @@ class Ddpg extends AbstractAgent
         string $activation=null, string $kernelInitializer=null
     )
     {
-        $network = new CriticNetwork($this->la,$this->nn,
+        $network = new CriticNetwork($la,$nn,
             $obsSize, $actionSize,
             obsConvLayers: $obsConvLayers, obsConvType:$obsConvType, obsFcLayers:$obsFcLayers,
             actConvLayers: $actConvLayers, actConvType:$actConvType, actFcLayers:$actFcLayers,
@@ -161,11 +174,11 @@ class Ddpg extends AbstractAgent
     }
 
     protected function buildPolicy(
-        $network,$mean,$std_deviation,$lower_bound,$upper_bound,
+        $la,$network,$mean,$std_deviation,$lower_bound,$upper_bound,
         $theta,$dt,$x_initial)
     {
         $policy = new OUNoise(
-            $this->la, $network,
+            $la, $network,
             $mean,
             $std_deviation,
             $lower_bound,
@@ -294,19 +307,9 @@ class Ddpg extends AbstractAgent
         return 1;
     }
 
-    public function startEpisode(int $episode) : void
-    {}
-
-    public function endEpisode(int $episode) : void
-    {
-        if($this->targetUpdatePeriod <= 0) {
-            $this->syncWeights($this->targetUpdateTau);
-        }
-    }
-
     public function action($observation,bool $training)
     {
-        $actions = $this->policy->action($observation,$training,$this->elapsedTime);
+        $actions = $this->policy->action($observation,$training);
         return $actions;
     }
 
@@ -325,6 +328,21 @@ class Ddpg extends AbstractAgent
         return $q;
     }
 
+    protected function updateTarget($endEpisode)
+    {
+        if($this->targetUpdatePeriod > 0) {
+            $this->targetUpdateTimer--;
+            if($this->targetUpdateTimer <= 0) {
+                $this->syncWeights($this->targetUpdateTau);
+                $this->targetUpdateTimer = $this->targetUpdatePeriod;
+            }
+        } else {
+            if($endEpisode) {
+                $this->syncWeights($this->targetUpdateTau);
+            }
+        }
+    }
+
     public function update($experience) : float
     {
         $la = $this->la;
@@ -339,6 +357,9 @@ class Ddpg extends AbstractAgent
         if($experience->size()<$batchSize) {
             return 0.0;
         }
+        $transition = $experience->last();
+        $endEpisode = $transition[4];  // done
+
         $state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $obsSize)));
         $action_batch = $la->zeros($la->alloc(array_merge([$batchSize], $actionSize)));
         $next_state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $obsSize)));
@@ -497,14 +518,9 @@ class Ddpg extends AbstractAgent
             $this->critic_model->setShapeInspection(false);
             $this->enabledShapeInspection = false;
         }
-        if($this->targetUpdatePeriod > 0) {
-            $this->targetUpdateTimer--;
-            if($this->targetUpdateTimer <= 0) {
-                $this->syncWeights($this->targetUpdateTau);
-                $this->targetUpdateTimer = $this->targetUpdatePeriod;
-            }
-        }
         
+        $this->updateTarget($endEpisode);
+
         $loss = $K->scalar($actor_loss->value());
         return $loss;
     }

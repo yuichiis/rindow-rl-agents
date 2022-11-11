@@ -27,9 +27,9 @@ $boltzmann = new AverageReward($la,$qtable,
 $egreedy = new AverageReward($la,$qtable,
     new EpsilonGreedy($la,$qtable,$epsilon=0.1));
 $aegreedy = new AverageReward($la,$qtable,
-    new AnnealingEpsGreedy($la,$qtable,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1));
+    new AnnealingEpsGreedy($la,$qtable,start:$epsStart=0.9,stop:$epsEnd=0.1,decayRate:$decayRate=0.1));
 $aegreedy2 = new AverageReward($la,$qtable,
-    new AnnealingEpsGreedy($la,$qtable,null,null,$decayRate=0.03));
+    new AnnealingEpsGreedy($la,$qtable,decayRate:$decayRate=0.03));
 $ucb1 = new UCB1($la,$qtable);
 $driver0 = new EpisodeDriver($la,$env,$boltzmann,1);
 $driver1 = new EpisodeDriver($la,$env,$egreedy,1);
@@ -50,8 +50,12 @@ foreach($drivers as $driver) {
     $avg = $la->zeros($la->alloc([$episodes]));
     for($i=0;$i<$epochs;$i++) {
         $driver->agent()->initialize();
-        $history = $driver->train($episodes,null,$metrics=['reward'],
-            $evalInterval=1,$numEvalEpisodes=0,null,$verbose=0);
+        $p = $driver->agent()->policy();
+        if($p!==null) {
+            $p->initialize();
+        }
+        $history = $driver->train($episodes,metrics:$metrics=['reward'],
+        evalInterval:$evalInterval=1,numEvalEpisodes:$numEvalEpisodes=0,verbose:$verbose=0);
         $rewards = $la->array($history['reward'],NDArray::float32);
         $la->axpy($rewards,$avg);
 
@@ -68,11 +72,11 @@ foreach($drivers as $driver) {
 }
 foreach([0.1,0.03] as $rate) {
     $policy = new AnnealingEpsGreedy($la,$qtable,
-        $epsStart=0.9,$epsEnd=0.1,$decayRate=$rate);
+        start:$epsStart=0.9,stop:$epsEnd=0.1,decayRate:$decayRate=$rate);
     $eps = [];
     for($i=0;$i<$episodes;$i++) {
         $eps[] = $policy->getEpsilon();
-        $policy->action($dmystate=0,false);
+        $policy->action($dmystate=0,true);
     }
     $arts[] = $plt->plot($la->array($eps))[0];
 }

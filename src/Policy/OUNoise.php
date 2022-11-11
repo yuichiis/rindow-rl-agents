@@ -3,13 +3,11 @@ namespace Rindow\RL\Agents\Policy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Util\OUProcess;
 
-class OUNoise implements Policy
+class OUNoise extends AbstractPolicy
 {
-    protected $la;
     protected $qPolicy;
 
     protected $noiseMax = -INF;
@@ -28,7 +26,7 @@ class OUNoise implements Policy
         NDArray $x_initial=null
         )
     {
-        $this->la = $la;
+        parent::__construct($la);
         $this->qPolicy = $qPolicy;
         $this->lower_bound = $lower_bound;
         $this->upper_bound = $upper_bound;
@@ -51,7 +49,7 @@ class OUNoise implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training,int $time=null)
+    public function action($state,bool $training)
     {
         $la = $this->la;
         $actions = $this->qPolicy->getQValues($state);

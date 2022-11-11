@@ -3,12 +3,10 @@ namespace Rindow\RL\Agents\Policy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
 
-class EpsilonGreedy implements Policy
+class EpsilonGreedy extends AbstractPolicy
 {
-    protected $la;
     protected $qPolicy;
     protected $epsilon;
     protected $numActions;
@@ -21,7 +19,7 @@ class EpsilonGreedy implements Policy
         if($epsilon===null) {
             $epsilon = 0.1;
         }
-        $this->la = $la;
+        parent::__construct($la);
         $this->qPolicy = $qPolicy;
         $this->epsilon = $epsilon;
         $this->numActions = $this->qPolicy->numActions();
@@ -36,7 +34,7 @@ class EpsilonGreedy implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training,int $time=null)
+    public function action($state,bool $training)
     {
         if($training && $this->threshold > mt_rand()) {
             $action = mt_rand(0,$this->numActions-1);

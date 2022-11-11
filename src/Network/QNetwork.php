@@ -63,8 +63,12 @@ class QNetwork extends AbstractNetwork implements QPolicy
         $nn = $this->builder;
         $model = $this->buildMlpLayers(
             $obsSize,
-            $convLayers,$convType,$fcLayers,
-            $activation,$kernelInitializer);
+            convLayers:$convLayers,
+            convType:$convType,
+            fcLayers:$fcLayers,
+            activation:$activation,
+            kernelInitializer:$kernelInitializer);
+
         $model->add($nn->layers->Dense($numActions));
         return $model;
     }

@@ -3,18 +3,16 @@ namespace Rindow\RL\Agents\Policy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
 
-class Greedy implements Policy
+class Greedy extends AbstractPolicy
 {
-    protected $la;
     protected $qPolicy;
 
     public function __construct(
         $la, QPolicy $qPolicy)
     {
-        $this->la = $la;
+        parent::__construct($la);
         $this->qPolicy = $qPolicy;
     }
 
@@ -26,7 +24,7 @@ class Greedy implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training=null,int $time=null)
+    public function action($state,bool $training)
     {
         $qValues = $this->qPolicy->getQValues($state);
         return $this->la->imax($qValues);

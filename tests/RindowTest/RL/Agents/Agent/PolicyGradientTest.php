@@ -61,7 +61,7 @@ class Test extends TestCase
             [3],
             [0,3],
         ];
-        $agent = new PolicyGradient($la,$rules,$eta=0.1,$mo);
+        $agent = new PolicyGradient($la,$rules,$eta=0.1,mo:$mo);
         foreach($fixedActions as $obs => $actions) {
             for($i=0;$i<100;$i++) {
                 $action = $agent->action($obs,$training=true);
@@ -94,7 +94,7 @@ class Test extends TestCase
         ]);
         [$width,$height,$exit] = [3,3,8];
         $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
-        $agent = new PolicyGradient($la,$rules,$eta=0.1,$mo);
+        $agent = new PolicyGradient($la,$rules,$eta=0.1,mo:$mo);
         $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
 
         $numIterations=200;

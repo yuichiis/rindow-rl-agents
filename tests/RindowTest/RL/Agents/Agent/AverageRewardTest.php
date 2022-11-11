@@ -7,6 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Gym\ClassicControl\MultiarmedBandit\Slots;
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AverageReward;
 use Rindow\RL\Agents\Network\Probabilities;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
@@ -24,6 +25,9 @@ class TestPolicy implements Policy
     {
         $this->fixedAction = $fixedAction;
     }
+
+    public function register(EventManager $eventManager=null) : void
+    {}
 
     public function initialize() // : Operation
     {}

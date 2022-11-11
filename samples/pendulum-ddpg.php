@@ -73,9 +73,11 @@ if(!$ddpgAgent->fileExists($filename)) {
     //$driver = new StepDriver($la,$env,$ddpgAgent,$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
-    $history = $driver->train($numIterations,$maxSteps=null,
-        $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
-        $evalInterval,$numEvalEpisodes,$logInterval,$verbose=2);
+    $history = $driver->train(
+        numIterations:$numIterations,maxSteps:$maxSteps=null,
+        metrics:$metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,logInterval:$logInterval,
+        verbose:$verbose=2);
     //echo "\n";
     //[$noiseMin,$noiseMax,$actionMin,$actionMax] = $ddpgAgent->policy()->noiseActionMinMax();
     //var_dump([$noiseMin,$noiseMax,$actionMin,$actionMax]);

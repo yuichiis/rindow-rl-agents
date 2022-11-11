@@ -10,7 +10,8 @@ interface Agent
 
     public function policy();
 
-    public function setElapsedTime($elapsedTime) : void;
+    public function register(EventManager $eventManager=null) : void;
+
     /**
     * @param Any $states
     * @return Any $action
@@ -34,10 +35,6 @@ interface Agent
     * @return bool $stepUpdate
     */
     public function subStepLength() : int;
-
-    public function startEpisode(int $episode) : void;
-
-    public function endEpisode(int $episode) : void;
 
     public function fileExists(string $filename) : bool;
 

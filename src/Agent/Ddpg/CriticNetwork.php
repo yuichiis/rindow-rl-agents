@@ -1,11 +1,8 @@
 <?php
-namespace Rindow\RL\Agents\Network;
+namespace Rindow\RL\Agents\Agent\Ddpg;
 
-use Rindow\RL\Agents\QPolicy;
-use Rindow\RL\Agents\Util\Random;
 use Interop\Polite\Math\Matrix\NDArray;
-use InvalidArgumentException;
-use LogicException;
+use Rindow\RL\Agents\Network\AbstractNetwork;
 
 class CriticNetwork extends AbstractNetwork
 {

@@ -7,7 +7,6 @@ use InvalidArgumentException;
 
 class UCB1 extends AbstractAgent
 {
-    protected $la;
     protected $numActions;
     protected $numTrials;
     protected $numSuccesses;
@@ -16,9 +15,11 @@ class UCB1 extends AbstractAgent
     protected $step;
     protected $mo;
 
-    public function __construct($la,QPolicy $qpolicy,$mo=null)
+    public function __construct($la,
+        QPolicy $qpolicy,
+        $mo=null)
     {
-        $this->la = $la;
+        parent::__construct($la,null,null);
         $this->mo = $mo;
         $this->numActions = $qpolicy->numActions();
         $this->initialize();
@@ -50,14 +51,6 @@ class UCB1 extends AbstractAgent
         return 1;
     }
 
-    public function startEpisode(int $episode) : void
-    {
-    }
-
-    public function endEpisode(int $episode) : void
-    {
-    }
-
     public function getQValue($observation) : float
     {
         $q = $this->la->max($this->values);
@@ -68,7 +61,7 @@ class UCB1 extends AbstractAgent
     * @param Any $states
     * @return Any $action
     */
-    public function action($observation,$training=null)
+    public function action($observation,$training)
     {
         $la = $this->la;
         if($training) {

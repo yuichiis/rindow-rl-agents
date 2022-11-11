@@ -8,6 +8,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent;
+use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use LogicException;
@@ -79,6 +80,9 @@ class TestAgent implements Agent
         $this->assertUpdateLast = $assertUpdateLast;
     }
 
+    public function register(EventManager $eventManager=null) : void
+    {}
+
     public function currents()
     {
         return [
@@ -141,12 +145,6 @@ class TestAgent implements Agent
     {
         return true;
     }
-
-    public function startEpisode(int $episode) : void
-    {}
-
-    public function endEpisode(int $episode) : void
-    {}
 
     /**
     * @return bool $stepUpdate

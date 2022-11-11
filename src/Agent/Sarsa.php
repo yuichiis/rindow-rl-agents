@@ -3,13 +3,13 @@ namespace Rindow\RL\Agents\Agent;
 
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network\QTable;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 
 class Sarsa extends AbstractAgent
 {
-    protected $la;
     protected $qTable;
     protected $eta;
     protected $gamma;
@@ -17,11 +17,12 @@ class Sarsa extends AbstractAgent
 
     public function __construct($la,
         QTable $qTable, Policy $policy,
-        $eta,$gamma,$mo=null)
+        $eta,$gamma,
+        EventManager $eventManager=null,
+        $mo=null)
     {
-        $this->la = $la;
+        parent::__construct($la,$policy,$eventManager);
         $this->qTable = $qTable;
-        $this->setPolicy($policy);
         $this->eta = $eta;
         $this->gamma = $gamma;
     }
@@ -45,12 +46,6 @@ class Sarsa extends AbstractAgent
         return 2;
     }
 
-    public function startEpisode(int $episode) : void
-    {}
-
-    public function endEpisode(int $episode) : void
-    {}
-
     /**
     * @param Any $states
     * @return Any $action
@@ -59,7 +54,7 @@ class Sarsa extends AbstractAgent
     {
         $la = $this->la;
         //if($training) {
-            $action = $this->policy->action($observation,$training,$this->elapsedTime);
+            $action = $this->policy->action($observation,$training);
         //} else {
         //    $qValues = $this->qTable->getQValues($observation);
         //    $action = $la->imax($qValues);

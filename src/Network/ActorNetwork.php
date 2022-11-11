@@ -15,7 +15,7 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
             array $obsSize, array $actionSize,
             array $convLayers=null,string $convType=null,array $fcLayers=null,
             $activation=null,$kernelInitializer=null,
-            float $minval=null, float $maxval=null,
+            array $outputOptions=null,
             $model=null
         )
     {
@@ -24,14 +24,14 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         $this->actionSize = $actionSize;
 
         if($model===null) {
-            $model = $this->buildQModel(
+            $model = $this->buildActorModel(
                 $obsSize,$actionSize,
                 $convLayers,$convType,$fcLayers,
                 $activation,$kernelInitializer,
-                $minval, $maxval
+                $outputOptions,
             );
         }
-        $this->qmodel = $model;
+        $this->model = $model;
     }
 
     public function actionSize()
@@ -39,18 +39,16 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         return $this->actionSize;
     }
 
-    protected function buildQModel(
+    protected function buildActorModel(
         $obsSize,$actionSize,
         $convLayers,$convType,$fcLayers,
         $activation,$kernelInitializer,
-        $minval, $maxval
+        $outputOptions,
         )
     {
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [256, 256];
         }
-        $minval = $minval ?? -0.003;
-        $maxval = $maxval ?? 0.003;
 
         $nn = $this->builder;
         $K = $this->backend;
@@ -63,17 +61,31 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
             kernelInitializer:$kernelInitializer);
 
         $actionSize = (int)array_product($actionSize);
-        $last_init = $K->getInitializer('random_uniform',
-                minval:$minval,maxval:$maxval);
+        $last_init = null;
+        $initializer = null;
+        $initializerOpts = [];
+        if(isset($outputOptions['initializer']['kernelInitializer'])) {
+            $initializer = $outputOptions['initializer']['kernelInitializer'];
+        }
+        if(isset($outputOptions['initializer']['options'])) {
+            $initializerOpts = $outputOptions['initializer']['options'];
+        }
+        if($initializer !== null) {
+            $last_init = $K->getInitializer($initializer, ...$initializerOpts);
+        }
+        $last_activation = 'softmax';
+        if(isset($outputOptions['activation'])) {
+            $last_activation = $outputOptions['activation'];
+        }
         $model->add(
-            $nn->layers->Dense(1, activation:'tanh', kernel_initializer:$last_init)
+            $nn->layers->Dense($actionSize, activation:$last_activation, kernel_initializer:$last_init)
         );
         return $model;
     }
 
     protected function call($inputs,$training)
     {
-        $outputs = $this->qmodel->forward($inputs,$training);
+        $outputs = $this->model->forward($inputs,$training);
         return $outputs;
     }
 
@@ -87,7 +99,7 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         }
         $state = $la->expandDims($state,$axis=0);
         //$actions = $actor_model->predict($state);
-        $actions = $this->qmodel->forward($state,false);
+        $actions = $this->model->forward($state,false);
         $actions = $la->squeeze($actions,$axis=0);
         return $actions;
     }

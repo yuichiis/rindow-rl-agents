@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DqnTest;
+namespace RindowTest\RL\Agents\Agent\ReinforceTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -9,7 +9,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Agent\DQN;
+use Rindow\RL\Agents\Agent\Reinforce;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -70,7 +70,7 @@ class Test extends TestCase
         $fixedActions = [0,1];
         foreach($fixedActions as $fixedAction) {
             $policy = new TestPolicy($fixedAction);
-            $agent = new DQN($la,policy:$policy,nn:$nn, obsSize:[1], numActions:2,fcLayers:[100]);
+            $agent = new Reinforce($la,policy:$policy,nn:$nn, obsSize:[1], numActions:2,fcLayers:[100]);
             for($i=0;$i<100;$i++) {
                 $this->assertEquals($fixedAction,$agent->action($la->array([1]),$training=true));
             }
@@ -84,21 +84,22 @@ class Test extends TestCase
         $nn = $this->newBuilder($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $agent = new DQN($la,
-            batchSize:2, epsStart:0, epsStop:0,
-            nn:$nn, obsSize:[1], numActions:2, fcLayers:[100]);
-        $mem = new ReplayBuffer($la,$maxsize=2);
-        //[$observation,$action,$nextObs,$reward,$done,$info]
-        $mem->add([0,1,1,1,false,[]]);
-        $mem->add([1,1,2,1,false,[]]);
+        $agent = new Reinforce($la,
+            nn:$nn, obsSize:[1], numActions:2, fcLayers:[100],
+            mo:$mo,
+        );
+        $mem = new ReplayBuffer($la,$maxsize=10000);
         $losses = [];
-        for($i=0;$i<100;$i++) {
+        for($i=0;$i<5;$i++) {
+        //[$observation,$action,$nextObs,$reward,$done,$info]
+            $mem->add([0,1,1,1,false,[]]);
+            $mem->add([1,1,2,1,false,[]]);
             $losses[] = $agent->update($mem);
         }
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('DQN');
+        $plt->title('Reinforce');
         $plt->show();
         $this->assertTrue(true);
     }

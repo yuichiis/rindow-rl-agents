@@ -6,12 +6,13 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Agent\Ddpg;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Network\ActorNetwork;
-use Rindow\RL\Agents\Network\CriticNetwork;
+use Rindow\RL\Agents\Agent\Ddpg\CriticNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -23,6 +24,9 @@ class TestPolicy implements Policy
     {
         $this->fixedAction = $fixedAction;
     }
+
+    public function register(EventManager $eventManager=null) : void
+    {}
 
     public function initialize() // : Operation
     {}

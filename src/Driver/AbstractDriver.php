@@ -5,19 +5,24 @@ use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Driver;
 use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
+use Rindow\RL\Agents\EventManager as EventManagerInterface;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\Util\EventManager;
 
 abstract class AbstractDriver implements Driver
 {
     protected $la;
     protected $agent;
     protected $experience;
+    protected $eventManager;
     protected $experienceSize;
     protected $customRewardFunction;
     protected $customObservationFunction;
 
     public function __construct(
-        object $la, Agent $agent, int $experienceSize, ReplayBufferInterface $replayBuffer=null)
+        object $la, Agent $agent, int $experienceSize,
+        ReplayBufferInterface $replayBuffer=null,
+        EventManagerInterface $eventManager=null)
     {
         $this->la = $la;
         $this->agent = $agent;
@@ -26,6 +31,21 @@ abstract class AbstractDriver implements Driver
             $replayBuffer = new ReplayBuffer($this->la,$this->experienceSize);
         }
         $this->experience = $replayBuffer;
+        if($eventManager===null) {
+            $eventManager = new EventManager();
+        }
+        $this->eventManager = $eventManager;
+        $agent->register($eventManager);
+    }
+
+    protected function onStartEpisode() : void
+    {
+        $this->eventManager->notify(Driver::EVENT_START_EPISODE);
+    }
+
+    protected function onEndEpisode() : void
+    {
+        $this->eventManager->notify(Driver::EVENT_END_EPISODE);
     }
 
     public function setCustomRewardFunction(callable $func) : void

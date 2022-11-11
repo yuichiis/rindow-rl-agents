@@ -3,15 +3,13 @@ namespace Rindow\RL\Agents\Policy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Util\Random;
 
-class Boltzmann implements Policy
+class Boltzmann extends AbstractPolicy
 {
     use Random;
 
-    protected $la;
     protected $qPolicy;
     protected $tau;
     protected $min;
@@ -47,7 +45,7 @@ class Boltzmann implements Policy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training,int $time=null)
+    public function action($state,bool $training)
     {
         $la = $this->la;
         // get probabilities
@@ -59,7 +57,10 @@ class Boltzmann implements Policy
 
         if($this->softmax) {
             $qValues = $la->expandDims($qValues,$axis=0);
-            $probabilities = $la->softmax($la->pow($la->copy($qValues),$this->tau));
+            if($this->tau!=1.0) {
+                $qValues = $la->pow($la->copy($qValues),$this->tau);
+            }
+            $probabilities = $la->softmax($qValues);
             $probabilities = $la->squeeze($probabilities);
         } else {
             // q ** tau / sum(q ** tau)

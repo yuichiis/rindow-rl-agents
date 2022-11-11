@@ -55,8 +55,8 @@ $gamma=0.9;
 
 $env = new CartPoleV0($la);
 $qtable = new QTable($la,$poleRules);
-$policy = new AnnealingEpsGreedy($la,$qtable,$espstart,$espstop,$decayRate);
-$qlearning = new QLearning($la,$qtable,$policy,$eta,$gamma,$mo);
+$policy = new AnnealingEpsGreedy($la,$qtable,start:$espstart,stop:$espstop,decayRate:$decayRate);
+$qlearning = new QLearning($la,$qtable,$policy,$eta,$gamma,mo:$mo);
 //$qlearning->setDigitizeStateFunction($digitizeState);
 $driver3 = new EpisodeDriver($la,$env,$qlearning,$experienceSize=1);
 $driver3->setCustomRewardFunction($customReward);

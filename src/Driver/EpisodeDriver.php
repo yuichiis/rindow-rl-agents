@@ -9,21 +9,20 @@ use Rindow\RL\Agents\ReplayBuffer;
 class EpisodeDriver extends AbstractDriver
 {
     protected $env;
-    protected $episodeAnnealing;
 
     public function __construct(object $la,
         Env $env, Agent $agent, int $experienceSize, ReplayBuffer $replayBuffer=null,
-        bool $episodeAnnealing=null)
+        )
     {
         parent::__construct($la,$agent,$experienceSize,$replayBuffer);
         $this->env = $env;
-        $this->episodeAnnealing = $episodeAnnealing;
         $this->initialize();
     }
 
     public function train(
-        $numIterations=null,$maxSteps=null,array $metrics=null,
-        $evalInterval=null,$numEvalEpisodes=null,$logInterval=null,$verbose=null) : array
+        int $numIterations=null,int $maxSteps=null,array $metrics=null,
+        int $evalInterval=null, int $numEvalEpisodes=null, int $logInterval=null,
+        int $verbose=null) : array
     {
         if($numIterations===null || $numIterations<=0) {
             $numIterations = 1000;
@@ -36,9 +35,7 @@ class EpisodeDriver extends AbstractDriver
         } elseif($numEvalEpisodes<0) {
             $numEvalEpisodes = 0;
         }
-        if($logInterval===null || $logInterval<=0) {
-            $logInterval = 100;
-        }
+        // $logInterval :  N/A
         if($verbose===null) {
             $verbose = 0;
         }
@@ -72,10 +69,6 @@ class EpisodeDriver extends AbstractDriver
             $episodeSteps = 0;
             $episodeLoss = 0.0;
             $done = false;
-            if($this->episodeAnnealing) {
-                $agent->setElapsedTime($episode);
-            }
-            $agent->startEpisode($episode);
             $observation = $env->reset();
             $observation = $this->customObservation($env,$observation,false);
             while(!$done) {
@@ -112,7 +105,7 @@ class EpisodeDriver extends AbstractDriver
             }
             $sumReward += $episodeReward;
             $sumSteps += $episodeSteps;
-            $agent->endEpisode($episode);
+            $this->onEndEpisode();
             $episodeCount++;
             $epsilon = null;
             if($verbose>1 ||
@@ -120,11 +113,7 @@ class EpisodeDriver extends AbstractDriver
                 if(method_exists($agent,'policy')) {
                     $policy = $agent->policy();
                     if($policy && method_exists($policy,'getEpsilon')) {
-                        $elapsed = null;
-                        if($this->episodeAnnealing) {
-                            $elapsed = $episode;
-                        }
-                        $epsilon = $policy->getEpsilon($elapsed);
+                        $epsilon = $policy->getEpsilon();
                     }
                 }
             }

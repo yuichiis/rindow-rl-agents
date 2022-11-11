@@ -7,10 +7,11 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
+use Rindow\RL\Agents\Agent\A2C\ActorCriticNetwork;
 use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 
-class Dqn extends AbstractAgent
+class A2C extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
     protected $gamma;
@@ -120,7 +121,7 @@ class Dqn extends AbstractAgent
         if($numActions===null) {
             throw new InvalidArgumentException('numActions must be specifed.');
         }
-        $network = new QNetwork($la,$nn,
+        $network = new ActorCriticNetwork($la,$nn,
             $obsSize, $numActions,fcLayers:$fcLayers);
         return $network;
     }
@@ -266,11 +267,12 @@ class Dqn extends AbstractAgent
         $obsSize = $this->obsSize;
         $numActions = $this->numActions;
 
-        if($experience->size()<$batchSize) {
+        $transition = $experience->last();
+        [$observation,$action,$nextObs,$reward,$endEpisode,$info] = $transition;  // done
+
+        if(!$endEpisode && $experience->size()<$batchSize) {
             return 0.0;
         }
-        $transition = $experience->last();
-        $endEpisode = $transition[4];  // done
 
         $states = $la->alloc(array_merge([$batchSize], $obsSize));
         $nextStates = $la->alloc(array_merge([$batchSize], $obsSize));
@@ -278,66 +280,91 @@ class Dqn extends AbstractAgent
         $discounts = $la->zeros($la->alloc([$batchSize]));
         $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
 
-        $batch = $experience->sample($batchSize);
-        $i = 0;
-        foreach($batch as $transition) {
+
+        if($endEpisode) {
+            $discounted = 0;
+        } else {
+            if(is_scalar($nextObs)) {
+                $nextObs = $la->array([[$nextObs]]);
+            } elseif($nextObs instanceof NDArray) {
+                $nextObs = $la->expandDims($nextObs);
+            }
+            [$tmp,$v] = $this->trainModel->forward($nextObs,false);
+            $discounted = $la->scalar(($la->squeeze($v)));
+            unset($tmp);
+            unset($v);
+        }
+        $history = $experience->recently($experience->size());
+        $totalReward = 0;
+        $i = $steps-1;
+        $history = array_reverse($history);
+        foreach ($history as $transition) {
             [$observation,$action,$nextObs,$reward,$done,$info] = $transition;
+            if($done) {
+                $discounted = 0;
+            }
+            $discounted = $reward + $discounted*$this->gamma;
+            $discountedRewards[$i] = $discounted;
+            $rewards[$i] = $reward;
             if(is_numeric($observation)) {
                 $states[$i][0] = $observation;
             } else {
                 $la->copy($observation,$states[$i]);
             }
-            if(is_numeric($nextObs)) {
-                $nextStates[$i][0] = $nextObs;
-            } else {
-                $la->copy($nextObs,$nextStates[$i]);
-            }
-            $rewards[$i] = $reward;
-            $discounts[$i] = $done ? 0.0 : 1.0;
             $actions[$i] = $action;
-            $i++;
+            if(!$done) {
+                $discounts[$i] = 1.0;
+            }
+            $i--;
         }
-        $nextQValues = $this->targetModel->getQValuesBatch(
-                $nextStates);
-        if($this->ddqn) {
-            $nextActions = $this->trainModel->getQValuesBatch($nextStates);
-            $nextActions = $la->reduceArgMax($nextActions,$axis=-1);
-            $nextQValues = $la->gather($nextQValues,$nextActions,$axis=-1);
-        } else {
-            $nextQValues = $la->reduceMax($nextQValues,$axis=-1);
-        }
-        $la->scal($this->gamma,$nextQValues);
-        $la->multiply($discounts,$nextQValues);
-        $la->axpy($rewards,$nextQValues);
+        $experience->clear();
 
-        //$history = $this->trainModel->fit([$states,$actions],$nextQValues,
-        //    batch_size:$batchSize,epochs:1, verbose:0);
-        $trainModel = $this->trainModelGraph;
+        // baseline
+        $baseline = $K->mean($discountedRewards);
+        $la->increment($discountedRewards, -1.0*$baseline);
+
+        $discountedRewards = $g->Variable($discountedRewards);
+
+        // gradients
+        $trainModel = $this->model;
         $gather = $this->gather;
-        $lossFn = $this->lossFn;
-
-        $states = $g->Variable($states);
-        $actions = $g->Variable($actions);
-        $nextQValues = $g->Variable($nextQValues);
         $training = $g->Variable(true);
-        $loss = $nn->with($tape=$g->GradientTape(), function()
-                use ($trainModel,$gather,$lossFn,$states,$actions,$nextQValues,$training) {
-            $qValues = $trainModel($states,$training);
-            $qValues = $gather->forward([$qValues,$actions],$training);
-            $loss = $lossFn->forward($nextQValues,$qValues);
+        $loss = $nn->with($tape=$g->GradientTape(),function() 
+                use ($g,$gather,$trainModel,$states,$training,$actions,$discountedRewards) {
+            [$actionProbs, $values] = $trainModel($states,$training);
+            // action probs
+            $actionProbs = $gather->forward([$actionProbs,$actions],$training);
+            // advantage
+            $advantage = $discountedRewards - $g->stopGradient($values);
+            $actionProbs = $g->clipByValue($actionProbs, 1e-10, 1.0);
+            $policyLoss = $g->mul($g->log($actionProbs),$advantage);
+
+            // Value loss
+            // Mean Squared Error
+            $valueLoss = $g->reduceMean($g->pow($g->sub($discounted_rewards,$values) ,2.0), axis:1);
+
+            // policy entropy
+            $entropy = $g->reduceSum($g->mul($g->log($actionProbs),$actionProbs), axis:1);
+
+            // total loss
+            $value_loss_weight = $g->Variable(0.5);
+            $entropy_weight = $g->Variable(0.1);
+            $loss = $g->sub( 
+                $g->sub(
+                    $g->mul($value_loss_weight, $valueLoss),
+                    $g->mul($entropy_weight, $entropy)),
+                $policyLoss);
+
+            $loss = $g->reduceMean($loss);
+
             return $loss;
         });
         $grads = $tape->gradient($loss,$this->trainableVariables);
         $this->optimizer->update($this->trainableVariables,$grads);
 
-        if($this->enabledShapeInspection) {
-            $this->trainModel->setShapeInspection(false);
-            $this->targetModel->setShapeInspection(false);
-            $this->enabledShapeInspection = false;
-        }
-
-        $this->updateTarget($endEpisode);
-
-        return $nn->backend()->scalar($loss->value());
+        $loss = $K->scalar($loss);
+        //echo "loss=".$loss."\n";
+        return $loss;
     }
+
 }

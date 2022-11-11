@@ -135,25 +135,30 @@ echo $mo->toString($obs,'%1.2f')."\n";
 //exit();
 
 $evalEnv = new MountainCarV0($la);
-$network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers,$convType,$fcLayers,$activation);
-$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
+$network = new QNetwork($la,$nn,$obsSize,$numActions,
+    convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,activation:$activation);
+$policy = new AnnealingEpsGreedy($la,$network,
+    start:$epsStart,stop:$epsStop,decayRate:$decayRate,episodeAnnealing:$episodeAnnealing);
 $dqnAgent = new Dqn(
-    $la,$network,$policy,
-    $batchSize,$gamma,$targetUpdatePeriod,$targetUpdateTau,
-    $ddqn,null,$lossFn,null,null,['lr'=>$learningRate],
-    null,null,null,null,null,null,$mo
+    $la,network:$network,policy:$policy,
+    batchSize:$batchSize,gamma:$gamma,
+    targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
+    ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],
+    mo:$mo
 );
 $dqnAgent->summary();
-$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize,null,$episodeAnnealing);
-//$driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,null,$episodeAnnealing,$evalEnv);
+$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize);
+//$driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,$evalEnv);
 $driver->setCustomRewardFunction($customReward);
 $filename = __DIR__.'\\mountaincar-dqn.model';
 if(!file_exists($filename)) {
     $arts = [];
     //$driver->agent()->initialize();
-    $history = $driver->train($numIterations,$maxSteps=null,
-        $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
-        $evalInterval,$numEvalEpisodes,$logInterval,$verbose=1);
+    $history = $driver->train(
+        numIterations:$numIterations,maxSteps:$maxSteps=null,
+        metrics:$metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
+        logInterval:$logInterval,verbose:$verbose=1);
     echo "\n";
     $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
     $arts[] = $plt->plot($ep,$la->scal(-1,$la->array($history['steps'])))[0];

@@ -1,26 +1,26 @@
 <?php
 namespace Rindow\RL\Agents\Agent;
 
+use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
-use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\RL\Agents\EventManager;
 use InvalidArgumentException;
 
 class AverageReward extends AbstractAgent
 {
-    protected $la;
     protected $qpolicy;
     protected $numActions;
     protected $numTrials;
     protected $values;
     protected $customRewardFunction;
 
-    public function __construct($la, QPolicy $qpolicy, Policy $policy)
+    public function __construct($la,
+        QPolicy $qpolicy, Policy $policy, EventManager $eventManager=null)
     {
-        $this->la = $la;
         $this->qpolicy = $qpolicy;
         $this->numActions = $qpolicy->numActions();
-        $this->setPolicy($policy);
+        parent::__construct($la,$policy,$eventManager);
         $this->initialize();
     }
 
@@ -45,14 +45,6 @@ class AverageReward extends AbstractAgent
         return 1;
     }
 
-    public function startEpisode(int $episode) : void
-    {
-    }
-
-    public function endEpisode(int $episode) : void
-    {
-    }
-
     public function getQValue($observation) : float
     {
         $qValues = $this->qpolicy->getQValues($observation);
@@ -68,7 +60,7 @@ class AverageReward extends AbstractAgent
     {
         //$la = $this->la;
         //if($training) {
-            $action = $this->policy->action($observation,$training,$this->elapsedTime);
+            $action = $this->policy->action($observation,$training);
         //} else {
         //    $action = $la->imax($this->values);
         //}

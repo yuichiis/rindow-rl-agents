@@ -7,8 +7,9 @@ use Rindow\Math\Plot\Plot;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Agent\DQN;
+use Rindow\RL\Agents\Agent\Reinforce;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
+use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 
@@ -43,7 +44,7 @@ $maxExperienceSize = 10000;#100000;
 #######################
 $batchSize = 32;
 $gamma = 0.9;#0.99;#1.0;#
-$fcLayers = [100];# [32,32];#
+$fcLayers = [10,10];# [32,32];#
 $targetUpdatePeriod = 5;   #5;  #5;    #5;   #200;#
 $targetUpdateTau =    0.05;#0.1;#0.025;#0.01;#1.0;#
 $learningRate = 1e-3;#1e-1;#
@@ -51,10 +52,10 @@ $epsStart = 0.9;#0.1;#1.0; #1.0; #1.0; #
 $epsStop =  0.1;#0.1;#0.05;#0.01;#0.05;#
 $decayRate = 0.07;#0.001;#0.0005;#
 $episodeAnnealing = true;
-$ddqn = true;#false;#
 $experienceSize = 10000;#100;#
 $activation = 'tanh';#'relu';#
 $lossFn = $nn->losses->MeanSquaredError();
+$useBaseline = false;
 
 $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps);
 //$env->reset();
@@ -66,28 +67,21 @@ $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps
 $obsSize = [1];
 $numActions = $env->actionSpace()->n();
 
-$network = new QNetwork(
-    $la,$nn,$obsSize,$numActions,
-    fcLayers:$fcLayers,activation:$activation,rules:$mazeRules);
+$network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers=null,$convType=null,$fcLayers,$activation,null,$mazeRules);
 //$network = new QNetwork($la,$nn,$obsSize,$numActions,$fcLayers,$activation,null,$mazeRules,null,$mo);
-$policy2 = new AnnealingEpsGreedy($la,
-    qPolicy:$network,
-    start:$epsStart,stop:$epsStop,decayRate:$decayRate,
-    episodeAnnealing:$episodeAnnealing);
-$dqn = new Dqn($la,
-    network:$network,policy:$policy2,
-    batchSize:$batchSize,gamma:$gamma,
-    targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
-    ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],
-    mo:$mo
+//$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
+$policy = new Boltzmann($la,$network,softmax:true);
+$agent = new Reinforce(
+    $la,network:$network,policy:$policy,gamma:$gamma,useBaseline:$useBaseline,
+    optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
-$dqn->summary();
+$agent->summary();
 
-$driver4 = new EpisodeDriver($la,$env,$dqn,$experienceSize);
+$driver4 = new EpisodeDriver($la,$env,$agent,$experienceSize,null,$episodeAnnealing);
 $driver4->setCustomObservationFunction($customObservationFunction);
 $drivers = [$driver4];
 
-$filenamePattern = __DIR__.'\\maze-dqn-%d';
+$filenamePattern = __DIR__.'\\maze-reinforce-%d';
 $arts = [];
 foreach ($drivers as $i => $driver) {
     $agent = $driver->agent();
@@ -95,16 +89,14 @@ foreach ($drivers as $i => $driver) {
     if(!$agent->fileExists($filename)) {
         // $agent->initialize();
         $history = $driver->train(
-            $episodes,null,$metrics=['steps','reward','val_steps','val_reward','epsilon'],
-            $evalInterval,$numEvalEpisodes,null,$verbose=1);
+            $episodes,null,$metrics=['steps','reward','val_steps','epsilon'],
+            $evalInterval,$numEvalEpisodes,null,$verbose=2);
         $ep = $mo->arange((int)floor($episodes/$evalInterval),$evalInterval,$evalInterval);
         $arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
-        $arts[] = $plt->plot($ep,$la->increment($la->array($history['reward']),100))[0];
+        $arts[] = $plt->plot($ep,$la->scal(-1,$la->array($history['reward'])))[0];
         $arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
-        $arts[] = $plt->plot($ep,$la->increment($la->array($history['val_reward']),100))[0];
-        $arts[] = $plt->plot($ep,$la->scal($maxEpisodeSteps,$la->array($history['epsilon'])))[0];
 
-        $plt->legend($arts,['steps','reward','val_steps','val_reward','epsilon']);
+        $plt->legend($arts,['steps','reward','val_steps']);
         $plt->xlabel('episodes');
         $plt->ylabel('avg steps');
         $plt->show();

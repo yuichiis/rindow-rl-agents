@@ -38,17 +38,17 @@ $mazeRules = $la->array([
 $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
 
 $qtable = new QTable($la,$mazeRules);
-$policy = new AnnealingEpsGreedy($la,$qtable,$espstart=1.0,$stop=0.01,$decayRate=0.01);
+$policy = new AnnealingEpsGreedy($la,$qtable,$espstart=1.0,$stop=0.01,$decayRate=0.05,episodeAnnealing:true);
 //$policy = new AnnealingEpsGreedy($la,$qtable,$espstart=0.1,$stop=0.1,$decayRate=0.01);
-$pg = new PolicyGradient($la,$mazeRules,$eta=0.1,$mo);
-$sarsa = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,$mo);
-$qlearning = new QLearning($la,$qtable,$policy,$eta=0.1,$gamma=0.9,$mo);
+$pg = new PolicyGradient($la,$mazeRules,$eta=0.1,mo:$mo);
+$sarsa = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
+$qlearning = new QLearning($la,$qtable,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
 
 $driver1 = new EpisodeDriver($la,$env,$pg,$experienceSize=10000);
-$driver2 = new EpisodeDriver($la,$env,$sarsa,$experienceSize=2,null,$episodeAnnealing=true);
-$driver3 = new EpisodeDriver($la,$env,$qlearning,$experienceSize=2,null,$episodeAnnealing=true);
-//$drivers = [$driver1,$driver2,$driver3];
-$drivers = [$driver2];
+$driver2 = new EpisodeDriver($la,$env,$sarsa,$experienceSize=2);
+$driver3 = new EpisodeDriver($la,$env,$qlearning,$experienceSize=2);
+$drivers = [$driver1,$driver2,$driver3];
+//$drivers = [$driver2];
 
 $episodes = 100;#250;#15;#
 $epochs = 50;#500;#
@@ -61,6 +61,10 @@ foreach ($drivers as $driver) {
     $avgvalsteps = $la->zeros($la->alloc([(int)floor($episodes/$evalInterval)]));
     for($i=0;$i<$epochs;$i++) {
         $driver->agent()->initialize();
+        $p = $driver->agent()->policy();
+        if($p!==null) {
+            $p->initialize();
+        }
         $history = $driver->train(
             $episodes,null,$metrics=['steps','val_steps','epsilon'],
             $evalInterval,$numEvalEpisodes,null,$verbose=0);
