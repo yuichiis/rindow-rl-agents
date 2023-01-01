@@ -10,10 +10,9 @@ class Greedy extends AbstractPolicy
     protected $qPolicy;
 
     public function __construct(
-        $la, QPolicy $qPolicy)
+        $la)
     {
         parent::__construct($la);
-        $this->qPolicy = $qPolicy;
     }
 
     public function initialize()
@@ -24,9 +23,12 @@ class Greedy extends AbstractPolicy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training)
+    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
     {
-        $qValues = $this->qPolicy->getQValues($state);
-        return $this->la->imax($qValues);
+        $la = $this->la;
+        $qValues = $qPolicy->getQValues($state);
+        $action = $la->reduceArgMax($qValues,$axis=-1);
+        $action = $la->expandDims($action,$axis=-1);
+        return $action;
     }
 }

@@ -17,7 +17,7 @@ class PolicyGradient extends AbstractAgent
     protected $initialPolicy;
     protected $eta;
     protected $p;
-    public $ptable;
+    public $thresholds;
     protected $mo;
 
     public function __construct($la,
@@ -25,28 +25,18 @@ class PolicyGradient extends AbstractAgent
         EventManager $eventManager=null,
         $mo=null)
     {
-        $table = $this->buildNetwork($la,$rules);
-        $policy = $this->buildPolicy($la,$table);
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,$rules,$eventManager);
         $this->eta = $eta;
         $this->mo = $mo; // for debug
-        $this->ptable = $table;
         $this->initialPolicy = $la->copy($rules);
         [$ns,$na] = $rules->shape();
         $this->ones = $la->ones($la->alloc([$na]));
         $this->initialize();
     }
 
-    protected function buildNetwork($la,$rules)
+    public function policy()
     {
-        $table = new PolicyTable($la,$rules);
-        return $table;
-    }
-
-    protected function buildPolicy($la,$network)
-    {
-        $policy = new Boltzmann($la,fromLogits:true);
-        return $policy;
+        return null;
     }
 
     public function isStepUpdate() : bool
@@ -61,36 +51,25 @@ class PolicyGradient extends AbstractAgent
 
     public function initialize() // : Operation
     {
-        //$la = $this->la;
-        //$la->copy($this->initialPolicy,$this->policy);
-        //$this->p = $this->generateProbabilities($this->policy);
-        //$this->thresholds = $this->generateThresholds($this->p);
-        $this->policy->initialize();
+        $la = $this->la;
+        $la->copy($this->initialPolicy,$this->policy);
+        $this->p = $this->generateProbabilities($this->policy);
+        $this->thresholds = $this->generateThresholds($this->p);
     }
 
-    public function resetData()
+    /**
+    * @param Any $states
+    * @return Any $action
+    */
+    public function action($observation,bool $training)
     {
-        $this->ptable->initialize();
+        if($training) {
+            $action = $this->randomChoice($this->thresholds[$observation], isThresholds:true);
+        } else {
+            $action = $this->la->imax($this->p[$observation]);
+        }
+        return $action;
     }
-
-    protected function policyTable() : QPolicy
-    {
-        return $this->ptable;
-    }
-
-    ///**
-    //* @param Any $states
-    //* @return Any $action
-    //*/
-    //public function action($observation,bool $training)
-    //{
-    //    if($training) {
-    //        $action = $this->randomChoice($this->thresholds[$observation], isThresholds:true);
-    //    } else {
-    //        $action = $this->la->imax($this->p[$observation]);
-    //    }
-    //    return $action;
-    //}
 
     public function getQValue($observation) : float
     {
@@ -120,14 +99,13 @@ class PolicyGradient extends AbstractAgent
         // th(s,a) = th(s,a) + eta * (N(s,a)+P(s,a)*N(s))/T
         $totalStep = count($history); // T
 
-        $th = $this->ptable->table(); // th
+        $th = $this->policy;      // th
         $p = $this->p;            // P
         $eta = $this->eta;        // eta
         $delta = $la->scal($eta/$totalStep,$la->axpy($nsa,$la->multiply($p,$ns)));
-        $la->axpy($delta,$th);
-
-        $this->p = $this->generateProbabilities($this->ptable->table());
-        //$this->thresholds = $this->generateThresholds($this->p);
+        $la->axpy($delta,$this->policy);
+        $this->p = $this->generateProbabilities($this->policy);
+        $this->thresholds = $this->generateThresholds($this->p);
         $experience->clear();
         
         return $la->nrm2($delta);
@@ -157,7 +135,7 @@ class PolicyGradient extends AbstractAgent
         $dump = file_get_contents($filename);
         $policy = unserialize($dump);
         $la->copy($policy,$this->policy);
-        //$this->p = $this->generateProbabilities($this->policy);
-        //$this->thresholds = $this->generateThresholds($this->p);
+        $this->p = $this->generateProbabilities($this->policy);
+        $this->thresholds = $this->generateThresholds($this->p);
     }
 }

@@ -17,7 +17,7 @@ class A2C extends AbstractAgent
     protected $gamma;
     protected $rewardScaleFactor;
     protected $obsSize;
-    protected $numActions;
+    protected $actionSize;
     protected $ddqn;
     protected $targetUpdatePeriod;
     protected $targetUpdateTimer;
@@ -47,7 +47,7 @@ class A2C extends AbstractAgent
         array $lossOpts=null,
         object $optimizer=null,
         array $optimizerOpts=null,
-        array $obsSize=null, int $numActions=null,
+        array $obsSize=null, array $actionSize=null,
         array $fcLayers=null,
         float $epsStart=null, float $epsStop=null, float $epsDecayRate=null,
         EventManager $eventManager=null,
@@ -55,9 +55,10 @@ class A2C extends AbstractAgent
         )
     {
         if($network===null) {
-            $network = $this->buildNetwork($la,$nn,$obsSize,$numActions,$fcLayers);
+            $network = $this->buildNetwork($la,$nn,$obsSize,$actionSize,$fcLayers);
         }
         if(!($network instanceof QPolicy)) {
+            echo get_class($network);
             throw new InvalidArgumentException('Network must have Network and QPolicy interfaces.');
         }
         if($policy===null) {
@@ -68,8 +69,8 @@ class A2C extends AbstractAgent
         if($obsSize===null) {
             $obsSize = $network->obsSize();
         }
-        if($numActions===null) {
-            $numActions = $network->numActions();
+        if($actionSize===null) {
+            $actionSize = $network->actionSize();
         }
         if($batchSize===null) {
             $batchSize = 32;
@@ -87,7 +88,7 @@ class A2C extends AbstractAgent
             $ddqn = false;
         }
         $this->obsSize = $obsSize;
-        $this->numActions = $numActions;
+        $this->actionSize = $actionSize;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
         $this->targetUpdatePeriod = $targetUpdatePeriod;
@@ -110,7 +111,7 @@ class A2C extends AbstractAgent
         $this->initialize();
     }
 
-    protected function buildNetwork($la,$nn,$obsSize,$numActions,$fcLayers)
+    protected function buildNetwork($la,$nn,$obsSize,$actionSize,$fcLayers)
     {
         if($nn===null) {
             throw new InvalidArgumentException('nn must be specifed.');
@@ -118,11 +119,11 @@ class A2C extends AbstractAgent
         if($obsSize===null) {
             throw new InvalidArgumentException('obsSize must be specifed.');
         }
-        if($numActions===null) {
-            throw new InvalidArgumentException('numActions must be specifed.');
+        if($actionSize===null) {
+            throw new InvalidArgumentException('actionSize must be specifed.');
         }
         $network = new ActorCriticNetwork($la,$nn,
-            $obsSize, $numActions,fcLayers:$fcLayers);
+            $obsSize, $actionSize,fcLayers:$fcLayers);
         return $network;
     }
 
@@ -161,7 +162,7 @@ class A2C extends AbstractAgent
     protected function buildPolicy($la,$network,$start,$stop,$decayRate)
     {
         $policy = new AnnealingEpsGreedy(
-            $la, qPolicy:$network,
+            $la,
             start:$start,stop:$stop,decayRate:$decayRate);
         return $policy;
     }
@@ -217,17 +218,8 @@ class A2C extends AbstractAgent
 
     public function action($observation,bool $training)
     {
-        //if(is_numeric($observation)) {
-        //    $observation = $this->la->array([$observation]);
-        //} elseif(!($observation instanceof NDArray)) {
-        //    throw new InvalidArgumentException('Observation must be NDArray');
-        //}
-        //if($training) {
-            $action = $this->policy->action($observation,$training);
-        //} else {
-        //    $values = $this->trainModel->getQValues($observation);
-        //    $action = $this->la->imax($values);
-        //}
+        $observation = $this->atleast2d($observation);
+        $action = $this->policy->action($this->trainModel,$observation,$training);
         return $action;
     }
 
@@ -265,7 +257,6 @@ class A2C extends AbstractAgent
         $g  = $this->g;
         $batchSize = $this->batchSize;
         $obsSize = $this->obsSize;
-        $numActions = $this->numActions;
 
         $transition = $experience->last();
         [$observation,$action,$nextObs,$reward,$endEpisode,$info] = $transition;  // done

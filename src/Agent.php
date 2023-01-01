@@ -13,8 +13,8 @@ interface Agent
     public function register(EventManager $eventManager=null) : void;
 
     /**
-    * @param Any $states
-    * @return Any $action
+    * @param  mixed $states : N x StatesDims typeof int or NDArray or array of int or array of NDArray
+    * @return mixed $action : N x ActionDims typeof int or NDArray
     */
     public function action($observation,bool $training);
 

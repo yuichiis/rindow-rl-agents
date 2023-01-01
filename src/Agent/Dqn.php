@@ -160,7 +160,7 @@ class Dqn extends AbstractAgent
     protected function buildPolicy($la,$network,$start,$stop,$decayRate)
     {
         $policy = new AnnealingEpsGreedy(
-            $la, qPolicy:$network,
+            $la,
             start:$start,stop:$stop,decayRate:$decayRate);
         return $policy;
     }
@@ -214,20 +214,9 @@ class Dqn extends AbstractAgent
         return 1;
     }
 
-    public function action($observation,bool $training)
+    protected function policyTable() : QPolicy
     {
-        //if(is_numeric($observation)) {
-        //    $observation = $this->la->array([$observation]);
-        //} elseif(!($observation instanceof NDArray)) {
-        //    throw new InvalidArgumentException('Observation must be NDArray');
-        //}
-        //if($training) {
-            $action = $this->policy->action($observation,$training);
-        //} else {
-        //    $values = $this->trainModel->getQValues($observation);
-        //    $action = $this->la->imax($values);
-        //}
-        return $action;
+        return $this->trainModel;
     }
 
     public function getQValue($observation) : float

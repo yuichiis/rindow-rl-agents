@@ -7,6 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Gym\ClassicControl\MultiarmedBandit\Slots;
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AverageReward;
 use Rindow\RL\Agents\Network\Probabilities;
@@ -32,7 +33,7 @@ class TestPolicy implements Policy
     public function initialize() // : Operation
     {}
 
-    public function action($state,bool $training, int $time=null)
+    public function action(QPolicy $network, NDArray $state,bool $training) : NDArray
     {
         if($state!=1) {
             throw new \Exception('illegal state in policy:action');
@@ -99,7 +100,7 @@ class Test extends TestCase
 
         $env = new Slots($la,$probabilities);
         $qtable = new Probabilities($la,$la->array([$probabilities]));
-        $policy = new AnnealingEpsGreedy($la,$qtable,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
+        $policy = new AnnealingEpsGreedy($la,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
         $agent = new AverageReward($la,$qtable,$policy);
         $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
 

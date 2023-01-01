@@ -75,7 +75,7 @@ class Test extends TestCase
 
         $env = new Slots($la,$probabilities);
         $qtable = new Probabilities($la,$la->array([$probabilities]));
-        $policy = new AnnealingEpsGreedy($la,$qtable,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
+        $policy = new AnnealingEpsGreedy($la,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
         $agent = new UCB1($la,$qtable,$mo);
         $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
 

@@ -79,8 +79,6 @@ if(!$ddpgAgent->fileExists($filename)) {
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,logInterval:$logInterval,
         verbose:$verbose=2);
     //echo "\n";
-    //[$noiseMin,$noiseMax,$actionMin,$actionMax] = $ddpgAgent->policy()->noiseActionMinMax();
-    //var_dump([$noiseMin,$noiseMax,$actionMin,$actionMax]);
     if($evalInterval>0) {
         $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
         //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];

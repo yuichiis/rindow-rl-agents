@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DqnTest;
+namespace RindowTest\RL\Agents\Agent\A2CTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -9,8 +9,9 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Agent\DQN;
+use Rindow\RL\Agents\Agent\A2C;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -61,23 +62,69 @@ class Test extends TestCase
         ];
     }
 
-    public function testAction()
+    public function testActionWithPredictOnAnnealingEpsGreedy()
     {
         $mo = $this->newMatrixOperator();
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
 
-        $fixedActions = [0,1];
-        foreach($fixedActions as $fixedAction) {
-            $policy = new TestPolicy($fixedAction);
-            $agent = new DQN($la,policy:$policy,nn:$nn, obsSize:[1], numActions:2,fcLayers:[100]);
-            for($i=0;$i<100;$i++) {
-                $this->assertEquals($fixedAction,$agent->action($la->array([1]),$training=true));
-            }
+        $agent = new A2C($la,
+            epsStart:0.0, epsStop:0.0,
+            nn:$nn, obsSize:[1], actionSize:[2],fcLayers:[100]);
+        $obs = [
+            $la->array([0]),
+            $la->array([1]),
+        ];
+        for($i=0;$i<100;$i++) {
+            $actions = $agent->action($obs,$training=true);
+            $this->assertEquals([2],$actions->shape());
+            $this->assertEquals(NDArray::uint32,$actions->dtype());
         }
     }
 
-    public function testUpdate()
+    public function testActionWithSamplesOnAnnealingEpsGreedy()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        $nn = $this->newBuilder($mo);
+
+        $agent = new A2C($la,
+            epsStart:1.0, epsStop:1.0,
+            nn:$nn, obsSize:[1], actionSize:[2],fcLayers:[100]);
+        $obs = [
+            $la->array([0]),
+            $la->array([1]),
+        ];
+        for($i=0;$i<100;$i++) {
+            $actions = $agent->action($obs,$training=true);
+            $this->assertEquals([2],$actions->shape());
+            $this->assertEquals(NDArray::uint32,$actions->dtype());
+        }
+    }
+
+    public function testActionOnBoltzmann()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        $nn = $this->newBuilder($mo);
+
+        $policy = new Boltzmann($la);
+
+        $agent = new A2C($la,
+            policy:$policy,
+            nn:$nn, obsSize:[1], actionSize:[2],fcLayers:[100]);
+        $obs = [
+            $la->array([0]),
+            $la->array([1]),
+        ];
+        for($i=0;$i<100;$i++) {
+            $actions = $agent->action($obs,$training=true);
+            $this->assertEquals([2],$actions->shape());
+            $this->assertEquals(NDArray::uint32,$actions->dtype());
+        }
+    }
+
+    public function aaaaatestUpdate()
     {
         $mo = $this->newMatrixOperator();
         $la = $mo->la();

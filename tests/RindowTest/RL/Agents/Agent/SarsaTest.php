@@ -64,7 +64,7 @@ class Test extends TestCase
             [0,3],
         ];
         $qtable = new QTable($la,$rules);
-        $policy = new AnnealingEpsGreedy($la,$qtable,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
+        $policy = new AnnealingEpsGreedy($la,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
         $agent = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
         foreach($fixedActions as $obs => $actions) {
             for($i=0;$i<100;$i++) {
@@ -99,7 +99,7 @@ class Test extends TestCase
         [$width,$height,$exit] = [3,3,8];
         $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
         $qtable = new QTable($la,$rules);
-        $policy = new AnnealingEpsGreedy($la,$qtable,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
+        $policy = new AnnealingEpsGreedy($la,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
         $agent = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
         $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
 

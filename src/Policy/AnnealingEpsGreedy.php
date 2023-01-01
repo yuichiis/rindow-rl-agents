@@ -13,12 +13,11 @@ class AnnealingEpsGreedy extends AbstractPolicy
     protected $decayRate;
     protected $start;
     protected $stop;
-    protected $numActions;
     protected $currentTime = 0;
     protected $episodeAnnealing;
 
     public function __construct(
-        object $la, QPolicy $qPolicy,
+        object $la,
         float $start=null,float $stop=null,float $decayRate=null,
         bool $episodeAnnealing=null)
     {
@@ -32,11 +31,9 @@ class AnnealingEpsGreedy extends AbstractPolicy
             $stop = 0.1;
         }
         parent::__construct($la);
-        $this->qPolicy = $qPolicy;
         $this->decayRate = $decayRate;
         $this->start = $start;
         $this->stop = $stop;
-        $this->numActions = $this->qPolicy->numActions();
         $this->episodeAnnealing = $episodeAnnealing;
         $this->initialize();
     }
@@ -73,16 +70,17 @@ class AnnealingEpsGreedy extends AbstractPolicy
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training)
+    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
     {
+        $la = $this->la;
         $epsilon = $this->getEpsilon();
         $threshold = (int)floor($epsilon * getrandmax());
-        $numActions = $this->numActions;
         if($training && $threshold > mt_rand()) {
-            $action = $this->qPolicy->sample($state);
+            $action = $qPolicy->sample($state);
         } else {
-            $qValues = $this->qPolicy->getQValues($state);
-            $action = $this->la->imax($qValues);
+            $qValues = $qPolicy->getQValues($state);
+            $action = $la->reduceArgMax($qValues,$axis=-1);
+            $action = $la->expandDims($action,$axis=-1);
         }
         if($training) {
             if(!$this->episodeAnnealing) {

@@ -13,9 +13,10 @@ use InvalidArgumentException;
 
 class TestQPolicy implements QPolicy
 {
-    public function __construct($la)
+    public function __construct($la,NDArray $prob)
     {
         $this->la = $la;
+        $this->prob = $prob;
     }
 
     public function obsSize()
@@ -32,14 +33,19 @@ class TestQPolicy implements QPolicy
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getQValues($state) : NDArray
+    public function getQValues(NDArray $state) : NDArray
     {
-        return $this->la->array($state);
+        $la = $this->la;
+        $state = $la->squeeze($state,$axis=-1);
+        $values = $la->gather($this->prob,$state,$axis=null);
+        return $values;
     }
 
-    public function sample($state)
+    public function sample(NDArray $state) : NDArray
     {
-        return 1;
+        $la = $this->la;
+        $count = count($state);
+        return $la->fill(1,$la->alloc([$count,1],NDArray::uint32));
     }
 }
 
@@ -69,17 +75,31 @@ class Test extends TestCase
         $la = $this->newLa($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $qpolicy = new TestQPolicy($la);
-        $policy = new Greedy($la,$qpolicy);
+        $probs = $la->array([
+            [1,  0],
+            [0,  1],
+        ]);
+        $qpolicy = new TestQPolicy($la,$probs);
+        $policy = new Greedy($la);
         $buf = new ReplayBuffer($la,$maxSize=100);
 
-        $avg = [];
+        $a = [];
+        $obs = $la->array([[0]]);
         for($i=0;$i<10;$i++) {
-            $buf->add($policy->action([0],true));
-            $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
+            $actions = $policy->action($qpolicy,$obs,true);
+            $this->assertEquals([1,1],$actions->shape());
+            $this->assertEquals(NDArray::uint32,$actions->dtype());
+            $a[] = $actions[0][0];
         }
-        $avg = $la->array($avg);
-        $plt->plot($avg);
+        $obs = $la->array([[1]]);
+        for($i=0;$i<10;$i++) {
+            $actions = $policy->action($qpolicy,$obs,true);
+            $this->assertEquals([1,1],$actions->shape());
+            $this->assertEquals(NDArray::uint32,$actions->dtype());
+            $a[] = $actions[0][0];
+        }
+        $a = $la->array($a);
+        $plt->plot($a);
         $plt->legend(['action']);
         $plt->title('Greedy');
         $plt->show();
@@ -91,11 +111,16 @@ class Test extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $this->newLa($mo);
 
-        $qpolicy = new TestQPolicy($la);
-        $policy = new Greedy($la,$qpolicy);
+        $probs = $la->array([
+            [1,0,0],
+            [0,1,0],
+            [0,0,1],
+        ]);
+        $qpolicy = new TestQPolicy($la,$probs);
+        $states = $la->array([[0],[1],[2]]);
 
-        $this->assertEquals(0,$policy->action([1,0,0],true));
-        $this->assertEquals(1,$policy->action([0,1,0],true));
-        $this->assertEquals(2,$policy->action([0,0,1],true));
+        $policy = new Greedy($la);
+
+        $this->assertEquals([[0],[1],[2]],$policy->action($qpolicy,$states,true)->toArray());
     }
 }

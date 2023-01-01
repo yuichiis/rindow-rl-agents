@@ -10,6 +10,7 @@ use LogicException;
 class ActorNetwork extends AbstractNetwork implements QPolicy
 {
     protected $actionSize;
+    protected $onesProb;
 
     public function __construct($la,$builder,
             array $obsSize, array $actionSize,
@@ -32,7 +33,9 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
             );
         }
         $this->model = $model;
-    }
+        $p = $la->alloc([1,(int)array_product($actionSize)]);
+        $this->onesProb = $la->ones($p);
+}
 
     public function actionSize()
     {
@@ -89,23 +92,29 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         return $outputs;
     }
 
-    public function getQValues($state) : NDArray
+    public function getQValues(NDArray $states) : NDArray
     {
         $la = $this->la;
-        if(is_numeric($state)) {
-            $state = $this->la->array([$state]);
-        } elseif(!($state instanceof NDArray)) {
-            throw new InvalidArgumentException('Observation must be NDArray');
+        $values = $this->model->forward($states,false);
+        if($this->masks) {
+            $numClass = count($actions);
+            $states = $la->squeeze($states,$axis=-1);
+            $masks = $la->gather($this->masks,$states,$axis=null);
+            $la->multiply($masks,$values);
+            $la->nan2num($values,-INF);
         }
-        $state = $la->expandDims($state,$axis=0);
-        //$actions = $actor_model->predict($state);
-        $actions = $this->model->forward($state,false);
-        $actions = $la->squeeze($actions,$axis=0);
-        return $actions;
+        return $values;
     }
 
-    public function sample($state)
+    public function samples(NDArray $states) : NDArray
     {
-        throw new LogicException('Unsupported operation');
+        $la = $this->la;
+        if($this->masks) {
+            $obs = $la->squeeze($states,$axis=-1);
+            $values = $la->gather($this->probabilities,$obs,$axis=null);
+        } else {
+            $values = $la->repeat($this->onesProb,count($states),$axis=null);
+        }
+        return $values;
     }
 }

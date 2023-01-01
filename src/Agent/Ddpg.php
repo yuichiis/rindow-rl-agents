@@ -178,7 +178,7 @@ class Ddpg extends AbstractAgent
         $theta,$dt,$x_initial)
     {
         $policy = new OUNoise(
-            $la, $network,
+            $la,
             $mean,
             $std_deviation,
             $lower_bound,
@@ -307,10 +307,9 @@ class Ddpg extends AbstractAgent
         return 1;
     }
 
-    public function action($observation,bool $training)
+    protected function policyTable() : QPolicy
     {
-        $actions = $this->policy->action($observation,$training);
-        return $actions;
+        return $this->actor_model;
     }
 
     public function getQValue($observation) : float

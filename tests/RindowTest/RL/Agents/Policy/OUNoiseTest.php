@@ -32,14 +32,14 @@ class TestQPolicy implements QPolicy
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getQValues($state) : NDArray
+    public function getQValues(NDArray $state) : NDArray
     {
-        return $this->la->array($state);
+        return $state;
     }
 
-    public function sample($state)
+    public function sample(NDArray $state) : NDArray
     {
-        return 1;
+        throw new \Exception("ILLEGAL operation", 1);
     }
 }
 
@@ -76,7 +76,7 @@ class Test extends TestCase
         $upper_bound = $la->array([ 1.0]);
         $qpolicy = new TestQPolicy($la);
         $policy = new OUNoise(
-            $la, $qpolicy,
+            $la,
             $mean, $std_dev, $lower_bound, $upper_bound
         );
 
@@ -86,8 +86,9 @@ class Test extends TestCase
         $prods = [];
         for($i=0;$i<$steps;$i++) {
             $q = $c+$v*$i;
-            $actions[] = $policy->action([$q],true)[0];
-            $prods[] = $policy->action([$q],false)[0];
+            $q = $la->array([[$q]]);
+            $actions[] = $policy->action($qpolicy,$q,true)[0][0];
+            $prods[]   = $policy->action($qpolicy,$q,false)[0][0];
         }
         $actions = $la->array($actions);
         $prods = $la->array($prods);
@@ -116,7 +117,7 @@ class Test extends TestCase
         $upper_bound = $la->array([ 2.0]);
         $qpolicy = new TestQPolicy($la);
         $policy = new OUNoise(
-            $la, $qpolicy,
+            $la, 
             $mean, $std_dev, $lower_bound, $upper_bound
         );
 
@@ -126,7 +127,8 @@ class Test extends TestCase
         for($j=0;$j<$episodes;$j++) {
             for($i=0;$i<$steps;$i++) {
                 $q = $c+$v*$i;
-                $la->axpy($policy->action([$q],true),$avg[[$i,$i]]);
+                $q = $la->array([[$q]]);
+                $la->axpy($policy->action($qpolicy,$q,true)[0],$avg[[$i,$i]]);
             }
         }
         $la->scal(1/$episodes,$avg);
@@ -141,4 +143,35 @@ class Test extends TestCase
         $plt->show();
         $this->assertTrue(true);
     }
+
+    public function testParallel()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLa($mo);
+        $plt = new Plot($this->getPlotConfig(),$mo);
+
+        $mean = $la->array([0.0,0.0]);
+        $std_dev = $la->array([0.1,0.1]);
+        $lower_bound = $la->array([-1.0,-1.0]);
+        $upper_bound = $la->array([ 1.0, 1.0]);
+        $qpolicy = new TestQPolicy($la);
+        $policy = new OUNoise(
+            $la,
+            $mean, $std_dev, $lower_bound, $upper_bound
+        );
+
+        $actions = [];
+        $prods = [];
+        $q = 0.5;
+        $q = $la->array([
+            [$q,$q],
+            [$q,$q],
+            [$q,$q],
+        ]);
+        $actions = $policy->action($qpolicy,$q,true);
+        $this->assertEquals([3,2],$actions->shape());
+        $prods   = $policy->action($qpolicy,$q,false);
+        $this->assertEquals([3,2],$prods->shape());
+    }
+
 }

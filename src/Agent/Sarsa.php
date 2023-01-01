@@ -32,8 +32,12 @@ class Sarsa extends AbstractAgent
         //$la = $this->la;
         //$this->q = $la->randomUniform($this->policy->shape(),0,1);
         //$la->multiply($this->policy,$this->q);
-        $this->qTable->initialize();
         $this->policy->initialize();
+    }
+
+    public function resetData()
+    {
+        $this->qTable->initialize();
     }
 
     public function isStepUpdate() : bool
@@ -46,20 +50,9 @@ class Sarsa extends AbstractAgent
         return 2;
     }
 
-    /**
-    * @param Any $states
-    * @return Any $action
-    */
-    public function action($observation,bool $training)
+    protected function policyTable() : QPolicy
     {
-        $la = $this->la;
-        //if($training) {
-            $action = $this->policy->action($observation,$training);
-        //} else {
-        //    $qValues = $this->qTable->getQValues($observation);
-        //    $action = $la->imax($qValues);
-        //}
-        return $action;
+        return $this->qTable;
     }
 
     public function getQValue($observation) : float

@@ -10,13 +10,8 @@ class OUNoise extends AbstractPolicy
 {
     protected $qPolicy;
 
-    protected $noiseMax = -INF;
-    protected $noiseMin = INF;
-    protected $actionMax = -INF;
-    protected $actionMin = INF;
-
     public function __construct(
-        $la, QPolicy $qPolicy,
+        $la,
         NDArray $mean,
         NDArray $std_dev,
         NDArray $lower_bound,
@@ -27,7 +22,6 @@ class OUNoise extends AbstractPolicy
         )
     {
         parent::__construct($la);
-        $this->qPolicy = $qPolicy;
         $this->lower_bound = $lower_bound;
         $this->upper_bound = $upper_bound;
         $this->noise = new OUProcess($la,
@@ -39,44 +33,36 @@ class OUNoise extends AbstractPolicy
     public function initialize()
     {
         $this->ouProcess->reset();
-        $this->noiseMax = -INF;
-        $this->noiseMin = INF;
-        $this->actionMax = -INF;
-        $this->actionMin = INF;
     }
 
     /**
     * @param Any $states
     * @return Any $action
     */
-    public function action($state,bool $training)
+    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
     {
         $la = $this->la;
-        $actions = $this->qPolicy->getQValues($state);
+        $actions = $qPolicy->getQValues($state);
 
         if($training) {
             $noise = $this->noise->process();
-            $actions = $la->axpy($noise,$la->copy($actions));
-            $this->noiseMax = max($this->noiseMax,$noise[0]);
-            $this->noiseMin = min($this->noiseMin,$noise[0]);
+            $actions = $la->add($noise,$la->copy($actions)); // add noise to batch
         }
 
-        $size = $actions->size();
-        $flat_actions = $actions->reshape([$size]);
+        $orgShape = $shape = $actions->shape();
+        $count = array_shift($shape);
+        $size = array_product($shape);
+        $actions = $la->transpose($actions->reshape([$count,$size]));
 
         $flat_lower = $this->lower_bound->reshape([$size]);
         $flat_upper = $this->upper_bound->reshape([$size]);
         for($i=0;$i<$size;$i++) {
-            $la->maximum($flat_actions[[$i,$i]],$flat_lower[$i]);
-            $la->minimum($flat_actions[[$i,$i]],$flat_upper[$i]);
+            $la->maximum($actions[[$i,$i]],$flat_lower[$i]);
+            $la->minimum($actions[[$i,$i]],$flat_upper[$i]);
         }
-        $this->actionMax = max($this->actionMax,$actions[0]);
-        $this->actionMin = min($this->actionMin,$actions[0]);
-        return $actions;
-    }
 
-    public function noiseActionMinMax()
-    {
-        return [$this->noiseMin,$this->noiseMax,$this->actionMin,$this->actionMax];
+        $actions = $la->transpose($actions);
+        $actions = $actions->reshape($orgShape);
+        return $actions;
     }
 }

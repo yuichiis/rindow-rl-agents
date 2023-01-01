@@ -13,7 +13,6 @@ use Rindow\RL\Agents\Agent\QLearning;
 use Rindow\RL\Agents\Agent\DQN;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\Network\QTable;
-use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 
 $mo = new MatrixOperator();
@@ -61,10 +60,7 @@ foreach ($drivers as $driver) {
     $avgvalsteps = $la->zeros($la->alloc([(int)floor($episodes/$evalInterval)]));
     for($i=0;$i<$epochs;$i++) {
         $driver->agent()->initialize();
-        $p = $driver->agent()->policy();
-        if($p!==null) {
-            $p->initialize();
-        }
+        $driver->agent()->resetData();
         $history = $driver->train(
             $episodes,null,$metrics=['steps','val_steps','epsilon'],
             $evalInterval,$numEvalEpisodes,null,$verbose=0);

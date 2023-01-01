@@ -33,15 +33,17 @@ class TestQPolicy implements QPolicy
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getQValues($state) : NDArray
+    public function getQValues(NDArray $state) : NDArray
     {
-        $state = $state[0];
-        return $this->prob[$state];
+        $la = $this->la;
+        $state = $la->squeeze($state,$axis=-1);
+        $values = $la->gather($this->prob,$state,$axis=null);
+        return $values;
     }
 
-    public function sample($state)
+    public function sample(NDArray $state) : NDArray
     {
-        return 1;
+        throw new \Exception("ILLEGAL operation", 1);
     }
 }
 
@@ -76,14 +78,18 @@ class Test extends TestCase
             [1,  2,  3,  4],
         ]);
         $qpolicy = new TestQPolicy($la,$probs);
-        $policy = new Boltzmann($la,$qpolicy);
+        $policy = new Boltzmann($la);
         $occur = $mo->zeros([2,4]);
 
         $times = 1000;
         foreach($probs as $state=>$prob) {
             for($i=0;$i<$times;$i++) {
-                $action = $policy->action([$state],true);
-                $la->increment($occur[$state][[$action,$action]],1);
+                $obs = $la->array([[$state]]);
+                $actions = $policy->action($qpolicy,$obs,true);
+                $this->assertEquals([1,1],$actions->shape());
+                $this->assertEquals(NDArray::uint32,$actions->dtype());
+                $actnum = $actions[0][0];
+                $la->increment($occur[$state][[$actnum,$actnum]],1);
             }
         }
         $la->scal(1/$times,$occur);
@@ -108,14 +114,12 @@ class Test extends TestCase
             [0.0, 0.0, 1.0],
         ]);
         $qpolicy = new TestQPolicy($la,$probs);
-        $policy = new Boltzmann($la,$qpolicy,tau:1.0);
+        $policy = new Boltzmann($la,tau:1.0);
 
-        $this->assertEquals(0,$policy->action([0],true));
-        $this->assertEquals(1,$policy->action([1],true));
-        $this->assertEquals(2,$policy->action([2],true));
+        $values = $la->array([[2],[1],[0]]);
 
-        $this->assertEquals(0,$policy->action([0],false));
-        $this->assertEquals(1,$policy->action([1],false));
-        $this->assertEquals(2,$policy->action([2],false));
+        $this->assertEquals([[2],[1],[0]],$policy->action($qpolicy,$values,true)->toArray());
+
+        $this->assertEquals([[2],[1],[0]],$policy->action($qpolicy,$values,false)->toArray());
     }
 }

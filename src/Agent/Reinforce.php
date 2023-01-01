@@ -103,7 +103,7 @@ class Reinforce extends AbstractAgent
     protected function buildPolicy($la,$network,$tau)
     {
         $policy = new Boltzmann(
-            $la, $network,
+            $la,
             tau:$tau);
         return $policy;
     }
@@ -170,14 +170,9 @@ class Reinforce extends AbstractAgent
         return 1;
     }
 
-    /**
-    * @param Any $states
-    * @return Any $action
-    */
-    public function action($observation , bool $training)
+    protected function policyTable() : QPolicy
     {
-        $action = $this->policy->action($observation,$training);
-        return $action;
+        return $this->model;
     }
 
     public function getQValue($observation) : float

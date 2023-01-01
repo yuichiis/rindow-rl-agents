@@ -24,12 +24,12 @@ abstract class AbstractNetwork extends AbstractModel implements Network
 
     public function actionSize()
     {
-        throw new LogicException('Unsupported operation');
+        throw new LogicException('Unsupported operation: actionSize');
     }
 
     public function numActions() : int
     {
-        throw new LogicException('Unsupported operation');
+        throw new LogicException('Unsupported operation: numActions');
     }
 
     public function builder()

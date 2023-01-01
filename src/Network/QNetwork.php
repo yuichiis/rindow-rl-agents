@@ -12,7 +12,9 @@ class QNetwork extends AbstractNetwork implements QPolicy
     protected $la;
     protected $numActions;
     protected $qmodel;
-    protected $thresholds;
+    //protected $thresholds;
+    protected $probabilities;
+    protected $onesProb;
     protected $masks;
     protected $mo;
 
@@ -41,8 +43,12 @@ class QNetwork extends AbstractNetwork implements QPolicy
                 throw new InvalidArgumentException('The rules must match numActions');
             }
             $p = $this->generateProbabilities($rules);
-            $this->thresholds = $this->generateThresholds($p);
+            $this->probabilities = $p;
+            //$this->thresholds = $this->generateThresholds($p);
             $this->masks = $rules;
+        } else {
+            $p = $la->alloc([1,$numActions]);
+            $this->onesProb = $la->ones($p);
         }
     }
 
@@ -89,27 +95,28 @@ class QNetwork extends AbstractNetwork implements QPolicy
         return $outputs;
     }
 
-    public function getQValues($observation) : NDArray
-    {
-        $la = $this->la;
-        if($observation instanceof NDArray) {
-            $obs = $la->expandDims($observation,$axis=0);
-        } else {
-            $obs = $la->array([[$observation]]);
-        }
-        $values = $this->predict($obs);
-        $values = $la->squeeze($values,$axis=0);
-        if($this->masks) {
-            if($observation instanceof NDArray) {
-                $observation = (int)$observation[0];
-            }
-            $la->multiply($this->masks[$observation],$values);
-            $la->nan2num($values,-INF);
-        }
-        return $values;
-    }
+    //public function getQValues($observation) : NDArray
+    //{
+    //    $la = $this->la;
+    //    if($observation instanceof NDArray) {
+    //        $obs = $la->expandDims($observation,$axis=0);
+    //    } else {
+    //        $obs = $la->array([[$observation]]);
+    //    }
+    //    $values = $this->predict($obs);
+    //    $values = $la->squeeze($values,$axis=0);
+    //    if($this->masks) {
+    //        if($observation instanceof NDArray) {
+    //            $observation = (int)$observation[0];
+    //        }
+    //        $la->multiply($this->masks[$observation],$values);
+    //        $la->nan2num($values,-INF);
+    //    }
+    //    return $values;
+    //}
 
-    public function getQValuesBatch(NDArray $observations) : NDArray
+    //public function getQValuesBatch(NDArray $observations) : NDArray
+    public function getQValues(NDArray $observations) : NDArray
     {
         $la = $this->la;
         $values = $this->predict($observations);
@@ -123,15 +130,27 @@ class QNetwork extends AbstractNetwork implements QPolicy
         return $values;
     }
 
-    public function sample($state)
+    public function sample(NDArray $state) : NDArray
     {
-        if($this->thresholds) {
-            if($state instanceof NDArray) {
-                $state = (int)$state[0];
-            }
-            $action = $this->randomChoice($this->thresholds[$state], isThresholds:true);
+        $la = $this->la;
+        if($this->masks) {
+            //if($state instanceof NDArray) {
+            //    $state = (int)$state[0];
+            //}
+            //$action = $this->randomChoice($this->thresholds[$state], isThresholds:true);
+            $obs = $la->squeeze($state,$axis=-1);
+            $prob = $la->gather($this->probabilities,$obs,$axis=null);
+            $action = $this->randomCategorical($prob,1);
         } else {
-            $action = mt_rand(0,$this->numActions-1);
+            //$count = count($state);
+            //$action = [];
+            //for($i=0;$i<$count;$i++) {
+            //    $action[] = mt_rand(0,$this->numActions-1);
+            //}
+            //$action = $la->array($action,NDArray::uint32);
+            //$action = $la->expandDims($action,$axis=1);
+            $action = $this->randomCategorical($this->onesProb,count($state));
+            $action = $la->expandDims($la->squeeze($action),$axis=1);
         }
         return $action;
     }
@@ -139,8 +158,9 @@ class QNetwork extends AbstractNetwork implements QPolicy
     public function __clone()
     {
         parent::__clone();
-        if($this->thresholds) {
-            $this->thresholds = clone $this->thresholds;
+        if($this->probabilities) {
+            //$this->thresholds = clone $this->thresholds;
+            $this->probabilities = clone $this->probabilities;
         }
         if($this->masks) {
             $this->masks = clone $this->masks;

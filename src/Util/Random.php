@@ -34,14 +34,21 @@ trait Random
         return $p2;
     }
 
-    public function randomChoice(NDArray $probabilities, bool $isThresholds=null) : int
+    public function randomChoice(
+        NDArray $probabilities,
+        bool $isThresholds=null,
+        bool $expandDims=null) : int
     {
         $la = $this->la;
         $thresholds = $probabilities;
         if(!$isThresholds) {
-            $probabilities = $la->expandDims($probabilities,$axis=0);
-            $thresholds = $this->generateThresholds($probabilities);
-            $thresholds = $la->squeeze($thresholds,$axis=0);
+            if($expandDims) {
+                $thresholds = $la->expandDims($thresholds,$axis=0);
+            }
+            $thresholds = $this->generateThresholds($thresholds);
+            if($expandDims) {
+                $thresholds = $la->squeeze($thresholds,$axis=0);
+            }
         }
         if($thresholds->ndim()!=1) {
             throw new InvalidArgumentException('thresholds must be 1D NDArray');
@@ -51,5 +58,29 @@ trait Random
         $rand = $la->array([$rand]);
         $randint = $la->searchsorted($thresholds,$rand,true);
         return $randint->toArray()[0];
+    }
+
+    public function randomCategorical(
+        NDArray $probabilities,
+        int $numSamples,
+        $dtype=null,
+    ) : NDArray
+    {
+        $la = $this->la;
+        if($probabilities->ndim()!=2) {
+            throw new InvalidArgumentException('probabilities must be 2D NDArray');
+        }
+        [$count,$size] = $probabilities->shape();
+        if($dtype===null) {
+            $dtype = NDArray::uint32;
+        }
+        $randints = $la->alloc([$count,$numSamples],$dtype);
+        foreach ($probabilities as $key => $p) {
+            $thresholds = $la->cumsum($p);
+            $high = $thresholds[$size-1];
+            $rand = $la->randomUniform([$numSamples],$low=0.0,$high,$thresholds->dtype());
+            $la->searchsorted($thresholds,$rand,true,null,$randints[$key]);
+        }
+        return $randints;
     }
 }

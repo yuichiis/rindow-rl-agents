@@ -31,7 +31,7 @@ class TestPolicy implements Policy
     public function initialize() // : Operation
     {}
 
-    public function action($values,bool $training, int $time=null)
+    public function action(QPolicy $network, NDArray $values,bool $training) : NDArray
     {
         return $this->fixedAction;
     }

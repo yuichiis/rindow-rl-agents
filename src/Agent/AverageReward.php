@@ -35,6 +35,11 @@ class AverageReward extends AbstractAgent
         $this->numTrials = $la->zeros($la->alloc([$this->numActions],NDArray::float32));
     }
 
+    public function resetData()
+    {
+        $this->qpolicy->initialize();
+    }
+
     public function isStepUpdate() : bool
     {
         return false;
@@ -52,19 +57,9 @@ class AverageReward extends AbstractAgent
         return $q;
     }
 
-    /**
-    * @param Any $states
-    * @return Any $action
-    */
-    public function action($observation,bool $training)
+    protected function policyTable() : QPolicy
     {
-        //$la = $this->la;
-        //if($training) {
-            $action = $this->policy->action($observation,$training);
-        //} else {
-        //    $action = $la->imax($this->values);
-        //}
-        return $action;
+        return $this->qpolicy;
     }
 
     /**

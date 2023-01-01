@@ -9,7 +9,6 @@ use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Driver\StepDriver;
 use Rindow\RL\Agents\Agent\Reinforce;
-use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\Policy\Boltzmann;
 
