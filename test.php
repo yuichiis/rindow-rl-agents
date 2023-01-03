@@ -2,6 +2,7 @@
 require __DIR__.'/vendor/autoload.php';
 use Interop\Polite\Math\Matrix\NDArray;
 
+
 $mo = new Rindow\Math\Matrix\MatrixOperator();
 $la = $mo->la();
 function generateThresholds(NDArray $probs) : NDArray
