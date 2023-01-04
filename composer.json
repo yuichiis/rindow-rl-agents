@@ -1,0 +1,26 @@
+{
+    "name": "rindow/rindow-rl-agents",
+    "type": "library",
+    "description": "Reinforcement Learning Agents",
+    "keywords": ["rindow","reinforcement learning","RL","deep","learning","machine learning"],
+    "license": "BSD-3-Clause",
+    "require": {
+        "php": "^8.0|^8.1",
+        "rindow/rindow-neuralnetworks": "^2.0"
+    },
+    "require-dev": {
+        "rindow/rindow-rl-gym": "^0.1",
+        "rindow/rindow-math-plot": "~1.0.6",
+        "ext-pdo_sqlite": "*"
+    },
+    "suggest": {
+        "rindow/rindow-math-plot": "when visualize machine learning results",
+        "ext-pdo_sqlite": "for save model",
+        "ext-rindow_openblas": "0.3.0 strongly recommended for speed"
+    },
+    "autoload": {
+        "psr-4": {
+            "Rindow\\RL\\Agents\\": "src/"
+        }
+    }
+}
