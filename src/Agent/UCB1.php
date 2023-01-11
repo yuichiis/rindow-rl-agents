@@ -51,7 +51,7 @@ class UCB1 extends AbstractAgent
         return 1;
     }
 
-    public function getQValue($observation) : float
+    public function maxQValue(mixed $observation) : float
     {
         $q = $this->la->max($this->values);
         return $q;
@@ -61,7 +61,7 @@ class UCB1 extends AbstractAgent
     * @param Any $states
     * @return Any $action
     */
-    public function action($observation,$training)
+    public function action(mixed $observation,bool $training) : mixed
     {
         $la = $this->la;
         if($training) {

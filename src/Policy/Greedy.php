@@ -20,15 +20,11 @@ class Greedy extends AbstractPolicy
     }
 
     /**
-    * @param Any $states
-    * @return Any $action
+    * @param NDArray<any> $states
+    * @return NDArray<int> $actions
     */
-    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
+    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
     {
-        $la = $this->la;
-        $qValues = $qPolicy->getQValues($state);
-        $action = $la->reduceArgMax($qValues,$axis=-1);
-        $action = $la->expandDims($action,$axis=-1);
-        return $action;
+        return $this->calcMaxValueActions($qPolicy, $states);
     }
 }

@@ -121,7 +121,6 @@ class QNetwork extends AbstractNetwork implements QPolicy
         $la = $this->la;
         $values = $this->predict($observations);
         if($this->masks) {
-            $numClass = count($observations);
             $observations = $la->squeeze($observations,$axis=-1);
             $masks = $la->gather($this->masks,$observations,$axis=null);
             $la->multiply($masks,$values);
@@ -130,29 +129,18 @@ class QNetwork extends AbstractNetwork implements QPolicy
         return $values;
     }
 
-    public function sample(NDArray $state) : NDArray
+    public function sample(NDArray $states) : NDArray
     {
         $la = $this->la;
         if($this->masks) {
-            //if($state instanceof NDArray) {
-            //    $state = (int)$state[0];
-            //}
-            //$action = $this->randomChoice($this->thresholds[$state], isThresholds:true);
-            $obs = $la->squeeze($state,$axis=-1);
+            $obs = $la->squeeze($states,$axis=-1);
             $prob = $la->gather($this->probabilities,$obs,$axis=null);
-            $action = $this->randomCategorical($prob,1);
+            $actions = $this->randomCategorical($prob,1);
         } else {
-            //$count = count($state);
-            //$action = [];
-            //for($i=0;$i<$count;$i++) {
-            //    $action[] = mt_rand(0,$this->numActions-1);
-            //}
-            //$action = $la->array($action,NDArray::uint32);
-            //$action = $la->expandDims($action,$axis=1);
-            $action = $this->randomCategorical($this->onesProb,count($state));
-            $action = $la->expandDims($la->squeeze($action),$axis=1);
+            $actions = $this->randomCategorical($this->onesProb,count($states));
+            $actions = $la->expandDims($la->squeeze($actions),$axis=1);
         }
-        return $action;
+        return $actions;
     }
 
     public function __clone()

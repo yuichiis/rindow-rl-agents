@@ -9,15 +9,21 @@ use LogicException;
 
 class ActorNetwork extends AbstractNetwork implements QPolicy
 {
+    use Random;
+
+    protected $la;
+    protected $model;
+    protected $probabilities;
     protected $actionSize;
     protected $onesProb;
+    protected $masks;
 
     public function __construct($la,$builder,
             array $obsSize, array $actionSize,
             array $convLayers=null,string $convType=null,array $fcLayers=null,
             $activation=null,$kernelInitializer=null,
             array $outputOptions=null,
-            $model=null
+            NDArray $rules=null,$model=null
         )
     {
         parent::__construct($builder,$obsSize);
@@ -32,9 +38,20 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
                 $outputOptions,
             );
         }
+        $this->masks = $rules;
         $this->model = $model;
-        $p = $la->alloc([1,(int)array_product($actionSize)]);
-        $this->onesProb = $la->ones($p);
+        if($rules) {
+            if($rules->shape()[1]!=array_product($actionSize)) {
+                throw new InvalidArgumentException('The rules must match numActions');
+            }
+            $p = $this->generateProbabilities($rules);
+            $this->probabilities = $p;
+            //$this->thresholds = $this->generateThresholds($p);
+            $this->masks = $rules;
+        } else {
+            $p = $la->alloc([1,(int)array_product($actionSize)]);
+            $this->onesProb = $la->ones($p);
+        }
 }
 
     public function actionSize()
@@ -97,7 +114,6 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         $la = $this->la;
         $values = $this->model->forward($states,false);
         if($this->masks) {
-            $numClass = count($actions);
             $states = $la->squeeze($states,$axis=-1);
             $masks = $la->gather($this->masks,$states,$axis=null);
             $la->multiply($masks,$values);
@@ -106,15 +122,30 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         return $values;
     }
 
-    public function samples(NDArray $states) : NDArray
+    public function sample(NDArray $states) : NDArray
     {
         $la = $this->la;
         if($this->masks) {
             $obs = $la->squeeze($states,$axis=-1);
-            $values = $la->gather($this->probabilities,$obs,$axis=null);
+            $prob = $la->gather($this->probabilities,$obs,$axis=null);
+            $actions = $this->randomCategorical($prob,1);
         } else {
-            $values = $la->repeat($this->onesProb,count($states),$axis=null);
+            ////$values = $la->repeat($this->onesProb,count($states),$axis=0);
+            $actions = $this->randomCategorical($this->onesProb,count($states));
+            $actions = $la->expandDims($la->squeeze($actions),$axis=1);
         }
-        return $values;
+        return $actions;
+    }
+
+    public function __clone()
+    {
+        parent::__clone();
+        if($this->probabilities) {
+            //$this->thresholds = clone $this->thresholds;
+            $this->probabilities = clone $this->probabilities;
+        }
+        if($this->masks) {
+            $this->masks = clone $this->masks;
+        }
     }
 }

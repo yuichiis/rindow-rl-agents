@@ -175,18 +175,6 @@ class Reinforce extends AbstractAgent
         return $this->model;
     }
 
-    public function getQValue($observation) : float
-    {
-        if(is_numeric($observation)) {
-            $observation = $this->la->array([$observation]);
-        } elseif(!($observation instanceof NDArray)) {
-            throw new InvalidArgumentException('Observation must be NDArray');
-        }
-        $qValues = $this->model->getQValues($observation);
-        $q = $this->la->max($qValues);
-        return $q;
-    }
-
     /**
     * @param Any $params
     */

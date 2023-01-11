@@ -35,7 +35,7 @@ class TestPolicy implements Policy
 
     public function action(QPolicy $network, NDArray $state,bool $training) : NDArray
     {
-        if($state!=1) {
+        if($state->shape()==[1,1] && $state[0][0]!=1) {
             throw new \Exception('illegal state in policy:action');
         }
         return $this->fixedAction;
@@ -69,6 +69,7 @@ class Test extends TestCase
         return [
             'renderer.skipCleaning' => true,
             'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.execBackground' => true,
         ];
     }
 
@@ -79,13 +80,15 @@ class Test extends TestCase
         $nn = $this->newBuilder($mo);
 
         $probabilities = [0.2, 0.4, 0.6, 0.9];
-        $qtable = new Probabilities($la,$la->array([$probabilities]));
-        $fixedActions = [0,1];
+        $fixedActions = $la->array([[0],[1]],NDArray::int32);
         foreach($fixedActions as $fixedAction) {
             $policy = new TestPolicy($fixedAction);
-            $agent = new AverageReward($la,$qtable,$policy);
+            $agent = new AverageReward($la,policy:$policy,numObs:1,numActions:count($probabilities));
             for($i=0;$i<10;$i++) {
-                $this->assertEquals($fixedAction,$agent->action(1,$training=true));
+                $action = $agent->action(1,$training=true);
+                echo "[".implode(',',$fixedAction->shape())."]\n";
+                echo "[".implode(',',$action->shape())."]\n";
+                $this->assertEquals($fixedAction,$action);
             }
         }
     }
@@ -99,9 +102,8 @@ class Test extends TestCase
         $probabilities = [0.2, 0.4, 0.6, 0.9];
 
         $env = new Slots($la,$probabilities);
-        $qtable = new Probabilities($la,$la->array([$probabilities]));
         $policy = new AnnealingEpsGreedy($la,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
-        $agent = new AverageReward($la,$qtable,$policy);
+        $agent = new AverageReward($la,policy:$policy,numObs:1,numActions:count($probabilities));
         $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
 
         $numIterations = 50;

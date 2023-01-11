@@ -312,15 +312,10 @@ class Ddpg extends AbstractAgent
         return $this->actor_model;
     }
 
-    public function getQValue($observation) : float
+    public function maxQValue(mixed $observation) : float
     {
         $la = $this->la;
-        if(is_numeric($observation)) {
-            $observation = $this->la->array([$observation]);
-        } elseif(!($observation instanceof NDArray)) {
-            throw new InvalidArgumentException('Observation must be NDArray');
-        }
-        $observation = $la->expandDims($observation,$axis=0);
+        $observation = $this->atleast2d($observation);
         $actions = $this->actor_model->predict($observation);
         $qValues = $this->critic_model->predict([$observation, $actions]);
         $q = $this->la->max($qValues);

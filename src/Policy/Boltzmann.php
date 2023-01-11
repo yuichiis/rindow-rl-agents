@@ -45,20 +45,18 @@ class Boltzmann extends AbstractPolicy
     }
 
     /**
-    * @param Any $states
-    * @return Any $action
+    * @param NDArray<any> $states
+    * @return NDArray<int> $actions
     */
-    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
+    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
     {
         $la = $this->la;
-        // get probabilities
-        $qValues = $qPolicy->getQValues($state);
         if(!$training) {
-            $action = $la->reduceArgMax($qValues,$axis=-1);
-            $action = $la->expandDims($action,$axis=-1);
-            return $action;
+            return $this->calcMaxValueActions($qPolicy, $states);
         }
 
+        // get probabilities
+        $qValues = $qPolicy->getQValues($states);
         $qValues = $la->copy($qValues);
         if($this->tau!=1.0) {
             $qValues = $la->pow($qValues,$this->tau);
@@ -70,7 +68,7 @@ class Boltzmann extends AbstractPolicy
         $qValues = $la->nan2num($qValues);
 
         // random choice with probabilities
-        $action = $this->randomCategorical($qValues,1);
-        return $action;
+        $actions = $this->randomCategorical($qValues,1);
+        return $actions;
     }
 }

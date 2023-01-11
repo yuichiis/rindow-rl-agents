@@ -36,13 +36,13 @@ class OUNoise extends AbstractPolicy
     }
 
     /**
-    * @param Any $states
-    * @return Any $action
+    * @param NDArray<any> $states
+    * @return NDArray<float> $actions
     */
-    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
+    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
     {
         $la = $this->la;
-        $actions = $qPolicy->getQValues($state);
+        $actions = $qPolicy->getQValues($states);
 
         if($training) {
             $noise = $this->noise->process();

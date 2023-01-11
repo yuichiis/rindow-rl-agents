@@ -16,9 +16,9 @@ interface Agent
     * @param  mixed $states : N x StatesDims typeof int or NDArray or array of int or array of NDArray
     * @return mixed $action : N x ActionDims typeof int or NDArray
     */
-    public function action($observation,bool $training);
+    public function action(mixed $observation, bool $training) : mixed;
 
-    public function getQValue($observation) : float;
+    public function maxQValue(mixed $observation) : float;
 
     /**
     * @param iterable $experience

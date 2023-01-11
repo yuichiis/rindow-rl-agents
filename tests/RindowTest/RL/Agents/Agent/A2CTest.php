@@ -59,6 +59,7 @@ class Test extends TestCase
         return [
             'renderer.skipCleaning' => true,
             'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.execBackground' => true,
         ];
     }
 

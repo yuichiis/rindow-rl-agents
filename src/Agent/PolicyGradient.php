@@ -92,7 +92,7 @@ class PolicyGradient extends AbstractAgent
     //    return $action;
     //}
 
-    public function getQValue($observation) : float
+    public function maxQValue(mixed $observation) : float
     {
         $p = $this->la->max($this->p[$observation]);
         return $p;

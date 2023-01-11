@@ -67,26 +67,27 @@ class AnnealingEpsGreedy extends AbstractPolicy
     }
 
     /**
-    * @param Any $states
-    * @return Any $action
+    * @param NDArray<any> $states
+    * @return NDArray<int> $actions
     */
-    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
+    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
     {
         $la = $this->la;
+        if(!$training) {
+            return $this->calcMaxValueActions($qPolicy, $states);
+        }
+
         $epsilon = $this->getEpsilon();
         $threshold = (int)floor($epsilon * getrandmax());
-        if($training && $threshold > mt_rand()) {
-            $action = $qPolicy->sample($state);
+        if($threshold > mt_rand()) {
+            $actions = $qPolicy->sample($states);
         } else {
-            $qValues = $qPolicy->getQValues($state);
-            $action = $la->reduceArgMax($qValues,$axis=-1);
-            $action = $la->expandDims($action,$axis=-1);
+            $actions = $this->calcMaxValueActions($qPolicy, $states);
         }
-        if($training) {
-            if(!$this->episodeAnnealing) {
-                $this->currentTime++;
-            }
+
+        if(!$this->episodeAnnealing) {
+            $this->currentTime++;
         }
-        return $action;
+        return $actions;
     }
 }

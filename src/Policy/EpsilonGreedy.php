@@ -28,20 +28,21 @@ class EpsilonGreedy extends AbstractPolicy
     }
 
     /**
-    * @param Any $states
-    * @return Any $action
+    * @param NDArray<any> $states
+    * @return NDArray<int> $actions
     */
-    public function action(QPolicy $qPolicy, NDArray $state, bool $training) : NDArray
+    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
     {
         $la = $this->la;
-        if($training && $this->threshold > mt_rand()) {
-            $action = $qPolicy->sample($state);
-        } else {
-            $qValues = $qPolicy->getQValues($state);
-            //$action = $this->la->imax($qValues);
-            $action = $this->la->reduceArgMax($qValues,$axis=-1);
-            $action = $la->expandDims($action,$axis=-1);
+        if(!$training) {
+            return $this->calcMaxValueActions($qPolicy, $states);
         }
-        return $action;
+
+        if($this->threshold > mt_rand()) {
+            $actions = $qPolicy->sample($states);
+        } else {
+            $actions = $this->calcMaxValueActions($qPolicy, $states);
+        }
+        return $actions;
     }
 }

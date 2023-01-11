@@ -5,6 +5,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
+use Rindow\RL\Agents\Network\QTable;
 use InvalidArgumentException;
 
 class AverageReward extends AbstractAgent
@@ -15,13 +16,30 @@ class AverageReward extends AbstractAgent
     protected $values;
     protected $customRewardFunction;
 
-    public function __construct($la,
-        QPolicy $qpolicy, Policy $policy, EventManager $eventManager=null)
+    public function __construct(
+        $la,
+        QPolicy $qpolicy=null,
+        Policy $policy=null,
+        int $numObs=null,
+        int $numActions=null,
+        EventManager $eventManager=null)
     {
+        if($qpolicy==null) {
+            $qpolicy = $this->buildTable($la, $numObs, $numActions);
+        } else {
+            [$numObs, $numActions] = $qpolicy->table()->shape();
+        }
         $this->qpolicy = $qpolicy;
-        $this->numActions = $qpolicy->numActions();
+        $this->numActions = $numActions;
         parent::__construct($la,$policy,$eventManager);
         $this->initialize();
+    }
+
+    protected function buildTable($la,int $numObs, int $numActions)
+    {
+        $rules = $la->ones($la->alloc([$numObs, $numActions]));
+        $qtable = new QTable($la,$rules);
+        return $qtable;
     }
 
     public function initialize() // : Operation
@@ -48,13 +66,6 @@ class AverageReward extends AbstractAgent
     public function subStepLength() : int
     {
         return 1;
-    }
-
-    public function getQValue($observation) : float
-    {
-        $qValues = $this->qpolicy->getQValues($observation);
-        $q = $this->la->max($qValues);
-        return $q;
     }
 
     protected function policyTable() : QPolicy
@@ -85,11 +96,13 @@ class AverageReward extends AbstractAgent
         //      =   (1-1/n)*V(t-1) + 1/n*R(t)
         $la->multiply(
             $la->increment($la->reciprocal($la->copy($n)),1.0,-1.0),
-            $v);
+            $v
+        );
         $backupTmpV = $la->copy($v);
         $la->axpy(
-        $la->scal($reward,$la->reciprocal($la->copy($n))),
-        $v);
+            $la->scal($reward,$la->reciprocal($la->copy($n))),
+            $v
+        );
 
         return 0.0;
     }

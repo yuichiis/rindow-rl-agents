@@ -104,7 +104,7 @@ class TestAgent implements Agent
     public function setElapsedTime($elapsedTime) : void
     {}
 
-    public function action($observation,bool $traing)
+    public function action(mixed $observation,bool $traing) : mixed
     {
         if($observation != current($this->assertActionObs)) {
             echo "obs:";
@@ -119,7 +119,7 @@ class TestAgent implements Agent
         return $action;
     }
 
-    public function getQValue($observation) : float
+    public function maxQValue(mixed $observation) : float
     {
         return 1.0;
     }
@@ -184,6 +184,7 @@ class Test extends TestCase
         return [
             'renderer.skipCleaning' => true,
             'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.execBackground' => true,
         ];
     }
 

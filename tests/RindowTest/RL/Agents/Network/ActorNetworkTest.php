@@ -1,11 +1,11 @@
 <?php
-namespace RindowTest\RL\Agents\Network\QNetworkTest;
+namespace RindowTest\RL\Agents\Network\ActorNetworkTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Network\QNetwork;
+use Rindow\RL\Agents\Network\ActorNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -47,7 +47,7 @@ class Test extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $network = new QNetwork($la,$nn,$obsSize=[1],$numActions=2,fcLayers:[100]);
+        $network = new ActorNetwork($la,$nn,$obsSize=[1],$actionSize=[2],fcLayers:[100]);
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
         $trainableVariables = $network->trainableVariables();
@@ -67,7 +67,7 @@ class Test extends TestCase
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('QNetwork');
+        $plt->title('ActorNetwork');
         $plt->show();
         $this->assertTrue(true);
     }
@@ -77,7 +77,7 @@ class Test extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
-        $network = new QNetwork($la,$nn,$obsSize=[1],$numActions=4,fcLayers:[100]);
+        $network = new ActorNetwork($la,$nn,$obsSize=[1],$actionSize=[4],fcLayers:[100]);
         $obs = $la->array([[1],[1],[1]],NDArray::uint32);
         $num = 1000;
         $actions = $la->alloc([$num,count($obs),1],NDArray::uint32);
@@ -98,7 +98,7 @@ class Test extends TestCase
             [  1,NAN,NAN,  1],
             [  1,  1,NAN,NAN],
         ]);
-        $network = new QNetwork($la,$nn,$obsSize=[1],$numActions=4,fcLayers:[100],rules:$rules);
+        $network = new ActorNetwork($la,$nn,$obsSize=[1],$actionSize=[4],fcLayers:[100],rules:$rules);
         $obs = $la->array([[0],[1],[2]],NDArray::uint32);
         $num = 1000;
         $actions = $la->alloc([$num,count($obs),1],NDArray::uint32);
@@ -120,7 +120,7 @@ class Test extends TestCase
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
 
-        $network = new QNetwork($la,$nn,$obsSize=[1],$numActions=2,fcLayers:[100]);
+        $network = new ActorNetwork($la,$nn,$obsSize=[1],$actionSize=[2],fcLayers:[100]);
         $qValues = $network->getQValues($la->array([[1.0]]));
         $this->assertEquals([1,2],$qValues->shape());
         $qValues2 = $network->getQValues($la->array([[1.0],[1.0],[1.0]]));
@@ -139,7 +139,7 @@ class Test extends TestCase
             [  1,NAN,NAN,  1],
             [  1,  1,NAN,NAN],
         ]);
-        $network = new QNetwork($la,$nn,$obsSize=[1],$numActions=4,fcLayers:[100],rules:$rules);
+        $network = new ActorNetwork($la,$nn,$obsSize=[1],$actionSize=[4],fcLayers:[100],rules:$rules);
         $qValues = $network->getQValues($la->array([[1.0]]));
         $this->assertEquals([1,4],$qValues->shape());
         $qValues2 = $network->getQValues($la->array([[1.0],[1.0],[1.0]]));

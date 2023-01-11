@@ -219,18 +219,6 @@ class Dqn extends AbstractAgent
         return $this->trainModel;
     }
 
-    public function getQValue($observation) : float
-    {
-        if(is_numeric($observation)) {
-            $observation = $this->la->array([$observation]);
-        } elseif(!($observation instanceof NDArray)) {
-            throw new InvalidArgumentException('Observation must be NDArray');
-        }
-        $qValues = $this->trainModel->getQValues($observation);
-        $q = $this->la->max($qValues);
-        return $q;
-    }
-
     protected function updateTarget($endEpisode)
     {
         if($this->targetUpdatePeriod > 0) {

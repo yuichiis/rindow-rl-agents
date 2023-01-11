@@ -59,14 +59,33 @@ abstract class AbstractAgent implements Agent
         return $obs;
     }
 
-    public function action($observation,bool $training)
+    public function action(mixed $observation,bool $training) : mixed
     {
+        $la = $this->la;
         $multi = is_array($observation);
+        $isScalar = false;
+        if(!$multi) {
+            $isScalar = is_scalar($observation);
+        }
         $observation = $this->atleast2d($observation);
         $action = $this->policy->action($this->policyTable(),$observation,$training);
         if(!$multi) {
-            $la->squeeze($action,$axis=0);
+            $action = $la->squeeze($action,$axis=0);
+            if($action->shape()==[1]&&$isScalar) {
+                $action = $la->squeeze($action,$axis=0);
+                $action = $la->scalar($action);
+            }
         }
         return $action;
     }
+
+    public function maxQValue(mixed $observation) : float
+    {
+        $la = $this->la;
+        $observation = $this->atleast2d($observation);
+        $qValues = $this->policyTable()->getQValues($observation);
+        $q = $la->max($qValues);
+        return $q;
+    }
+
 }

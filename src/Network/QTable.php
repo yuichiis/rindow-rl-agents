@@ -13,7 +13,6 @@ class QTable implements QPolicy
     const MODEL_FILENAME = '%s.model';
 
     protected $rules;
-    //protected $thresholds;
     protected $obsSize;
     protected $numActions;
     protected $rulesProbs;
@@ -26,18 +25,19 @@ class QTable implements QPolicy
         [$obsSize,$numActions] = $rules->shape();
         $this->obsSize = $obsSize;
         $this->numActions = $numActions;
+        // initialize legal actions probabilities
+        $this->rulesProbs = $this->generateProbabilities($this->rules);
         $this->initialize();
     }
 
     public function initialize() // : Operation
     {
         $la = $this->la;
-        // initialize legal actions probabilities
-        $this->rulesProbs = $this->generateProbabilities($this->rules);
-        // $this->thresholds = $this->generateThresholds($p);
         // initialize Q table
-        $this->table = $la->randomUniform($this->rules->shape(),0,1);
-        $la->multiply($this->rules,$this->table);
+        $this->table = $la->randomUniform([$this->obsSize,$this->numActions],0,1);
+        if($this->rules) {
+            $la->multiply($this->rules,$this->table);
+        }
     }
 
     public function obsSize()
@@ -84,18 +84,13 @@ class QTable implements QPolicy
         return $values;
     }
 
-    public function sample(NDArray $state) : NDArray
+    public function sample(NDArray $states) : NDArray
     {
         $la = $this->la;
-        //if(!is_int($state)) {
-        //    throw new InvalidArgumentException('state must be integer. '.gettype($state).' given.');
-        //}
-        //$action = $this->randomChoice($this->thresholds[$state], isThresholds:true);
-        $state = $la->squeeze($state,$axis=-1);
-        $probs = $la->gather($this->rulesProbs,$state,$axis=null);
-        $action = $this->randomCategorical($probs,1);
-        //$action = $la->expandDims($la->squeeze($action),$axis=1);
-        return $action;
+        $states = $la->squeeze($states,$axis=-1);
+        $probs = $la->gather($this->rulesProbs,$states,$axis=null);
+        $actions = $this->randomCategorical($probs,1);
+        return $actions;
     }
 
     public function fileExists(string $filename) : bool

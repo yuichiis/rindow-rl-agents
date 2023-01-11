@@ -216,11 +216,9 @@ class A2C extends AbstractAgent
         return 1;
     }
 
-    public function action($observation,bool $training)
+    protected function policyTable() : QPolicy
     {
-        $observation = $this->atleast2d($observation);
-        $action = $this->policy->action($this->trainModel,$observation,$training);
-        return $action;
+        return $this->trainModel;
     }
 
     public function getQValue($observation) : float

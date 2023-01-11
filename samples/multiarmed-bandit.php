@@ -21,16 +21,15 @@ $plt = new Plot(null,$mo);
 
 $probabilities = [0.2, 0.4, 0.6, 0.9];
 $env = new Slots($la,$probabilities);
-$qtable = new Probabilities($la,$la->array([$probabilities]));
-$boltzmann = new AverageReward($la,$qtable,
-    new Boltzmann($la));
-$egreedy = new AverageReward($la,$qtable,
-    new EpsilonGreedy($la,$epsilon=0.1));
-$aegreedy = new AverageReward($la,$qtable,
-    new AnnealingEpsGreedy($la,start:$epsStart=0.9,stop:$epsEnd=0.1,decayRate:$decayRate=0.1));
-$aegreedy2 = new AverageReward($la,$qtable,
-    new AnnealingEpsGreedy($la,decayRate:$decayRate=0.03));
-$ucb1 = new UCB1($la,$qtable);
+$boltzmann = new AverageReward($la, numObs:1, numActions:count($probabilities),
+    policy:new Boltzmann($la));
+$egreedy = new AverageReward($la, numObs:1, numActions:count($probabilities),
+    policy:new EpsilonGreedy($la,$epsilon=0.1));
+$aegreedy = new AverageReward($la, numObs:1, numActions:count($probabilities),
+    policy:new AnnealingEpsGreedy($la,start:$epsStart=0.9,stop:$epsEnd=0.1,decayRate:$decayRate=0.1));
+$aegreedy2 = new AverageReward($la, numObs:1, numActions:count($probabilities),
+    policy:new AnnealingEpsGreedy($la,decayRate:$decayRate=0.03));
+$ucb1 = new UCB1($la, numActions:count($probabilities));
 $driver0 = new EpisodeDriver($la,$env,$boltzmann,1);
 $driver1 = new EpisodeDriver($la,$env,$egreedy,1);
 $driver2 = new EpisodeDriver($la,$env,$aegreedy,1);
