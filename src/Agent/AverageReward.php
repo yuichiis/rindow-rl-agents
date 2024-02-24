@@ -7,6 +7,7 @@ use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network\QTable;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class AverageReward extends AbstractAgent
 {
@@ -87,8 +88,8 @@ class AverageReward extends AbstractAgent
         if($action<0 || $action>=$this->numActions) {
             throw new InvalidArgumentException('Invalid Action');
         }
-        $n = $this->numTrials[[$action,$action]];
-        $v = $this->values[$observation][[$action,$action]];
+        $n = $this->numTrials[R($action,$action+1)];
+        $v = $this->values[$observation][R($action,$action+1)];
 
         $la->increment($n,1.0);
 

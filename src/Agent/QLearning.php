@@ -3,6 +3,7 @@ namespace Rindow\RL\Agents\Agent;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class QLearning extends Sarsa
 {
@@ -17,7 +18,7 @@ class QLearning extends Sarsa
         $la = $this->la;
         //  TD = R(t+1)+gamma*max(Q(s(t+1),?))-Q(s(t),a(t))
         $imaxQ = $la->imax($nextValues);
-        $maxQ = $nextValues[[$imaxQ,$imaxQ]];
+        $maxQ = $nextValues[R($imaxQ,$imaxQ+1)];
         $td = $la->axpy($q,$la->increment(
             $la->scal($this->gamma,$la->copy($maxQ)),$reward),
             -1.0);

@@ -2,10 +2,12 @@
 namespace Rindow\RL\Agents\Agent;
 
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Util\Random;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class PolicyGradient extends AbstractAgent
 {
@@ -113,7 +115,7 @@ class PolicyGradient extends AbstractAgent
         $totalReward = 0;
         foreach ($history as $transition) {
             [$observation,$action,$nextObs,$reward,$done,$info] = $transition;
-            $la->increment($nsa[$observation][[$action,$action]],1.0);
+            $la->increment($nsa[$observation][R($action,$action+1)],1.0);
             $la->axpy($ones,$ns[$observation]);
         }
 

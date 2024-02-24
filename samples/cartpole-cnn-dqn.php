@@ -49,7 +49,7 @@ function get_screen($la,$observation,$env)
     # Strip off the edges, so that we have a square image centered on a cart
     [$begin,$end] = $slice_range;
 
-    //$screen = $screen[[$top,$bottom]];
+    //$screen = $screen[R($top,$bottom+1)];
     //$screen = $la->slice($screen,[0,$begin],[$bottom-$top,$end-$begin]);
 
     $new_gd = imagecreatetruecolor(90,40);
@@ -148,7 +148,7 @@ $numActions = $env->actionSpace()->n();
 //$image2 = get_screen($la,$obs,$env);
 
 //$image = $env->render($mode='rgb_array');
-//$image = $image[[170,320]];
+//$image = $image[R(170,320+1)];
 //echo $mo->toString($obs,"%1.1f")."\n";
 //$plt->figure();
 //$plt->imshow($image,null,null,null,$origin='upper');

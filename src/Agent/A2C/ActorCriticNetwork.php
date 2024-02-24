@@ -42,17 +42,20 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
             convType:$convType,
             fcLayers:$fcLayers,
             activation:$activation,
-            kernelInitializer:$kernelInitializer
+            kernelInitializer:$kernelInitializer,
+            name:'State'
         );
         $actionSize = (int)array_product($actionSize);
         $this->actionLayer = $nn->layers()->Dense(
             $actionSize,
             activation:$actionActivation,
-            kernel_initializer:$actionKernelInitializer
+            kernel_initializer:$actionKernelInitializer,
+            name:'ActionDense'
         );
         $this->criticLayer = $nn->layers()->Dense(
             1,
-            kernel_initializer:$criticKernelInitializer
+            kernel_initializer:$criticKernelInitializer,
+            name:'CriticDense'
         );
         $this->numActions = $actionSize;
     }
@@ -62,7 +65,7 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
         return $this->actionSize;
     }
 
-    public function call($state_input,$training)
+    public function call($state_input,$training=null)
     {
         $state_out = $this->stateLayers->forward($state_input,$training);
         $action_out = $this->actionLayer->forward($state_out,$training);
@@ -84,7 +87,7 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
         } else {
             $obs = $la->array([[$observation]]);
         }
-        [$action_out,$critic_out] = $this->forward($obs,true);
+        [$action_out,$critic_out] = $this->forward($obs);
         if(!is_array($observation)) {
             $action_out = $la->squeeze($action_out,$axis=0);
         }
@@ -98,7 +101,7 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
         return $action_out;
     }
 
-    public function sample($state)
+    public function sample(NDArray $state) : NDArray
     {
         if($this->thresholds) {
             $actions = [];

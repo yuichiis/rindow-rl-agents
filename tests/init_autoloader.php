@@ -1,12 +1,21 @@
 <?php
-if (file_exists(__DIR__.'/../vendor/autoload.php')) {
-    $loader = include __DIR__.'/../vendor/autoload.php';
+define('COMPOSER_LIBRARY_PATH', getenv('COMPOSER_LIBRARY_PATH'));
+if(COMPOSER_LIBRARY_PATH && file_exists(COMPOSER_LIBRARY_PATH.'/vendor/autoload.php')) {
+    $loader = include COMPOSER_LIBRARY_PATH.'/vendor/autoload.php';
 } else {
-    define('COMPOSER_LIBRARY_PATH', getenv('COMPOSER_LIBRARY_PATH'));
-    if(COMPOSER_LIBRARY_PATH && file_exists(COMPOSER_LIBRARY_PATH.'/vendor/autoload.php')) {
-        $loader = include COMPOSER_LIBRARY_PATH.'/vendor/autoload.php';
-    } else {
-        throw new \Exception("Loader is not found.");
-    }
+    throw new \Exception("Loader is not found.");
 }
-//$loader->add('Rindow\\Module\\Monolog\\', __DIR__.'/../../module-monolog/src');
+$loader->addPsr4('Rindow\\RL\\Agents\\',__DIR__.'/../src');
+$loader->addPsr4('Rindow\\RL\\Gym\\',__DIR__.'/../../rindow-rl-gym/src');
+$loader->addPsr4('Rindow\\NeuralNetworks\\',__DIR__.'/../../rindow-neuralnetworks/src');
+$loader->addPsr4('Rindow\\Math\\Matrix\\',__DIR__.'/../../rindow-math-matrix/src');
+$loader->addPsr4('Rindow\\Math\\Buffer\\FFI\\', __DIR__.'/../../rindow-math-buffer-ffi/src');
+$loader->addPsr4('Rindow\\OpenBLAS\\FFI\\', __DIR__.'/../../rindow-openblas-ffi/src');
+$loader->addPsr4('Rindow\\Matlib\\FFI\\', __DIR__.'/../../rindow-matlib-ffi/src');
+$loader->addPsr4('Rindow\\OpenCL\\FFI\\', __DIR__.'/../../rindow-opencl-ffi/src');
+$loader->addPsr4('Rindow\\CLBlast\\FFI\\', __DIR__.'/../../rindow-clblast-ffi/src');
+$loader->addPsr4('Rindow\\Math\\Plot\\', __DIR__.'/../../rindow-math-plot/src');
+$loader->addPsr4('Interop\\Polite\\Math\\', __DIR__.'/../../../interop-phpobjects/polite-math/src');
+$loader->addPsr4('Interop\\Polite\\AI\\', __DIR__.'/../../../interop-phpobjects/polite-ai/src');
+
+return $loader;

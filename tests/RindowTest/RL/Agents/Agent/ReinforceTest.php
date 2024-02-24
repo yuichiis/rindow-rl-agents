@@ -36,7 +36,7 @@ class TestPolicy implements Policy
 }
 
 
-class Test extends TestCase
+class ReinforceTest extends TestCase
 {
     public function newMatrixOperator()
     {

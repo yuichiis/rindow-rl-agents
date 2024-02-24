@@ -5,6 +5,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Model\AbstractModel;
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Policy\OUNoise;
@@ -149,7 +150,7 @@ class Ddpg extends AbstractAgent
             activation:$activation,kernelInitializer:$kernelInitializer,
             outputOptions:$outputOptions,
             );
-        $network->build(array_merge([1],$obsSize),true);
+        $network->build(array_merge([1],$obsSize));
         return $network;
     }
 
@@ -169,7 +170,7 @@ class Ddpg extends AbstractAgent
             conConvLayers: $conConvLayers, conConvType:$conConvType, conFcLayers:$conFcLayers,
             activation: $activation,       kernelInitializer:$kernelInitializer
             );
-        $network->build(array_merge([1],$obsSize),array_merge([1],$actionSize),true);
+        $network->build(array_merge([1],$obsSize),array_merge([1],$actionSize));
         return $network;
     }
 

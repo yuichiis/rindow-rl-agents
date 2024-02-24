@@ -49,7 +49,7 @@ class TestQPolicy implements QPolicy
     }
 }
 
-class Test extends TestCase
+class GreedyTest extends TestCase
 {
     public function newMatrixOperator()
     {

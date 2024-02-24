@@ -38,7 +38,7 @@ class TestPolicy implements Policy
 }
 
 
-class Test extends TestCase
+class DdpgTest extends TestCase
 {
     public function newMatrixOperator()
     {

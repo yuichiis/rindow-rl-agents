@@ -36,7 +36,7 @@ class TestPolicy implements Policy
 }
 
 
-class Test extends TestCase
+class DqnTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -70,10 +70,14 @@ class Test extends TestCase
 
         $fixedActions = [0,1];
         foreach($fixedActions as $fixedAction) {
+            $fixedAction = $la->array([$fixedAction]);
             $policy = new TestPolicy($fixedAction);
             $agent = new DQN($la,policy:$policy,nn:$nn, obsSize:[1], numActions:2,fcLayers:[100]);
             for($i=0;$i<100;$i++) {
-                $this->assertEquals($fixedAction,$agent->action($la->array([1]),$training=true));
+                $a = $agent->action($la->array([1]),$training=true);
+                var_dump($a->toArray());
+                var_dump($fixedAction->toArray());
+                $this->assertEquals($fixedAction,$a);
             }
         }
     }

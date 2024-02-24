@@ -5,6 +5,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Util\OUProcess;
+use function Rindow\Math\Matrix\R;
 
 class OUNoise extends AbstractPolicy
 {
@@ -57,8 +58,8 @@ class OUNoise extends AbstractPolicy
         $flat_lower = $this->lower_bound->reshape([$size]);
         $flat_upper = $this->upper_bound->reshape([$size]);
         for($i=0;$i<$size;$i++) {
-            $la->maximum($actions[[$i,$i]],$flat_lower[$i]);
-            $la->minimum($actions[[$i,$i]],$flat_upper[$i]);
+            $la->maximum($actions[R($i,$i+1)],$flat_lower[$i]);
+            $la->minimum($actions[R($i,$i+1)],$flat_upper[$i]);
         }
 
         $actions = $la->transpose($actions);

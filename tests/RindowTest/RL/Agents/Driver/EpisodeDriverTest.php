@@ -164,7 +164,7 @@ class TestAgent implements Agent
     {}
 }
 
-class Test extends TestCase
+class EpisodeDriverTest extends TestCase
 {
     public function newMatrixOperator()
     {

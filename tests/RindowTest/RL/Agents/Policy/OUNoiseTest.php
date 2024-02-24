@@ -10,6 +10,7 @@ use Rindow\RL\Agents\Policy\OUNoise;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class TestQPolicy implements QPolicy
 {
@@ -43,7 +44,7 @@ class TestQPolicy implements QPolicy
     }
 }
 
-class Test extends TestCase
+class OUNoiseTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -129,7 +130,7 @@ class Test extends TestCase
             for($i=0;$i<$steps;$i++) {
                 $q = $c+$v*$i;
                 $q = $la->array([[$q]]);
-                $la->axpy($policy->action($qpolicy,$q,true)[0],$avg[[$i,$i]]);
+                $la->axpy($policy->action($qpolicy,$q,true)[0],$avg[R($i,$i+1)]);
             }
         }
         $la->scal(1/$episodes,$avg);

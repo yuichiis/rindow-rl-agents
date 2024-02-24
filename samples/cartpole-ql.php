@@ -10,6 +10,7 @@ use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Agent\QLearning;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\Network\QTable;
+use function Rindow\Math\Matrix\R;
 
 $mo = new MatrixOperator();
 $la = $mo->la();
@@ -17,15 +18,15 @@ $la = $mo->la();
 $plt = new Plot(null,$mo);
 
 $numDizitized = 6;
-$cartPosBins  = $la->array(range(-2.4, 2.4, (2.4*2)/$numDizitized))[[1,$numDizitized-2]];
-$cartVelocity = $la->array(range(-3.0, 3.0, (3.0*2)/$numDizitized))[[1,$numDizitized-2]];
-$poleAngle    = $la->array(range(-0.5, 0.5, (0.5*2)/$numDizitized))[[1,$numDizitized-2]];
-$poleVelocity = $la->array(range(-2.0, 2.0, (2.0*2)/$numDizitized))[[1,$numDizitized-2]];
+$cartPosBins  = $la->array(range(-2.4, 2.4, (2.4*2)/$numDizitized))[R(1,$numDizitized-1)];
+$cartVelocity = $la->array(range(-3.0, 3.0, (3.0*2)/$numDizitized))[R(1,$numDizitized-1)];
+$poleAngle    = $la->array(range(-0.5, 0.5, (0.5*2)/$numDizitized))[R(1,$numDizitized-1)];
+$poleVelocity = $la->array(range(-2.0, 2.0, (2.0*2)/$numDizitized))[R(1,$numDizitized-1)];
 $digitize = $la->stack([$cartPosBins,$cartVelocity,$poleAngle,$poleVelocity],$axis=0);
 $digitizeState = function($env,$observation,$done) use ($la,$digitize,$numDizitized) {
     $state = 0;
     foreach($digitize as $idx => $thresholds) {
-        $st = $la->searchsorted($thresholds,$observation[[$idx,$idx]]);
+        $st = $la->searchsorted($thresholds,$observation[R($idx,$idx+1)]);
         $state *= $numDizitized;
         $state += $st->toArray()[0];
     }

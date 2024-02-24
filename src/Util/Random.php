@@ -3,6 +3,7 @@ namespace Rindow\RL\Agents\Util;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 trait Random
 {
@@ -29,7 +30,7 @@ trait Random
         [$m,$n] = $probs->shape();
         $p2 = $la->zeros($la->alloc([$m,$n-1],$probs->dtype()));
         foreach ($probs as $key => $value) {
-            $la->cumsum($value[[0,$n-2]],null,null,$p2[$key]);
+            $la->cumsum($value[R(0,$n-1)],null,null,$p2[$key]);
         }
         return $p2;
     }

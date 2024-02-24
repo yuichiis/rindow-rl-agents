@@ -42,7 +42,7 @@ class TestPolicy implements Policy
     }
 }
 
-class Test extends TestCase
+class AverageRewardTest extends TestCase
 {
     public function newMatrixOperator()
     {

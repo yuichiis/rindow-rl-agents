@@ -21,7 +21,7 @@ class TestRandom
     }
 }
 
-class Test extends TestCase
+class RandomTest extends TestCase
 {
     public function newMatrixOperator()
     {

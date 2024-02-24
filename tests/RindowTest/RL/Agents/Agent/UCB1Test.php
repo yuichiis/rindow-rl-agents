@@ -18,7 +18,7 @@ use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
-class Test extends TestCase
+class UCB1Test extends TestCase
 {
     public function newMatrixOperator()
     {

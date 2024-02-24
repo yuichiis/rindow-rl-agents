@@ -167,7 +167,7 @@ class TestAgent implements Agent
     {}
 }
 
-class Test extends TestCase
+class ParallelStepDriverTest extends TestCase
 {
     public function newMatrixOperator()
     {

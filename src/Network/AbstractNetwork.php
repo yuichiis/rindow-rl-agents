@@ -48,9 +48,11 @@ abstract class AbstractNetwork extends AbstractModel implements Network
         $convType=null,
         $fcLayers=null,
         $activation=null,
-        $kernelInitializer=null)
+        $kernelInitializer=null,
+        $name=null)
     {
         $nn = $this->builder;
+        $name = $name ?? '';
         if($nn===null || ($fcLayers===null && $convLayers===null)) {
             throw new InvalidArgumentException('You need to specify the NeuralNetworks builder and the HiddenSize');
         }
@@ -133,9 +135,11 @@ abstract class AbstractNetwork extends AbstractModel implements Network
         if($enableFlatten) {
             $model->add($nn->layers->Flatten(...$flattenOptions));
         }
+        $i = 0;
         foreach ($fcLayers as $units) {
             $model->add($nn->layers->Dense($units,
-                activation:$activation,kernel_initializer:$kernelInitializer));
+                activation:$activation,kernel_initializer:$kernelInitializer,name:"{$name}FcDense{$i}"));
+            $i++;
         }
         return $model;
     }

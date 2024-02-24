@@ -37,7 +37,7 @@ class TestPolicy implements Policy
 }
 
 
-class Test extends TestCase
+class A2CTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -72,6 +72,7 @@ class Test extends TestCase
         $agent = new A2C($la,
             epsStart:0.0, epsStop:0.0,
             nn:$nn, obsSize:[1], actionSize:[2],fcLayers:[100]);
+        //$agent->summary();
         $obs = [
             $la->array([0]),
             $la->array([1]),

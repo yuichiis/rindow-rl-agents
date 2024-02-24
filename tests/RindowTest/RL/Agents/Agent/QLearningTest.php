@@ -16,7 +16,7 @@ use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
-class Test extends TestCase
+class QLearningTest extends TestCase
 {
     public function newMatrixOperator()
     {

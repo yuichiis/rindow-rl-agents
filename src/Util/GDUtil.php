@@ -48,8 +48,8 @@ class GDUtil
             $pos += ($linesize+$boundary);
         }
         $la = $this->la;
-        //$img = $la->alloc([$height,$width,$channels],NDArray::uint8);
-        $img = new NDArrayPhp(null,NDArray::uint8,[$height,$width,$channels]);
+        $img = $la->alloc([$height,$width,$channels],dtype:NDArray::uint8);
+        //$img = new NDArrayPhp(null,NDArray::uint8,[$height,$width,$channels]);
         $buffer = $img->buffer();
         if(method_exists($buffer,'load')) {
             // OpenBlasBuffer

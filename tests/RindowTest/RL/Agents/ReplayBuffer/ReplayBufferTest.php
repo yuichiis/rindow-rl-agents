@@ -8,7 +8,7 @@ use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
 
-class Test extends TestCase
+class ReplayBufferTest extends TestCase
 {
     public function newMatrixOperator()
     {

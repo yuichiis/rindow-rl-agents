@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\QPolicy;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class UCB1 extends AbstractAgent
 {
@@ -90,8 +91,8 @@ class UCB1 extends AbstractAgent
         if($action<0 || $action>=$this->numActions) {
             throw new InvalidArgumentException('Invalid Action');
         }
-        $n1 = $this->numTrials[[$action,$action]];
-        $w = $this->numSuccesses[[$action,$action]];
+        $n1 = $this->numTrials[R($action,$action+1)];
+        $w = $this->numSuccesses[R($action,$action+1)];
         $la->increment($n1,1.0);
         $la->increment($w,$reward);
         if($this->la->min($this->numTrials)==0.0) {

@@ -10,6 +10,7 @@ use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class TestQPolicy implements QPolicy
 {
@@ -47,7 +48,7 @@ class TestQPolicy implements QPolicy
     }
 }
 
-class Test extends TestCase
+class BoltzmannTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -90,7 +91,7 @@ class Test extends TestCase
                 $this->assertEquals([1,1],$actions->shape());
                 $this->assertEquals(NDArray::uint32,$actions->dtype());
                 $actnum = $actions[0][0];
-                $la->increment($occur[$state][[$actnum,$actnum]],1);
+                $la->increment($occur[$state][R($actnum,$actnum+1)],1);
             }
         }
         $la->scal(1/$times,$occur);

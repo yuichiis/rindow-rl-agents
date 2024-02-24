@@ -149,14 +149,14 @@ class A2C extends AbstractAgent
             $this->gather = $nn->layers->Gather(axis:-1);
         }
         $network->compile(loss:$this->lossFn,optimizer:$this->optimizer);
-        $network->build(array_merge([1],$this->obsSize),true);
+        $network->build(array_merge([1],$this->obsSize));
 
         return $network;
     }
     
     public function summary()
     {
-        $this->trainModel->qmodel()->summary();
+        $this->trainModel->summary();
     }
 
     protected function buildPolicy($la,$network,$start,$stop,$decayRate)

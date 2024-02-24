@@ -9,7 +9,7 @@ use Rindow\RL\Agents\Util\OUProcess;
 use LogicException;
 use InvalidArgumentException;
 
-class Test extends TestCase
+class OUProcessTest extends TestCase
 {
     public function newMatrixOperator()
     {

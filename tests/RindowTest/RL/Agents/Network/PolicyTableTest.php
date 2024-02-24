@@ -11,7 +11,7 @@ use InvalidArgumentException;
 use Throwable;
 
 
-class Test extends TestCase
+class PolicyTableTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -83,8 +83,8 @@ class Test extends TestCase
             $this->assertEquals([3,1],$a->shape());
             $la->copy($a,$actions[$i]);
         }
-        $this->assertEquals(0,$la->min($actions));
-        $this->assertEquals(3,$la->max($actions));
+        $this->assertEquals(0,$la->min($la->astype($actions,dtype:NDArray::float32)));
+        $this->assertEquals(3,$la->max($la->astype($actions,dtype:NDArray::float32)));
         $avg = $la->sum($actions)/$num/count($obs);
         $this->assertLessThan(1.6,$avg);
         $this->assertGreaterThan(1.4,$avg);

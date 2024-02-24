@@ -14,7 +14,7 @@ use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
-class Test extends TestCase
+class PolicyGradientTest extends TestCase
 {
     public function newMatrixOperator()
     {

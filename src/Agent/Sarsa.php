@@ -3,10 +3,12 @@ namespace Rindow\RL\Agents\Agent;
 
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network\QTable;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
+use function Rindow\Math\Matrix\R;
 
 class Sarsa extends AbstractAgent
 {
@@ -66,7 +68,7 @@ class Sarsa extends AbstractAgent
         $la = $this->la;
         [$dmy0,$nextAction,$dmy1,$dmy2,$dmy3,$dmy4] = $history[1];
         // R(t+1)+gamma*Q(s(t+1),a(t+1))-Q(s(t),a(t))
-        $nextQ = $nextValues[[$nextAction,$nextAction]];
+        $nextQ = $nextValues[R($nextAction,$nextAction+1)];
         $td = $la->axpy($q,$la->increment(
             $la->scal($this->gamma,$la->copy($nextQ)),$reward),
             -1.0);
@@ -84,7 +86,7 @@ class Sarsa extends AbstractAgent
         $history = $this->getHistory($experience);
         [$observation,$action,$nextObs,$reward,$done,$info] = $history[0];
         $table = $this->qTable->table();
-        $q = $table[$observation][[$action,$action]];
+        $q = $table[$observation][R($action,$action+1)];
         if($done) {
             // if done ($nextAction belongs to the next episode)
             // Q(s(t),a(t)) =

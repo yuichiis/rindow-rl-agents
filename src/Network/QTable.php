@@ -77,7 +77,7 @@ class QTable implements QPolicy
         //$values = $la->alloc([$count,$size]);
         //foreach ($states as $key => $state) {
         //    $i = $state[0];
-        //    $la->copy($this->table[[$i,$i]],$values[$key]);
+        //    $la->copy($this->table[R($i,$i+1)],$values[$key]);
         //}
         $states = $la->squeeze($states,$axis=-1);
         $values = $la->gather($this->table,$states,$axis=null);
