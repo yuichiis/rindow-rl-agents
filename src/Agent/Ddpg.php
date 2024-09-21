@@ -3,7 +3,6 @@ namespace Rindow\RL\Agents\Agent;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Model\Model;
-use Rindow\NeuralNetworks\Model\AbstractModel;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\QPolicy;
 use Rindow\RL\Agents\Network;
@@ -33,6 +32,20 @@ class Ddpg extends AbstractAgent
     protected $targetModel;
     protected $enabledShapeInspection = true;
     protected $nn;
+    protected $actor_model;
+    protected $critic_model;
+    protected $target_actor;
+    protected $target_critic;
+    protected $batchSize;
+    protected $lower_bound;
+    protected $upper_bound;
+    protected $targetUpdateTau;
+    protected $criticOptimizer;
+    protected $actorOptimizer;
+    protected $backend;
+    protected $actor_model_graph;
+    protected $critic_model_graph;
+
 
     public function __construct(
         object $la,

@@ -19,6 +19,7 @@ class TestEnv implements Environment
 {
     protected $maxEpisodeSteps=5;
     protected $rewardThreshold=195.0;
+    protected $data;
 
     public function __construct(array $data)
     {
@@ -73,6 +74,10 @@ class TestEnv implements Environment
 
 class TestAgent implements Agent
 {
+    protected $assertActionObs;
+    protected $actionResult;
+    protected $assertUpdateLast;
+
     public function __construct($assertActionObs,$actionResult,$assertUpdateLast)
     {
         $this->assertActionObs = $assertActionObs;

@@ -23,10 +23,13 @@ class Reinforce extends AbstractAgent
     protected $optimizer;
     protected $optimizerOpts;
     protected $mo;
+    protected $nn;
+    protected $g;
     protected $gather;
     protected $model;
     protected $trainModelGraph;
     protected $trainableVariables;
+
 
     public function __construct(
         object $la,

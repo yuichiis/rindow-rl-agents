@@ -115,7 +115,8 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         $values = $this->model->forward($states,false);
         if($this->masks) {
             $states = $la->squeeze($states,$axis=-1);
-            $masks = $la->gather($this->masks,$states,$axis=null);
+            //$masks = $la->gather($this->masks,$states,$axis=null);
+            $masks = $la->gatherb($this->masks,$states);
             $la->multiply($masks,$values);
             $la->nan2num($values,-INF);
         }
@@ -127,7 +128,8 @@ class ActorNetwork extends AbstractNetwork implements QPolicy
         $la = $this->la;
         if($this->masks) {
             $obs = $la->squeeze($states,$axis=-1);
-            $prob = $la->gather($this->probabilities,$obs,$axis=null);
+            //$prob = $la->gather($this->probabilities,$obs,$axis=null);
+            $prob = $la->gatherb($this->probabilities,$obs);
             $actions = $this->randomCategorical($prob,1);
         } else {
             ////$values = $la->repeat($this->onesProb,count($states),$axis=0);

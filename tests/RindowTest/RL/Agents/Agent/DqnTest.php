@@ -75,8 +75,8 @@ class DqnTest extends TestCase
             $agent = new DQN($la,policy:$policy,nn:$nn, obsSize:[1], numActions:2,fcLayers:[100]);
             for($i=0;$i<100;$i++) {
                 $a = $agent->action($la->array([1]),$training=true);
-                var_dump($a->toArray());
-                var_dump($fixedAction->toArray());
+                echo $mo->toString($a,indent:true)."\n";
+                echo $mo->toString($fixedAction,indent:true)."\n";
                 $this->assertEquals($fixedAction,$a);
             }
         }

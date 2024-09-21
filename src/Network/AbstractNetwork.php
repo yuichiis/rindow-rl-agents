@@ -13,7 +13,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
 
     public function __construct($builder,array $obsSize)
     {
-        parent::__construct($builder->backend(),$builder);
+        parent::__construct($builder);
         $this->obsSize = $obsSize;
     }
 

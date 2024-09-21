@@ -59,7 +59,7 @@ class StepDriver extends AbstractDriver
         $episode = 0;
         $episodeCount = $sumReward = $sumSteps = $sumLoss = $countLoss = 0;
         if($verbose>0) {
-            $this->console("Train on ${numIterations} steps with ${numEvalEpisodes} evaluation each aggregation.\n");
+            $this->console("Train on {$numIterations} steps with {$numEvalEpisodes} evaluation each aggregation.\n");
         }
         // verbose=2 log
         $logStartTime = microtime(true);
@@ -134,9 +134,10 @@ class StepDriver extends AbstractDriver
                     $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
                     $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
                     $lossLog = sprintf('%3.2e',($logCountLoss>0)?($logSumLoss/$logCountLoss):0);
-                    $qLog = sprintf('%1.1f',$agent->getQValue($observation));
+                    //$qLog = sprintf('%1.1f',$agent->getQValue($observation));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);
-                    $this->console("Step:".($step+1)." ep:".($episode+1)." rw=${rewardLog}, st=${stepsLog} loss=${lossLog}${epsilonLog}, q=${qLog}, ${msPerStep}ms/st\n");
+                    //$this->console("Step:".($step+1)." ep:".($episode+1)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, q={$qLog}, {$msPerStep}ms/st\n");
+                    $this->console("Step:".($step+1)." ep:".($episode+1)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, {$msPerStep}ms/st\n");
                 } elseif($verbose==1) {
                     $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
                 }
@@ -191,8 +192,8 @@ class StepDriver extends AbstractDriver
                     if($verbose==1) {
                         $this->console("\n");
                     }
-                    $this->console("Avg Rwd=${avgReward}, St=${avgSteps}${avgLoss},".
-                                    " vRwd=${valReward}, vSt=${valSteps}${epsilon}\n");
+                    $this->console("Avg Rwd={$avgReward}, St={$avgSteps}{$avgLoss},".
+                                    " vRwd={$valReward}, vSt={$valSteps}{$epsilon}\n");
                 }
                 $episodeCount = 0;
                 $sumSteps = 0;

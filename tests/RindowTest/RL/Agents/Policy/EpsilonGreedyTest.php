@@ -13,6 +13,9 @@ use InvalidArgumentException;
 
 class TestQPolicy implements QPolicy
 {
+    protected $la;
+    protected $prob;
+
     public function __construct($la,NDArray $prob)
     {
         $this->la = $la;
@@ -37,7 +40,8 @@ class TestQPolicy implements QPolicy
     {
         $la = $this->la;
         $state = $la->squeeze($state,$axis=-1);
-        $values = $la->gather($this->prob,$state,$axis=null);
+        //$values = $la->gather($this->prob,$state,$axis=null);
+        $values = $la->gatherb($this->prob,$state);
         return $values;
     }
 

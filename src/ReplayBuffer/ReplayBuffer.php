@@ -12,6 +12,7 @@ class ReplayBuffer implements ReplayBufferInterface
     protected $maxSize;
     protected $size = 0;
     protected $last = -1;
+    protected $array;
 
     public function __construct($la,$maxSize)
     {

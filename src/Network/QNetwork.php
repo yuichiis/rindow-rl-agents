@@ -122,7 +122,8 @@ class QNetwork extends AbstractNetwork implements QPolicy
         $values = $this->predict($observations);
         if($this->masks) {
             $observations = $la->squeeze($observations,$axis=-1);
-            $masks = $la->gather($this->masks,$observations,$axis=null);
+            //$masks = $la->gather($this->masks,$observations,$axis=null);
+            $masks = $la->gatherb($this->masks,$observations);
             $la->multiply($masks,$values);
             $la->nan2num($values,-INF);
         }
@@ -134,7 +135,8 @@ class QNetwork extends AbstractNetwork implements QPolicy
         $la = $this->la;
         if($this->masks) {
             $obs = $la->squeeze($states,$axis=-1);
-            $prob = $la->gather($this->probabilities,$obs,$axis=null);
+            //$prob = $la->gather($this->probabilities,$obs,$axis=null);
+            $prob = $la->gatherb($this->probabilities,$obs);
             $actions = $this->randomCategorical($prob,1);
         } else {
             $actions = $this->randomCategorical($this->onesProb,count($states));

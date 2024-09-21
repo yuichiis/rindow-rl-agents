@@ -121,7 +121,7 @@ abstract class AbstractDriver implements Driver
     protected function progressBar($title,$iterNumber,$numIterations,$evalInterval,$startTime,$maxDot)
     {
         if($iterNumber<0) {
-            $this->console("\r${title} 1/${numIterations} ");
+            $this->console("\r{$title} 1/{$numIterations} ");
             return;
         }
         $iterNumber++;
@@ -141,8 +141,8 @@ abstract class AbstractDriver implements Driver
             $rem_string = '????';
             $this->console($maxDot."\n");
         }
-        $this->console("\r${title} ${iterNumber}/${numIterations} [".
+        $this->console("\r{$title} {$iterNumber}/{$numIterations} [".
             str_repeat('.',$dot).str_repeat(' ',$maxDot-$dot).
-            "] ${elapsed} sec. remaining:${rem_string}  ");
+            "] {$elapsed} sec. remaining:{$rem_string}  ");
     }
 }

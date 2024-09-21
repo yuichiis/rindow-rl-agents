@@ -12,6 +12,7 @@ class QTable implements QPolicy
 
     const MODEL_FILENAME = '%s.model';
 
+    protected $la;
     protected $rules;
     protected $obsSize;
     protected $numActions;
@@ -80,7 +81,8 @@ class QTable implements QPolicy
         //    $la->copy($this->table[R($i,$i+1)],$values[$key]);
         //}
         $states = $la->squeeze($states,$axis=-1);
-        $values = $la->gather($this->table,$states,$axis=null);
+        //$values = $la->gather($this->table,$states,$axis=null);
+        $values = $la->gatherb($this->table,$states);
         return $values;
     }
 
@@ -88,7 +90,8 @@ class QTable implements QPolicy
     {
         $la = $this->la;
         $states = $la->squeeze($states,$axis=-1);
-        $probs = $la->gather($this->rulesProbs,$states,$axis=null);
+        //$probs = $la->gather($this->rulesProbs,$states,$axis=null);
+        $probs = $la->gatherb($this->rulesProbs,$states);
         $actions = $this->randomCategorical($probs,1);
         return $actions;
     }

@@ -5,6 +5,14 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 class OUProcess
 {
+    protected $la;
+    protected $theta;
+    protected $mean;
+    protected $std_dev;
+    protected $dt;
+    protected $x_initial;
+    protected $x_prev;
+
     public function __construct(
         object $la,
         NDArray $mean,

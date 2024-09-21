@@ -55,7 +55,7 @@ class EpisodeDriver extends AbstractDriver
         $epStartTime = 0.0;
         $episodeCount = $sumReward = $sumSteps = $sumLoss = $countLoss = 0;
         if($verbose>0) {
-            $this->console("Train on ${numIterations} episodes with ${numEvalEpisodes} evaluation each aggregation.\n");
+            $this->console("Train on {$numIterations} episodes with {$numEvalEpisodes} evaluation each aggregation.\n");
         }
         for($episode=0;$episode<$numIterations;$episode++) {
             if($verbose==1&&$episode==0) {
@@ -156,9 +156,10 @@ class EpisodeDriver extends AbstractDriver
             if($verbose>1) {
                 $strEpisodeReward =  sprintf('%1.2f',$episodeReward);
                 $lossLog = sprintf('%3.2e',$episodeLoss/$episodeSteps);
-                $qLog = sprintf('%1.1f',$agent->getQValue($observation));
+                //$qLog = sprintf('%1.1f',$agent->getQValue($observation));
                 $msPerStep = sprintf('%1.1f',(microtime(true) - $epStartTime)/$episodeSteps*1000);
-                $this->console("Ep ".($episode+1).": rw=${strEpisodeReward}, st=${episodeSteps} loss=${lossLog}${epsilon}, q=${qLog}, ${msPerStep}ms/step\n");
+                //$this->console("Ep ".($episode+1).": rw={$strEpisodeReward}, st={$episodeSteps} loss={$lossLog}{$epsilon}, q={$qLog}, {$msPerStep}ms/step\n");
+                $this->console("Ep ".($episode+1).": rw={$strEpisodeReward}, st={$episodeSteps} loss={$lossLog}{$epsilon}, {$msPerStep}ms/step\n");
             } elseif($verbose==1) {
                 $this->progressBar('Episode',$episode,$numIterations,$evalInterval,$startTime,25);
             }
@@ -181,8 +182,8 @@ class EpisodeDriver extends AbstractDriver
                     if($verbose==1) {
                         $this->console("\n");
                     }
-                    $this->console("Avg Rwd=${avgReward}, St=${avgSteps}${avgLoss},".
-                                    " vRwd=${valReward}, vSt=${valSteps}${epsilon}\n");
+                    $this->console("Avg Rwd={$avgReward}, St={$avgSteps}{$avgLoss},".
+                                    " vRwd={$valReward}, vSt={$valSteps}{$epsilon}\n");
                 }
             }
             if($episodeCount >= $evalInterval) {

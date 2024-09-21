@@ -18,6 +18,8 @@ use Throwable;
 
 class TestPolicy implements Policy
 {
+    protected $fixedAction;
+
     public function __construct($fixedAction)
     {
         $this->fixedAction = $fixedAction;

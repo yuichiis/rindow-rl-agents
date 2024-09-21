@@ -278,8 +278,13 @@ class Dqn extends AbstractAgent
                 $nextStates);
         if($this->ddqn) {
             $nextActions = $this->trainModel->getQValuesBatch($nextStates);
-            $nextActions = $la->reduceArgMax($nextActions,$axis=-1);
+            $nextActions = $la->reduceArgMax($nextActions,axis:-1,dtype:NDArray::int32);
+            $mo = $this->trainModel->backend()->localMatrixOperator();
+            echo "NEXTQVALUES:".$mo->shapeToString($nextQValues->shape())."\n";
+            echo "nextActions:".$mo->shapeToString($nextActions->shape())."\n";
             $nextQValues = $la->gather($nextQValues,$nextActions,$axis=-1);
+            echo "nextQValues:".$mo->shapeToString($nextQValues->shape())."\n";
+            //$nextQValues = $la->gatherb($nextQValues,$nextActions,axis:-1,indexDepth:-1);
         } else {
             $nextQValues = $la->reduceMax($nextQValues,$axis=-1);
         }

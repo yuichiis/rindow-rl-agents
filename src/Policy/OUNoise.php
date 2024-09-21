@@ -10,6 +10,9 @@ use function Rindow\Math\Matrix\R;
 class OUNoise extends AbstractPolicy
 {
     protected $qPolicy;
+    protected $lower_bound;
+    protected $upper_bound;
+    protected $noise;
 
     public function __construct(
         $la,

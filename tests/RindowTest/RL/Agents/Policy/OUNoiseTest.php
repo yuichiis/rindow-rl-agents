@@ -14,6 +14,8 @@ use function Rindow\Math\Matrix\R;
 
 class TestQPolicy implements QPolicy
 {
+    protected $la;
+
     public function __construct($la)
     {
         $this->la = $la;
