@@ -9,9 +9,10 @@ use Rindow\RL\Gym\ClassicControl\MultiarmedBandit\Slots;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Policy\EpsilonGreedy;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\Network\Probabilities;
-use Rindow\RL\Agents\Agent\AverageReward;
-use Rindow\RL\Agents\Agent\UCB1;
+use Rindow\RL\Agents\Agent\PolicyGradient\PolicyGradient;
+use Rindow\RL\Agents\Agent\AverageReward\AverageReward;
+use Rindow\RL\Agents\Agent\AverageReward\ValueTable;
+use Rindow\RL\Agents\Agent\UCB1\UCB1;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 
 $mo = new MatrixOperator();
@@ -20,14 +21,18 @@ $la = $mo->la();
 $plt = new Plot(null,$mo);
 
 $probabilities = [0.2, 0.4, 0.6, 0.9];
+$stateFunc = function($env,$x,$done) use ($la) {
+    return $la->expandDims($x,axis:-1);
+};
 $env = new Slots($la,$probabilities);
-$boltzmann = new AverageReward($la, numObs:1, numActions:count($probabilities),
-    policy:new Boltzmann($la));
-$egreedy = new AverageReward($la, numObs:1, numActions:count($probabilities),
+$slotRules = $la->ones($la->alloc([1,count($probabilities)]));
+$boltzmann = new PolicyGradient($la, numStates:1, numActions:count($probabilities), eta:0.1,
+    policy:new Boltzmann($la,fromLogits:true));
+$egreedy = new AverageReward($la, numActions:count($probabilities),
     policy:new EpsilonGreedy($la,$epsilon=0.1));
-$aegreedy = new AverageReward($la, numObs:1, numActions:count($probabilities),
+$aegreedy = new AverageReward($la, numActions:count($probabilities),
     policy:new AnnealingEpsGreedy($la,start:$epsStart=0.9,stop:$epsEnd=0.1,decayRate:$decayRate=0.1));
-$aegreedy2 = new AverageReward($la, numObs:1, numActions:count($probabilities),
+$aegreedy2 = new AverageReward($la, numActions:count($probabilities),
     policy:new AnnealingEpsGreedy($la,decayRate:$decayRate=0.03));
 $ucb1 = new UCB1($la, numActions:count($probabilities));
 $driver0 = new EpisodeDriver($la,$env,$boltzmann,1);
@@ -35,14 +40,22 @@ $driver1 = new EpisodeDriver($la,$env,$egreedy,1);
 $driver2 = new EpisodeDriver($la,$env,$aegreedy,1);
 $driver3 = new EpisodeDriver($la,$env,$aegreedy2,1);
 $driver4 = new EpisodeDriver($la,$env,$ucb1,1);
+$driver0->setCustomStateFunction($stateFunc);
+$driver1->setCustomStateFunction($stateFunc);
+$driver2->setCustomStateFunction($stateFunc);
+$driver3->setCustomStateFunction($stateFunc);
+$driver4->setCustomStateFunction($stateFunc);
 
 $episodes = 250;#1000;
-$epochs = 1000;#50;
+$epochs = 100;#1000;#50;
 $dot = 100;
 $arts = [];
 $drivers = [$driver0,$driver1,$driver2,$driver3,$driver4];
 //$drivers = [$driver0,$driver1,$driver2,$driver3];
 //$drivers = [$driver0];
+//$drivers = [$driver1];
+//$drivers = [$driver2];
+//$drivers = [$driver3];
 //$drivers = [$driver4];
 
 foreach($drivers as $driver) {
@@ -66,13 +79,14 @@ foreach($drivers as $driver) {
     $la->scal(1.0/$epochs, $avg);
     $arts[] = $plt->plot($avg)[0];
 }
+$dmyTable = new ValueTable($la,numActions:count($probabilities));
 foreach([0.1,0.03] as $rate) {
-    $policy = new AnnealingEpsGreedy($la,$qtable,
+    $policy = new AnnealingEpsGreedy($la,
         start:$epsStart=0.9,stop:$epsEnd=0.1,decayRate:$decayRate=$rate);
     $eps = [];
     for($i=0;$i<$episodes;$i++) {
         $eps[] = $policy->getEpsilon();
-        $policy->action($dmystate=0,true);
+        $policy->actions($dmyTable,$mo->zeros([1,1],dtype:NDArray::int32),training:true,masks:null);
     }
     $arts[] = $plt->plot($la->array($eps))[0];
 }

@@ -7,9 +7,8 @@ use Rindow\Math\Plot\Plot;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Agent\QLearning;
+use Rindow\RL\Agents\Agent\QLearning\QLearning;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\Network\QTable;
 use function Rindow\Math\Matrix\R;
 
 $mo = new MatrixOperator();
@@ -17,22 +16,25 @@ $la = $mo->la();
 //$nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 
+$env = new CartPoleV0($la);
+$numActions = $env->actionSpace()->n();
+
 $numDizitized = 6;
 $cartPosBins  = $la->array(range(-2.4, 2.4, (2.4*2)/$numDizitized))[R(1,$numDizitized-1)];
 $cartVelocity = $la->array(range(-3.0, 3.0, (3.0*2)/$numDizitized))[R(1,$numDizitized-1)];
 $poleAngle    = $la->array(range(-0.5, 0.5, (0.5*2)/$numDizitized))[R(1,$numDizitized-1)];
 $poleVelocity = $la->array(range(-2.0, 2.0, (2.0*2)/$numDizitized))[R(1,$numDizitized-1)];
 $digitize = $la->stack([$cartPosBins,$cartVelocity,$poleAngle,$poleVelocity],$axis=0);
-$digitizeState = function($env,$observation,$done) use ($la,$digitize,$numDizitized) {
-    $state = 0;
+$digitizeStateFunc = function($env,$state,$done) use ($la,$digitize,$numDizitized) {
+    $dizitizedState = 0;
     foreach($digitize as $idx => $thresholds) {
-        $st = $la->searchsorted($thresholds,$observation[R($idx,$idx+1)]);
-        $state *= $numDizitized;
-        $state += $st->toArray()[0];
+        $st = $la->searchsorted($thresholds,$state[R($idx,$idx+1)]);
+        $dizitizedState *= $numDizitized;
+        $dizitizedState += $st->toArray()[0];
     }
-    return $state;
+    return $la->array([$dizitizedState],dtype:NDArray::int32);
 };
-$customReward = function($env,$stepCount,$observation,$reward,$done,$info) {
+$customRewardFunc = function($env,$stepCount,$state,$reward,$done,$info) {
     if($done) {
         if($stepCount < 195) {
             $reward = -200.0;  // Episode failure
@@ -44,8 +46,6 @@ $customReward = function($env,$stepCount,$observation,$reward,$done,$info) {
     }
     return $reward;
 };
-$poleRules = $la->ones($la->alloc([$numDizitized**4,2]));
-[$width,$height,$exit] = [3,3,8];
 
 $episodes = 2000;
 $espstart=1.0;
@@ -54,14 +54,14 @@ $decayRate=0.0001;
 $eta=0.1;
 $gamma=0.9;
 
-$env = new CartPoleV0($la);
-$qtable = new QTable($la,$poleRules);
-$policy = new AnnealingEpsGreedy($la,$qtable,start:$espstart,stop:$espstop,decayRate:$decayRate);
-$qlearning = new QLearning($la,$qtable,$policy,$eta,$gamma,mo:$mo);
-//$qlearning->setDigitizeStateFunction($digitizeState);
+$poleRules = $la->ones($la->alloc([$numDizitized**4,$numActions]));
+
+$policy = new AnnealingEpsGreedy($la,start:$espstart,stop:$espstop,decayRate:$decayRate);
+$qlearning = new QLearning($la,$poleRules,$policy,$eta,$gamma,mo:$mo);
+//$qlearning->setCustomStateFunction($digitizeState);
 $driver3 = new EpisodeDriver($la,$env,$qlearning,$experienceSize=1);
-$driver3->setCustomRewardFunction($customReward);
-$driver3->setCustomObservationFunction($digitizeState);
+$driver3->setCustomRewardFunction($customRewardFunc);
+$driver3->setCustomStateFunction($digitizeStateFunc);
 #$agents = [$agent1,$agent2];
 $drivers = [$driver3];
 
@@ -82,14 +82,14 @@ $plt->show();
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     echo ".";
-    $observation = $env->reset();
-    $observation = $digitizeState($env,$observation,false);
+    [$state,$info] = $env->reset();
+    $state = $digitizeStateFunc($env,$state,false);
     $env->render();
     $done=false;
     while(!$done) {
-        $action = $qlearning->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
-        $observation = $digitizeState($env,$observation,$done);
+        $action = $qlearning->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $state = $digitizeStateFunc($env,$state,$done);
         $env->render();
     }
 }

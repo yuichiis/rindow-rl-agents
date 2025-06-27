@@ -7,9 +7,9 @@ use Rindow\Math\Plot\Plot;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Agent\DQN;
+use Rindow\RL\Agents\Agent\Dqn\Dqn;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\Network\QNetwork;
+//use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 
 $mo = new MatrixOperator();
@@ -20,20 +20,19 @@ $plt = new Plot(null,$mo);
 
 $mazeRules = $la->array([
 //   UP    DOWN  RIGHT LEFT
-    [NAN,    1,    1,  NAN], // 0  +-+-+-+
-    [NAN,    1,    1,    1], // 1  |0 1 2|
-    [NAN,  NAN,  NAN,    1], // 2  + + +-+
-    [  1,    1,  NAN,  NAN], // 3  |3|4 5|
-    [  1,  NAN,    1,  NAN], // 4  + +-+ +
-    [NAN,    1,  NAN,    1], // 5  |6 7|8|
-    [  1,  NAN,    1,  NAN], // 6  +-+-+-+
-    [NAN,  NAN,  NAN,    1], // 7
-    [  1,  NAN,  NAN,  NAN], // 8
-]);
-$customObservationFunction = function($env,$observation,$done) use ($la) {
-    return $la->array([$observation],NDArray::float32);
+    [false,  true,  true, false], // 0  +-+-+-+
+    [false,  true,  true,  true], // 1  |0 1 2|
+    [false, false, false,  true], // 2  + + +-+
+    [ true,  true, false, false], // 3  |3|4 5|
+    [ true, false,  true, false], // 4  + +-+ +
+    [false,  true, false,  true], // 5  |6 7|8|
+    [ true, false,  true, false], // 6  +-+-+-+
+    [false, false, false,  true], // 7
+    [ true, false, false, false], // 8
+],dtype:NDArray::bool);
+$customStateFunction = function($env,$x,$done) use ($la) {
+    return $la->expandDims($x,axis:-1);
 };
-
 [$width,$height,$exit] = [3,3,8];
 $maxEpisodeSteps = 100;
 $episodes = 300;
@@ -48,7 +47,7 @@ $targetUpdatePeriod = 5;   #5;  #5;    #5;   #200;#
 $targetUpdateTau =    0.05;#0.1;#0.025;#0.01;#1.0;#
 $learningRate = 1e-3;#1e-1;#
 $epsStart = 0.9;#0.1;#1.0; #1.0; #1.0; #
-$epsStop =  0.1;#0.1;#0.05;#0.01;#0.05;#
+$epsStop =  0.05;#0.1;#0.05;#0.01;#0.05;#
 $decayRate = 0.07;#0.001;#0.0005;#
 $episodeAnnealing = true;
 $ddqn = true;#false;#
@@ -62,29 +61,41 @@ $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps
 //$env->show();
 //exit();
 
-//$obsSize = $env->observationSpace()->shape();
-$obsSize = [1];
+//$stateShape = $env->observationSpace()->shape();
+$stateShape = [1];
 $numActions = $env->actionSpace()->n();
 
-$network = new QNetwork(
-    $la,$nn,$obsSize,$numActions,
-    fcLayers:$fcLayers,activation:$activation,rules:$mazeRules);
-//$network = new QNetwork($la,$nn,$obsSize,$numActions,$fcLayers,$activation,null,$mazeRules,null,$mo);
-$policy2 = new AnnealingEpsGreedy($la,
-    qPolicy:$network,
-    start:$epsStart,stop:$epsStop,decayRate:$decayRate,
-    episodeAnnealing:$episodeAnnealing);
-$dqn = new Dqn($la,
-    network:$network,policy:$policy2,
-    batchSize:$batchSize,gamma:$gamma,
-    targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
-    ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],
+//$network = new QNetwork(
+//    $la,$nn,$stateShape,$numActions,
+//    fcLayers:$fcLayers,activation:$activation,rules:$mazeRules);
+//$network = new QNetwork($la,$nn,$stateShape,$numActions,$fcLayers,$activation,null,$mazeRules,null,$mo);
+//$policy2 = new AnnealingEpsGreedy($la,
+//    estimator:$network,
+//    start:$epsStart,stop:$epsStop,decayRate:$decayRate,
+//    episodeAnnealing:$episodeAnnealing);
+$dqn = new Dqn(
+    $la,
+    batchSize:$batchSize,
+    gamma:$gamma,
+    targetUpdatePeriod:$targetUpdatePeriod,
+    targetUpdateTau:$targetUpdateTau,
+    ddqn:$ddqn,
+    nn:$nn,
+    lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],
+    stateShape:$stateShape,
+    numActions:$numActions,
+    fcLayers:$fcLayers,
+    activation:$activation,
+    epsStart:$epsStart,
+    epsStop:$epsStop,
+    epsDecayRate:$decayRate,
+    episodeAnnealing:$episodeAnnealing,
     mo:$mo
 );
 $dqn->summary();
 
 $driver4 = new EpisodeDriver($la,$env,$dqn,$experienceSize);
-$driver4->setCustomObservationFunction($customObservationFunction);
+$driver4->setCustomStateFunction($customStateFunction);
 $drivers = [$driver4];
 
 $filenamePattern = __DIR__.'\\maze-dqn-%d';
@@ -119,14 +130,14 @@ foreach($drivers as $i => $driver) {
     $agent = $driver->agent();
     for($i=0;$i<1;$i++) {
         echo ".";
-        $observation = $env->reset();
-        $observation = $customObservationFunction($env,$observation,false);
+        [$state,$info] = $env->reset();
+        $state = $customStateFunction($env,$state,false);
         $env->render();
         $done=false;
         while(!$done) {
-            $action = $agent->action($observation,$training=false);
-            [$observation,$reward,$done,$info] = $env->step($action);
-            $observation = $customObservationFunction($env,$observation,$done);
+            $action = $agent->action($state,training:false,info:$info);
+            [$state,$reward,$done,$truncated,$info] = $env->step($action);
+            $state = $customStateFunction($env,$state,$done);
             $env->render();
         }
     }

@@ -9,6 +9,7 @@ $loader->addPsr4('Rindow\\RL\\Agents\\',__DIR__.'/../src');
 $loader->addPsr4('Rindow\\RL\\Gym\\',__DIR__.'/../../rindow-rl-gym/src');
 $loader->addPsr4('Rindow\\NeuralNetworks\\',__DIR__.'/../../rindow-neuralnetworks/src');
 $loader->addPsr4('Rindow\\Math\\Matrix\\',__DIR__.'/../../rindow-math-matrix/src');
+$loader->addPsr4('Rindow\\Math\\Matrix\\Drivers\\MatlibFFI\\', __DIR__.'/../../rindow-math-matrix-matlibffi/src');
 $loader->addPsr4('Rindow\\Math\\Buffer\\FFI\\', __DIR__.'/../../rindow-math-buffer-ffi/src');
 $loader->addPsr4('Rindow\\OpenBLAS\\FFI\\', __DIR__.'/../../rindow-openblas-ffi/src');
 $loader->addPsr4('Rindow\\Matlib\\FFI\\', __DIR__.'/../../rindow-matlib-ffi/src');

@@ -7,12 +7,11 @@ use Rindow\Math\Plot\Plot;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Agent\PolicyGradient;
-use Rindow\RL\Agents\Agent\Sarsa;
-use Rindow\RL\Agents\Agent\QLearning;
-use Rindow\RL\Agents\Agent\DQN;
+use Rindow\RL\Agents\Agent\PolicyGradient\PolicyGradient;
+use Rindow\RL\Agents\Agent\Sarsa\Sarsa;
+use Rindow\RL\Agents\Agent\QLearning\QLearning;
+use Rindow\RL\Agents\Agent\QLearning\QTable;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\Network\QTable;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 
 $mo = new MatrixOperator();
@@ -34,18 +33,23 @@ $mazeRules = $la->array([
     [  1,  NAN,  NAN,  NAN], // 8
 ]);
 [$width,$height,$exit] = [3,3,8];
+$stateFunc = function($env,$x,$done) use ($la) {
+    return $la->expandDims($x,axis:-1);
+};
 $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
 
-$qtable = new QTable($la,$mazeRules);
-$policy = new AnnealingEpsGreedy($la,$qtable,$espstart=1.0,$stop=0.01,$decayRate=0.05,episodeAnnealing:true);
-//$policy = new AnnealingEpsGreedy($la,$qtable,$espstart=0.1,$stop=0.1,$decayRate=0.01);
+$policy = new AnnealingEpsGreedy($la,start:1.0,stop:0.01,decayRate:0.05,episodeAnnealing:true);
+//$policy = new AnnealingEpsGreedy($la,$valueTable,$espstart=0.1,$stop=0.1,$decayRate=0.01);
 $pg = new PolicyGradient($la,$mazeRules,$eta=0.1,mo:$mo);
-$sarsa = new Sarsa($la,$qtable,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
-$qlearning = new QLearning($la,$qtable,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
+$sarsa = new Sarsa($la,$mazeRules,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
+$qlearning = new QLearning($la,$mazeRules,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
 
 $driver1 = new EpisodeDriver($la,$env,$pg,$experienceSize=10000);
 $driver2 = new EpisodeDriver($la,$env,$sarsa,$experienceSize=2);
 $driver3 = new EpisodeDriver($la,$env,$qlearning,$experienceSize=2);
+$driver1->setCustomStateFunction($stateFunc);
+$driver2->setCustomStateFunction($stateFunc);
+$driver3->setCustomStateFunction($stateFunc);
 $drivers = [$driver1,$driver2,$driver3];
 //$drivers = [$driver2];
 

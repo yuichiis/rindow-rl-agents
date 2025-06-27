@@ -30,7 +30,7 @@ class EventManager implements EventManagerInterface
 
     public function notify(
         string $eventName,
-        array $parameters = null,
+        ?array $parameters = null,
     ) : void
     {
         if($parameters===null) {

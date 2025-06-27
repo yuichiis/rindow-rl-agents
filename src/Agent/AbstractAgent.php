@@ -4,26 +4,26 @@ namespace Rindow\RL\Agents\Agent;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
-use Rindow\RL\Agents\QPolicy;
+use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use InvalidArgumentException;
 use LogicException;
 
 abstract class AbstractAgent implements Agent
 {
-    abstract protected function policyTable() : QPolicy;
+    abstract protected function estimator() : Estimator;
 
-    protected $la;
-    protected $policy;
+    protected object $la;
+    protected ?Policy $policy;
 
     public function __construct(object $la,
-        Policy|NDArray $policy=null, EventManager $eventManager=null)
+        ?Policy $policy=null, ?EventManager $eventManager=null)
     {
         $this->la = $la;
         $this->policy = $policy;
     }
 
-    public function register(EventManager $eventManager=null) : void
+    public function register(?EventManager $eventManager=null) : void
     {
         $policy = $this->policy;
         if($policy instanceof Policy) {
@@ -31,7 +31,7 @@ abstract class AbstractAgent implements Agent
         }
     }
 
-    public function policy()
+    public function policy() : ?Policy
     {
         return $this->policy;
     }
@@ -41,51 +41,103 @@ abstract class AbstractAgent implements Agent
         throw new LogicException('unsuported operation');
     }
 
-    public function atleast2d(mixed $obs) : NDArray
+    public function atleast2d(mixed $states) : NDArray
     {
         $la = $this->la;
-        if($obs instanceof NDArray) {
-            return $la->expandDims($obs,$axis=0);
-        } elseif(is_numeric($obs)) {
-            return $la->array([[$obs]]);
-        } if(!is_array($obs)) {
-            throw new InvalidArgumentException('observations must be NDarray or numeric or array.');
+        if($states instanceof NDArray) {
+            if($states->ndim()===0) {
+                return $states->reshape([1,1]);
+            }
+            return $la->expandDims($states,$axis=0);
+        } elseif(is_numeric($states)) {
+            return $la->array([[$states]]);
+        } if(!is_array($states)) {
+            throw new InvalidArgumentException('states must be NDarray or numeric or array.');
         }
-        if($obs[0] instanceof NDArray) {
-            $obs = $la->stack($obs,$axis=0);
+        if($states[0] instanceof NDArray) {
+            $states = $la->stack($states,$axis=0);
         } else {
-            $obs = $la->expandDims($la->array($obs),$axis=0);
+            $states = $la->expandDims($la->array($states),$axis=0);
         }
-        return $obs;
+        return $states;
     }
 
-    public function action(mixed $observation,bool $training) : mixed
+    protected function extractMasks(?array $infos) : ?NDArray
     {
         $la = $this->la;
-        $multi = is_array($observation);
-        $isScalar = false;
-        if(!$multi) {
-            $isScalar = is_scalar($observation);
-        }
-        $observation = $this->atleast2d($observation);
-        $action = $this->policy->action($this->policyTable(),$observation,$training);
-        if(!$multi) {
-            $action = $la->squeeze($action,$axis=0);
-            if($action->shape()==[1]&&$isScalar) {
-                $action = $la->squeeze($action,$axis=0);
-                $action = $la->scalar($action);
+        $masks = null;
+        if($infos!=null) {
+            $masks = [];
+            foreach($infos as $inf) {
+                if(!isset($inf['validActions'])) {
+                    $masks = null;
+                    break;
+                    }
+                $masks[] = $inf['validActions'] ?? null;
+            }
+            if($masks!==null) {
+                if(count($masks)>0) {
+                    $masks = $la->stack($masks);
+                } else {
+                    $masks = null;
+                }
             }
         }
-        return $action;
+        return $masks;
     }
 
-    public function maxQValue(mixed $observation) : float
+    /**
+     * states  : (batches, ...statesDims)
+     * actions : (batches, ...ActionsDims)
+     */
+    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray
     {
         $la = $this->la;
-        $observation = $this->atleast2d($observation);
-        $qValues = $this->policyTable()->getQValues($observation);
-        $q = $la->max($qValues);
-        return $q;
+        $training ??= false;
+        $info ??= [];
+        //[$states,$isParallel,$isScalar] = $this->atleast2d($states);
+        
+        $masks = null;
+        $isParallel = is_array($states);
+        if($isParallel) {
+            $states = $la->stack($states);
+            $masks = $this->extractMasks($info);
+        } else {
+            if($states->ndim()<1) {
+                $shape = $la->shapeToString($states->shape());
+                throw new InvalidArgumentException("shape of states must be greater than 1D. $shape given.");
+            }
+            $states = $la->expandDims($states,axis:0);
+            if($info!=null) {
+                $masks = $info['validActions'] ?? null;
+                if($masks!==null) {
+                    $masks = $la->expandDims($masks,axis:0);
+                }
+            }
+        }
+        if($states->ndim()<2) {
+            $shape = $la->shapeToString($states->shape());
+            throw new InvalidArgumentException("shape of states must be greater than 1D or array of them. $shape given.");
+        }
+
+        // NDArray $states  : (batches,stateDims ) typeof int32 or float32
+        // NDArray $actions : (batches) typeof int32 or (batches,numActions) typeof float32
+        $actions = $this->policy->actions($this->estimator(),$states,training:$training,masks:$masks);
+        if(!$isParallel) {
+            $actions = $la->squeeze($actions,axis:0);
+        }
+        //echo "states(".implode(',',$states->shape()).")\n";
+        //echo "action(".implode(',',$actions->shape()).")\n";
+        return $actions;
     }
+
+    //public function maxQValue(mixed $states) : float
+    //{
+    //    $la = $this->la;
+    //    $states = $this->atleast2d($states);
+    //    $qValues = $this->estimator()->getActionValues($states);
+    //    $q = $la->max($qValues);
+    //    return $q;
+    //}
 
 }

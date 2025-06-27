@@ -47,7 +47,7 @@ class RandomTest extends TestCase
         $actions = $rand->randomCategorical($probabilities, $numSamples=10);
 
         $this->assertEquals([3,10],$actions->shape());
-        $this->assertEquals(NDArray::uint32,$actions->dtype());
+        $this->assertEquals(NDArray::int32,$actions->dtype());
         $this->assertLessThan(3,$la->max($actions));
     }
 }

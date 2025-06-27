@@ -3,72 +3,84 @@ namespace Rindow\RL\Agents\Policy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use Rindow\RL\Agents\QPolicy;
-use Rindow\RL\Agents\Util\Random;
+use Rindow\RL\Agents\Estimator;
 
 class Boltzmann extends AbstractPolicy
 {
-    use Random;
-
-    protected $qPolicy;
-    protected $tau;
-    protected $min;
-    protected $max;
-    protected $fromLogits;
+    protected float $tau;
+    protected float $min;
+    protected float $max;
+    protected bool $fromLogits;
 
     public function __construct(
-        $la,
-        float $tau=null, float $min=null, float $max=null, bool $fromLogits=null)
+        object $la,
+        ?float $tau=null,
+        ?float $min=null,
+        ?float $max=null,
+        ?bool $fromLogits=null,
+        )
     {
-        if($tau===null) {
-            $tau=1.0;
-        }
-        if($min===null) {
-            if($fromLogits) {
-                $min=-500.0;
-            } else {
-                $min=0;
+        $fromLogits ??= false;
+        $tau ??= 1.0;
+        if($fromLogits) {
+            $min ??= -500.0;
+        } else {
+            $min ??= 0;
+            if($min<0) {
+                throw new InvalidArgumentException("min must be greater than zero or zero without fromlogits.: $min given.");
             }
         }
-        if($max===null) {
-            $max=500.0;
-        }
-        $this->la = $la;
+        $max ??= 500.0;
+
+        parent::__construct($la);
         $this->tau = $tau;
         $this->min = $min;
         $this->max = $max;
         $this->fromLogits = $fromLogits;
     }
 
-    public function initialize()
+    public function isContinuousActions() : bool
+    {
+        return false;
+    }
+
+    public function initialize() : void
     {
     }
 
     /**
-    * @param NDArray<any> $states
-    * @return NDArray<int> $actions
+    * param  NDArray $states  : (batches,...StateDims) typeof int32 or float32
+    * return NDArray $actions : (batches) typeof int32
     */
-    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
+    public function actions(Estimator $estimator, NDArray $states, bool $training, ?NDArray $masks) : NDArray
     {
         $la = $this->la;
         if(!$training) {
-            return $this->calcMaxValueActions($qPolicy, $states);
+            return $this->calcMaxValueActions($estimator, $states, $masks);
         }
+        //echo "boltz\n";
 
-        // get probabilities
-        $qValues = $qPolicy->getQValues($states);
-        $qValues = $la->copy($qValues);
+        // get values
+        $actionPolicies = $estimator->getActionValues($states);
+        //var_dump($actionPolicies->toArray());
+        $actionPolicies = $la->copy($actionPolicies);
         if($this->tau!=1.0) {
-            $qValues = $la->pow($qValues,$this->tau);
+            $actionPolicies = $la->pow($actionPolicies,$this->tau);
         }
-        $qValues = $la->minimum($la->maximum($qValues,$this->min),$this->max);
-        if($this->fromLogits) {
-            $qValues = $la->exp($qValues);
+        //echo "tau:".implode(',',$actionValues->toArray()[0])."\n";
+        $actionPolicies = $la->minimum($la->maximum($actionPolicies,$this->min),$this->max);
+        //if(!$this->fromLogits) {
+        //    $actionPolicies = $la->log($actionPolicies);
+        //}
+        if($masks) {
+            //echo "masking\n";
+            $la->masking($masks,$actionPolicies,fill:-INF);
+            //var_dump($masks->toArray());
+            //var_dump($actionPolicies->toArray());
         }
-        $qValues = $la->nan2num($qValues);
 
-        // random choice with probabilities
-        $actions = $this->randomCategorical($qValues,1);
+        // random choice with logits
+        $actions = $this->randomCategorical($actionPolicies);
         return $actions;
     }
 }

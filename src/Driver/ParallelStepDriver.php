@@ -13,8 +13,8 @@ class ParallelStepDriver extends AbstractDriver
     protected $experiences;
 
     public function __construct(object $la,
-        array $envs, Agent $agent, int $experienceSize, array $replayBuffers=null,
-        Env $evalEnv=null)
+        array $envs, Agent $agent, int $experienceSize, ?array $replayBuffers=null,
+        ?Env $evalEnv=null)
     {
         parent::__construct($la,$agent,$experienceSize);
         $this->envs = $envs;
@@ -30,10 +30,11 @@ class ParallelStepDriver extends AbstractDriver
     }
 
     public function train(
-        int $numIterations=null, int $maxSteps=null, array $metrics=null,
-        int $evalInterval=null, int $numEvalEpisodes=null, int $logInterval=null,
-        int $verbose=null) : array
+        ?int $numIterations=null, ?int $maxSteps=null, ?array $metrics=null,
+        ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
+        ?int $verbose=null) : array
     {
+        $la = $this->la;
         if($numIterations===null || $numIterations<=0) {
             $numIterations = 1000;
         }
@@ -74,26 +75,31 @@ class ParallelStepDriver extends AbstractDriver
         $totalEpisodeCount = 0;
 
         // start episode
-        $obss = [];
+        $states = [];
+        $infos = [];
         $episodeSteps = [];
         foreach($envs as $env) {
-            $observation = $env->reset();
-            $obss[] = $this->customObservation($env,$observation,false);
+            [$state,$info] = $env->reset();
+            $states[] = $this->customState($env,$state,false,false,$info);
+            $infos[] = $info;
             $episodeSteps[] = 0;
         }
         $experiences = $this->experiences;
 
         for($step=0;$step<$numIterations;$step++) {
-            $nextObss = [];
+            $nextStates = [];
             if($verbose==1&&$step==0) {
                 $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
             }
-            $actions = $agent->action($obss,$training=true);
+            $actions = $agent->action($states,training:true,info:$infos);
+            $infos = [];
             foreach($envs as $i => $env) {
-                [$nextObs,$reward,$done,$info] = $env->step($actions[$i]);
-                $nextObss[$i] = $this->customObservation($env,$nextObs,$done);
-                $reward = $this->customReward($env,$episodeSteps[$i],$nextObs,$reward,$done,$info);
-                $experiences[$i]->add([$obss[$i],$actions[$i],$nextObss[$i],$reward,$done,$info]);
+                $action = $la->squeeze($actions[[$i,$i+1]],axis:0);
+                [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
+                $nextStates[$i] = $this->customState($env,$nextState,$done,$truncated,$info);
+                $reward = $this->customReward($env,$episodeSteps[$i],$nextState,$reward,$done,$truncated,$info);
+                $infos[] = $info;
+                $experiences[$i]->add([$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info]);
                 $loss = $agent->update($experiences[$i]);
                 if($loss!==null) {
                     $sumLoss += $loss;
@@ -106,17 +112,17 @@ class ParallelStepDriver extends AbstractDriver
                 $stepCount++;
                 $logStepCount++;
                 $episodeSteps[$i]++;
-                if($done || ($maxSteps!==null && $episodeSteps[$i]>=$maxSteps)) {
+                if($done || $truncated || ($maxSteps!==null && $episodeSteps[$i]>=$maxSteps)) {
                     // start episode
                     $totalEpisodeCount++;
                     $episodeCount++;
                     $logEpisodeCount++;
-                    $nextObs = $env->reset();
-                    $nextObss[$i] = $this->customObservation($env,$nextObs,false);
+                    [$nextState,$info] = $env->reset();
+                    $nextStates[$i] = $this->customState($env,$nextState,false,false,$info);
                     $episodeSteps[$i] = 0;
                 }
             }
-            $obss = $nextObss;
+            $states = $nextStates;
 
             $epsilon = null;
             if(($step+1)%$logInterval==0 || ($step+1)%$evalInterval==0) {
@@ -141,7 +147,7 @@ class ParallelStepDriver extends AbstractDriver
                     $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logStepCount/$logEpisodeCount) : 0);
                     $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logSumReward/$logEpisodeCount) : 0);
                     $lossLog = sprintf('%3.2e',($logCountLoss>0)?($logSumLoss/$logCountLoss):0);
-                    //$qLog = sprintf('%1.1f',$agent->getQValue($observation));
+                    //$qLog = sprintf('%1.1f',$agent->getQValue($states));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);
                     //$this->console("Step:{$stepLog} ep:{$episodeLog} rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, q={$qLog}, {$msPerStep}ms/st\n");
                     $this->console("Step:{$stepLog} ep:{$episodeLog} rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, {$msPerStep}ms/st\n");

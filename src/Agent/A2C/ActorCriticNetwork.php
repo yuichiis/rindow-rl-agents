@@ -1,13 +1,13 @@
 <?php
 namespace Rindow\RL\Agents\Agent\A2C;
 
-use Rindow\RL\Agents\QPolicy;
+use Rindow\RL\Agents\Estimator;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Network\AbstractNetwork;
 
-class ActorCriticNetwork extends AbstractNetwork implements QPolicy
+class ActorCriticNetwork extends AbstractNetwork implements Estimator
 {
-    protected $actionSize;
+    protected $actionShape;
     protected $stateLayers;
     protected $actionLayer;
     protected $criticLayer;
@@ -15,17 +15,17 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
     protected $masks;
 
     public function __construct($la,$builder,
-        array $obsSize, array $actionSize,
+        array $stateShape, array $actionShape,
         array $convLayers=null,string $convType=null,array $fcLayers=null,
         string $activation=null, string $kernelInitializer=null,
         string $actionActivation=null, string $actionKernelInitializer=null,
         string $criticKernelInitializer=null,
         )
     {
-        parent::__construct($builder,$obsSize);
+        parent::__construct($builder,$stateShape);
         $this->la = $la;
         $nn = $this->builder();
-        $this->actionSize = $actionSize;
+        $this->actionShape = $actionShape;
 
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [16, 32];
@@ -37,7 +37,7 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
             $actionActivation = 'softmax';
         }
         $this->stateLayers = $this->buildMlpLayers(
-            $obsSize,
+            $stateShape,
             convLayers:$convLayers,
             convType:$convType,
             fcLayers:$fcLayers,
@@ -45,9 +45,9 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
             kernelInitializer:$kernelInitializer,
             name:'State'
         );
-        $actionSize = (int)array_product($actionSize);
+        $actionShape = (int)array_product($actionShape);
         $this->actionLayer = $nn->layers()->Dense(
-            $actionSize,
+            $actionShape,
             activation:$actionActivation,
             kernel_initializer:$actionKernelInitializer,
             name:'ActionDense'
@@ -57,12 +57,12 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
             kernel_initializer:$criticKernelInitializer,
             name:'CriticDense'
         );
-        $this->numActions = $actionSize;
+        $this->numActions = $actionShape;
     }
 
-    public function actionSize()
+    public function actionShape()
     {
-        return $this->actionSize;
+        return $this->actionShape;
     }
 
     public function call($state_input,$training=null)
@@ -73,63 +73,33 @@ class ActorCriticNetwork extends AbstractNetwork implements QPolicy
         return [$action_out,$critic_out];
     }
 
-    public function getQValues($observation) : NDArray
+    public function getActionValues($states) : NDArray
     {
         $la = $this->la;
-        if(is_array($observation)) {
-            if($observation[0] instanceof NDArray) {
-                $obs = $la->stack($observation,$axis=0);
+        $orgStates = $states; 
+        if(is_array($states)) {
+            if($states[0] instanceof NDArray) {
+                $states = $la->stack($states,$axis=0);
             } else {
-                $obs = $la->expandDims($la->array($observation),$axis=0);
+                $states = $la->expandDims($la->array($states),$axis=0);
             }
-        } elseif($observation instanceof NDArray) {
-            $obs = $la->expandDims($observation,$axis=0);
+        } elseif($states instanceof NDArray) {
+            $states = $la->expandDims($states,$axis=0);
         } else {
-            $obs = $la->array([[$observation]]);
+            $states = $la->array([[$states]]);
         }
-        [$action_out,$critic_out] = $this->forward($obs);
-        if(!is_array($observation)) {
-            $action_out = $la->squeeze($action_out,$axis=0);
+        [$action_out,$critic_out] = $this->forward($states);
+        if(!is_array($orgStates)) {
+            $action_out = $la->squeeze($action_out,axis:0);
         }
         if($this->masks) {
-            if($observation instanceof NDArray) {
-                $observation = (int)$observation[0];
+            $states = $orgStates;
+            if($states instanceof NDArray) {
+                $states = (int)$states[0];
             }
-            $la->multiply($this->masks[$observation],$action_out);
+            $la->multiply($this->masks[$states],$action_out);
             $la->nan2num($action_out,-INF);
         }
         return $action_out;
-    }
-
-    public function sample(NDArray $state) : NDArray
-    {
-        if($this->thresholds) {
-            $actions = [];
-            $states = $state;
-            if(!is_array($state)) {
-                $states = [$state];
-            }
-            foreach ($states as $obs) {
-                if($obs instanceof NDArray) {
-                    $obs = (int)$obs[0];
-                }
-                $actions[] = $this->randomChoice($this->thresholds[$obs], isThresholds:true);
-            }
-            if(!is_array($state)) {
-                $actions = $actions[0];
-            }
-        } else {
-            $actions = [];
-            if(!is_array($state)) {
-                $actions = mt_rand(0,$this->numActions-1);
-            } else {
-                $count = count($state);
-                for($i=0;$i<$count;$i++) {
-                    $actions[] = mt_rand(0,$this->numActions-1);
-                }
-                $actions = $this->la->array($actions,NDArray::uint32);
-            }
-        }
-        return $actions;
     }
 }

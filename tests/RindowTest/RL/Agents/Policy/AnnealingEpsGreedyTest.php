@@ -5,26 +5,29 @@ use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
-use Rindow\RL\Agents\QPolicy;
+use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
 
-class TestQPolicy implements QPolicy
+class TestEstimator implements Estimator
 {
-    protected $la;
-    protected $prob;
-    
-    public function __construct($la,NDArray $prob)
-    {
-        $this->la = $la;
-        $this->prob = $prob;
-    }
+    public function __construct(
+        protected object $la,
+        protected NDArray $values,
+        protected bool $noRules,
+    )
+    {}
 
-    public function obsSize()
+    public function stateShape() : array
     {
         return [1];
+    }
+
+    public function actionShape() : array
+    {
+        return [];
     }
 
     public function numActions() : int
@@ -36,21 +39,25 @@ class TestQPolicy implements QPolicy
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getQValues(NDArray $state) : NDArray
+    public function getActionValues(NDArray $state) : NDArray
     {
         $la = $this->la;
-        $state = $la->squeeze($state,$axis=-1);
-        //$values = $la->gather($this->prob,$state,$axis=null);
-        $values = $la->gatherb($this->prob,$state);
+        $state = $la->squeeze($state,axis:-1);
+        //$values = $la->gather($this->values,$state,$axis=null);
+        $values = $la->gatherb($this->values,$state);
         return $values;
     }
 
-    public function sample(NDArray $state) : NDArray
-    {
-        $la = $this->la;
-        $count = count($state);
-        return $la->fill(1,$la->alloc([$count,1],NDArray::uint32));
-    }
+    //public function probabilities(NDArray $state) : ?NDArray
+    //{
+    //    if($this->noRules) {
+    //        return null;
+    //    }
+    //    $la = $this->la;
+    //    $count = count($state);
+    //    $prob = $la->repeat($la->array([0,1],dtype:NDArray::float32),$count,axis:-1);
+    //    return $prob;
+    //}
 }
 
 class AnnealingEpsGreedyTest extends TestCase
@@ -74,29 +81,74 @@ class AnnealingEpsGreedyTest extends TestCase
         ];
     }
 
-    public function testNormal()
+    public function testNoRulesNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLa($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $probs = $la->array([
+        $values = $la->array([
             [1,  0],
             [0,  1],
-        ]);
-        $qpolicy = new TestQPolicy($la,$probs);
+        ],dtype:NDArray::float32);
+        $estimator = new TestEstimator($la,$values,noRules:true);
         $policy = new AnnealingEpsGreedy($la,decayRate:0.005);
         $buf = new ReplayBuffer($la,$maxSize=100);
 
         $epsilon = [];
         $avg = [];
+        // states(batch,state) = (1,1)
+        $states = $la->array([[0]],dtype:NDArray::int32);
+        $this->assertEquals([1,1],$states->shape());
+        $this->assertEquals(NDArray::int32,$states->dtype());
         for($i=0;$i<1000;$i++) {
             $epsilon[] = $policy->getEpsilon();
-            $obs = $la->array([[0]]);
-            $actions = $policy->action($qpolicy,$obs,true);
-            $this->assertEquals([1,1],$actions->shape());
-            $this->assertEquals(NDArray::uint32,$actions->dtype());
-            $buf->add($actions[0][0]);
+            $actions = $policy->actions($estimator,$states,training:true,masks:null);
+            // actions(batchs) = (1)
+            $this->assertEquals([1],$actions->shape());
+            $this->assertEquals(NDArray::int32,$actions->dtype());
+            $buf->add($actions[0]);
+            $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
+        }
+        $epsilon = $la->array($epsilon);
+        $avg = $la->array($avg);
+        $plt->plot($epsilon);
+        $plt->plot($avg);
+        $plt->legend(['epsilon','action']);
+        $plt->title('AnnealingEpsGreedy');
+        $plt->show();
+        $this->assertTrue(true);
+    }
+
+    public function testWithRulesNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLa($mo);
+        $plt = new Plot($this->getPlotConfig(),$mo);
+
+        $values = $la->array([
+            [1,  0],
+            [0,  1],
+        ],dtype:NDArray::float32);
+        $estimator = new TestEstimator($la,$values,noRules:false);
+        $policy = new AnnealingEpsGreedy($la,decayRate:0.005);
+        $buf = new ReplayBuffer($la,$maxSize=100);
+
+        $epsilon = [];
+        $avg = [];
+        // states(batch,state) = (1,1)
+        $states = $la->array([[0]],dtype:NDArray::int32);
+        $masks = $la->array([[true,true]],dtype:NDArray::bool);
+        $this->assertEquals([1,1],$states->shape());
+        $this->assertEquals([1,2],$masks->shape());
+        $this->assertEquals(NDArray::int32,$states->dtype());
+        for($i=0;$i<1000;$i++) {
+            $epsilon[] = $policy->getEpsilon();
+            $actions = $policy->actions($estimator,$states,training:true,masks:$masks);
+            // actions(batchs) = (1)
+            $this->assertEquals([1],$actions->shape());
+            $this->assertEquals(NDArray::int32,$actions->dtype());
+            $buf->add($actions[0]);
             $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
         }
         $epsilon = $la->array($epsilon);
@@ -119,13 +171,18 @@ class AnnealingEpsGreedyTest extends TestCase
             [1,0],
             [1,0],
         ]);
-        $qpolicy = new TestQPolicy($la,$probs);
-        $states = $la->array([[0],[1],[2]]);
+        $estimator = new TestEstimator($la,$probs,noRules:false);
+        $states = $la->array([[0],[1],[2]],dtype:NDArray::int32);
 
+        // always selecting maxvalue
         $policy = new AnnealingEpsGreedy($la,start:0,stop:0);
-        $this->assertEquals([[0],[0],[0]],$policy->action($qpolicy,$states,true)->toArray());
+        $this->assertEquals([0,0,0],$policy->actions($estimator,$states,training:true,masks:null)->toArray());
 
+        // always selecting random
         $policy = new AnnealingEpsGreedy($la,start:1,stop:1);
-        $this->assertEquals([[1],[1],[1]],$policy->action($qpolicy,$states,true)->toArray());
+        $actions = $policy->actions($estimator,$states,training:true,masks:null);
+        $this->assertEquals([3],$actions->shape());
+        $this->assertEquals(NDArray::int32,$actions->dtype());
+
     }
 }

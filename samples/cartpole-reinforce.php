@@ -7,10 +7,7 @@ use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Driver\StepDriver;
-use Rindow\RL\Agents\Agent\Reinforce;
-use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\Policy\Boltzmann;
+use Rindow\RL\Agents\Agent\Reinforce\Reinforce;
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
@@ -36,18 +33,25 @@ $maxExperienceSize = 10000;#100000;
 $gamma = 0.9;#
 $convLayers = null;
 $convType = null;
-$fcLayers = [10,10];# [32,32];#
+$fcLayers = [32,32];# [10,10];#
 $learningRate = 1e-2;#1e-5;#
 $useBaseline = true;#false;
 
 $env = new CartPoleV0($la);
-$obsSize = $env->observationSpace()->shape();
+$stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
 $agent = new Reinforce(
-    $la, nn:$nn, obsSize:$obsSize, numActions:$numActions, fcLayers:$fcLayers,
-    gamma:$gamma, useBaseline:$useBaseline,
-    optimizerOpts:['lr'=>$learningRate], mo:$mo,
+    $la,
+    gamma:$gamma,
+    useBaseline:$useBaseline,
+    nn:$nn,
+    stateShape:$stateShape,
+    numActions:$numActions,
+    fcLayers:$fcLayers,
+    activation:$activation,
+    //lossFn:$lossFn,
+    optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
 $agent->summary();
 
@@ -74,12 +78,13 @@ if(!$agent->fileExists($filename)) {
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     echo ".";
-    $observation = $env->reset();
+    [$state,$info] = $env->reset();
     $env->render();
     $done=false;
-    while(!$done) {
-        $action = $agent->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
+    $truncated=false;
+    while(!($done || $truncated)) {
+        $action = $agent->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $env->render();
     }
 }

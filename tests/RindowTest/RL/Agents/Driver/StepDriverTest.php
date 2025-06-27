@@ -4,6 +4,7 @@ namespace RindowTest\RL\Agents\Driver\StepDriverTest;
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\AI\RL\Environment;
+use Interop\Polite\AI\RL\Spaces\Space;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Policy;
@@ -17,12 +18,17 @@ use Throwable;
 
 class TestEnv implements Environment
 {
+    protected $la;
     protected $maxEpisodeSteps=200;
     protected $rewardThreshold=195.0;
     protected $data;
 
-    public function __construct(array $data)
+    public function __construct(
+        $la,
+        array $data
+        )
     {
+        $this->la = $la;
         $this->data = $data;
     }
 
@@ -35,31 +41,49 @@ class TestEnv implements Environment
     {
         return $this->rewardThreshold;
     }
+    public function observationSpace() : ?Space
+    {}
 
-    public function step($action) : array
+    public function actionSpace() : ?Space
+    {}
+
+    public function step(mixed $action) : array
     {
-        return next($this->data);
+        $la = $this->la;
+        [$states,$reward,$done,$truncated,$info] = current($this->data);
+        if(!in_array($la->scalar($action),$info['valid_directions'])) {
+            echo "invalid action:";
+            var_dump($action->toArray());
+            echo "validActions:";
+            var_dump($info['valid_directions']);
+            throw new \InvalidArgumentException('invalid action');
+        }
+        [$states,$reward,$done,$truncated,$info] = next($this->data);
+        $states = $la->array($states);
+        return [$states,$reward,$done,$truncated,$info];
     }
 
-    public function reset() : mixed
+    public function reset() : array
     {
-        [$obs,$reward,$done,$info] = reset($this->data);
-        return $obs;
+        $la = $this->la;
+        [$states,$reward,$done,$truncated,$info] = reset($this->data);
+        $states = $la->array($states);
+        return [$states,$info];
     }
 
-    //public function legals($observation=null) : array
+    //public function legals($state=null) : array
     //{}
 
-    public function render(string $mode=null) : mixed
+    public function render(?string $mode=null) : mixed
     {}
 
     public function close() : void
     {}
 
-    public function seed(int $seed=null) : array
+    public function seed(?int $seed=null) : array
     {}
 
-    public function show(bool $loop=null, int $delay=null) : mixed
+    public function show(?bool $loop=null, ?int $delay=null) : mixed
     {}
 
     public function toString() : string
@@ -68,72 +92,100 @@ class TestEnv implements Environment
     public function enter() : void
     {}
 
-    public function exit(Throwable $e=null) : bool
+    public function exit(?Throwable $e=null) : bool
     {}
 }
 
 class TestAgent implements Agent
 {
-    protected $assertActionObs;
-    protected $actionResult;
-    protected $assertUpdateLast;
+    protected object $la;
+    protected array $assertActionState;
+    protected array $actionResult;
+    protected array $assertUpdateLast;
+    protected array $assertActionInfo;
 
-    public function __construct($assertActionObs,$actionResult,$assertUpdateLast)
+    public function __construct(
+        $la,
+        array $assertActionState,
+        array $actionResult,
+        array $assertUpdateLast,
+        array $assertActionInfo,
+        )
     {
-        $this->assertActionObs = $assertActionObs;
+        $this->la = $la;
+        $this->assertActionState = $assertActionState;
         $this->actionResult = $actionResult;
         $this->assertUpdateLast = $assertUpdateLast;
+        $this->assertActionInfo = $assertActionInfo;
     }
 
-    public function register(EventManager $eventManager=null) : void
+    public function register(?EventManager $eventManager=null) : void
     {}
 
     public function currents()
     {
         return [
-            current($this->assertActionObs),
+            current($this->assertActionState),
             current($this->actionResult),
             current($this->assertUpdateLast)
         ];
     }
 
-    public function initialize() // : Operation
+    public function initialize() : void // : Operation
     {}
 
-    public function policy()
+    public function policy() : ?Policy
     {}
 
     public function setElapsedTime($elapsedTime) : void
     {}
 
-    public function action(mixed $observation,bool $traing) : mixed
+    public function action(array|NDArray $state,?bool $training=null,?array $info=null) : NDArray
     {
-        if($observation != current($this->assertActionObs)) {
-            echo "obs:";
-            var_dump($observation);
-            echo "actionObs:";
-            var_dump(current($this->assertActionObs));
-            throw new \Exception('invalid action observation');
+        $la = $this->la;
+        $state = $la->scalar($state);
+        if($state != current($this->assertActionState)) {
+            echo "state:";
+            var_dump($state);
+            echo "actionState:";
+            var_dump(current($this->assertActionState));
+            throw new \Exception('invalid action state');
         }
-        next($this->assertActionObs);
+        next($this->assertActionState);
+        if($info != current($this->assertActionInfo)) {
+            echo "info:";
+            var_dump($info);
+            echo "actionInfo:";
+            var_dump(current($this->assertActionInfo));
+            throw new \Exception('invalid action info');
+        }
+        next($this->assertActionInfo);
         $action = current($this->actionResult);
         next($this->actionResult);
+        $action = $la->array($action,dtype:NDArray::int32);
         return $action;
     }
 
-    public function maxQValue(mixed $observation) : float
-    {
-        return 1.0;
-    }
+    //public function maxQValue(mixed $state) : float
+    //{
+    //    return 1.0;
+    //}
 
     /**
     * @param iterable $experience
     */
     public function update($experience) : float
     {
-        if($experience->last()!=current($this->assertUpdateLast)) {
+        $la = $this->la;
+        $record = $experience->last();
+        $record[0] = $la->scalar($record[0]); // $state
+        $record[1] = $la->scalar($record[1]); // $action
+        $record[2] = $la->scalar($record[2]); // $nextState
+        if($record!=current($this->assertUpdateLast)) {
+            echo "exp::last:";
+            var_dump($record);
+            echo "assertUpdateLast:";
             var_dump(current($this->assertUpdateLast));
-            var_dump($experience->last());
             throw new \Exception('invalid update experience');
         }
         next($this->assertUpdateLast);
@@ -197,23 +249,29 @@ class StepDriverTest extends TestCase
         $batchSize = 1;
         $steps = 4;
         $envdata = [
-            //[$Obs,$reward,$done,$info]
-            [100, null, null,   null],
-            [101, 1,    false,  []],
-            [102, 0.5,  false,  []],
-            [103, 0,    true,   []],
+            //[$state,$reward,$done,$truncated,$info]
+            [100, null, null,   null,  ['valid_directions'=>[10]]],
+            [101, 1,    false,  false, ['valid_directions'=>[11]]],
+            [102, 0.5,  false,  false, ['valid_directions'=>[12]]],
+            [103, 0,    true,   false, ['valid_directions'=>[20]]],
         ];
-        $env = new TestEnv($envdata);
-        $assertActionObs =  [100, 101, 102, 100];
-        $actionResult    =  [10,   11,  12,  20];
+        $env = new TestEnv($la,$envdata);
+        $assertActionState =  [100, 101, 102, 100];
+        $actionResult    =  [10,   11,  12,  10];
         $assertUpdateLast = [
-            //[$observation,$action,$nextObs,$reward,$done,$info]
-            [100, 10, 101, 1,   false, []],
-            [101, 11, 102, 0.5, false, []],
-            [102, 12, 103, 0,   true,  []],
-            [100, 20, 101, 1,   false, []],
+            //[$state,$action,$nextState,$reward,$done,$truncated,$info]
+            [100, 10, 101, 1,   false, false, ['valid_directions'=>[11]]],
+            [101, 11, 102, 0.5, false, false, ['valid_directions'=>[12]]],
+            [102, 12, 103, 0,   true,  false, ['valid_directions'=>[20]]],
+            [100, 10, 101, 1,   false, false, ['valid_directions'=>[11]]],
         ];
-        $agent = new TestAgent($assertActionObs,$actionResult,$assertUpdateLast);
+        $assertActionInfo = [
+            ['valid_directions'=>[10]],
+            ['valid_directions'=>[11]],
+            ['valid_directions'=>[12]],
+            ['valid_directions'=>[10]],
+        ];
+        $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
         $driver = new StepDriver($la,$env, $agent, $experienceSize);
         $losses = $driver->train(numIterations:$steps);
         $this->assertEquals([],$losses);
@@ -232,22 +290,22 @@ class StepDriverTest extends TestCase
         $evalInterval = 2;
         $numEvalEpisodes = 2;
         $envdata = [
-            //[$Obs,$reward,$done, $info]
-            [   100, null,  null,  null],
-            [   101,  1,    false, []],
-            [   102,  0.5,  false, []],
-            [   103,  0,    true,  []],
+            //[$state,$reward,$done,$truncated, $info]
+            [   100, null,  null,  null,  ['valid_directions'=>[10]]],
+            [   101,  1,    false, false, ['valid_directions'=>[11]]],
+            [   102,  0.5,  false, false, ['valid_directions'=>[12]]],
+            [   103,  0,    true,  false, ['valid_directions'=>[30]]],
         ];
         $evalEnvdata = [
-            //[$Obs,$reward,$done, $info]
-            [   200, null,  null,  null],
-            [   201,  1,    false, []],
-            [   202,  0.5,  false, []],
-            [   203,  0,    true,  []],
+            //[$state,$reward,$done,$truncated, $info]
+            [   200, null,  null,  null,  ['valid_directions'=>[20]]],
+            [   201,  1,    false, false, ['valid_directions'=>[21]]],
+            [   202,  0.5,  false, false, ['valid_directions'=>[22]]],
+            [   203,  0,    true,  false, ['valid_directions'=>[40]]],
         ];
-        $env = new TestEnv($envdata);
-        $evalEnv = new TestEnv($evalEnvdata);
-        $assertActionObs =  [
+        $env = new TestEnv($la,$envdata);
+        $evalEnv = new TestEnv($la,$evalEnvdata);
+        $assertActionState =  [
             100, 101,
             200, 201, 202,
             200, 201, 202,
@@ -259,18 +317,39 @@ class StepDriverTest extends TestCase
             10, 11,
             20, 21, 22,
             20, 21, 22,
-            12, 20,
+            12, 10,
             20, 21, 22,
             20, 21, 22,
         ];
         $assertUpdateLast = [
-            //[$obs,$action,$nextObs,$reward, $done, $info]
-            [   100,     10,     101,    1,   false, []],
-            [   101,     11,     102,    0.5, false, []],
-            [   102,     12,     103,    0,    true, []],
-            [   100,     20,     101,    1,   false, []],
+            //[$states,$action,$nextState,$reward, $done,$truncated, $info]
+            [   100,     10,     101,    1,   false, false, ['valid_directions'=>[11]]],
+            [   101,     11,     102,    0.5, false, false, ['valid_directions'=>[12]]],
+            [   102,     12,     103,    0,    true, false, ['valid_directions'=>[30]]],
+            [   100,     10,     101,    1,   false, false, ['valid_directions'=>[11]]],
         ];
-        $agent = new TestAgent($assertActionObs,$actionResult,$assertUpdateLast);
+        $assertActionInfo = [
+            ['valid_directions'=>[10]],
+            ['valid_directions'=>[11]],
+
+            ['valid_directions'=>[20]],
+            ['valid_directions'=>[21]],
+            ['valid_directions'=>[22]],
+            ['valid_directions'=>[20]],
+            ['valid_directions'=>[21]],
+            ['valid_directions'=>[22]],
+
+            ['valid_directions'=>[12]],
+            ['valid_directions'=>[10]],
+
+            ['valid_directions'=>[20]],
+            ['valid_directions'=>[21]],
+            ['valid_directions'=>[22]],
+            ['valid_directions'=>[20]],
+            ['valid_directions'=>[21]],
+            ['valid_directions'=>[22]],
+        ];
+        $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
         $driver = new StepDriver($la,$env, $agent, $experienceSize, evalEnv:$evalEnv);
         $losses = $driver->train(
             numIterations:$steps,

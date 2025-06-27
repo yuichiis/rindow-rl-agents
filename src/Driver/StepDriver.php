@@ -8,12 +8,16 @@ use Rindow\RL\Agents\ReplayBuffer;
 
 class StepDriver extends AbstractDriver
 {
-    protected $env;
-    protected $evalEnv;
+    protected Env $env;
+    protected ?Env $evalEnv;
 
     public function __construct(object $la,
-        Env $env, Agent $agent, int $experienceSize, ReplayBuffer $replayBuffer=null,
-        Env $evalEnv=null)
+        Env $env,
+        Agent $agent,
+        int $experienceSize,
+        ?ReplayBuffer $replayBuffer=null,
+        ?Env $evalEnv=null,
+        )
     {
         parent::__construct($la,$agent,$experienceSize,$replayBuffer);
         $this->env = $env;
@@ -22,9 +26,9 @@ class StepDriver extends AbstractDriver
     }
 
     public function train(
-        int $numIterations=null, int $maxSteps=null, array $metrics=null,
-        int $evalInterval=null, int $numEvalEpisodes=null, int $logInterval=null,
-        int $verbose=null) : array
+        ?int $numIterations=null, ?int $maxSteps=null, ?array $metrics=null,
+        ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
+        ?int $verbose=null) : array
     {
         if($numIterations===null || $numIterations<=0) {
             $numIterations = 1000;
@@ -67,22 +71,23 @@ class StepDriver extends AbstractDriver
 
         // start episode
         $this->onStartEpisode();
-        $observation = $env->reset();
-        $observation = $this->customObservation($env,$observation,false);
+        [$states,$info] = $env->reset();
+        $states = $this->customState($env,$states,false,false,$info);
         $experience = $this->experience;
         $episodeReward = $reward = 0.0;
         $episodeSteps = 0;
         $done = false;
+        $truncated = false;
 
         for($step=0;$step<$numIterations;$step++) {
             if($verbose==1&&$step==0) {
                 $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
             }
-            $action = $agent->action($observation,$training=true);
-            [$nextObs,$reward,$done,$info] = $env->step($action);
-            $nextObs = $this->customObservation($env,$nextObs,$done);
-            $reward = $this->customReward($env,$episodeSteps,$nextObs,$reward,$done,$info);
-            $experience->add([$observation,$action,$nextObs,$reward,$done,$info]);
+            $action = $agent->action($states,training:true,info:$info);
+            [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
+            $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
+            $reward = $this->customReward($env,$episodeSteps,$nextState,$reward,$done,$truncated,$info);
+            $experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
             $totalStep++;
             if($agent->isStepUpdate() && $totalStep>=$subStepLen) {
                 $loss = $agent->update($experience);
@@ -93,11 +98,11 @@ class StepDriver extends AbstractDriver
                 $countLoss++;
                 $logCountLoss++;
             }
-            $observation = $nextObs;
+            $states = $nextState;
             $episodeReward += $reward;
             $episodeSteps++;
 
-            if($done) {
+            if($done || $truncated) {
                 if(!$agent->isStepUpdate()) {
                     $loss = $agent->update($experience);
                     if($loss!==null) {
@@ -134,7 +139,7 @@ class StepDriver extends AbstractDriver
                     $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
                     $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
                     $lossLog = sprintf('%3.2e',($logCountLoss>0)?($logSumLoss/$logCountLoss):0);
-                    //$qLog = sprintf('%1.1f',$agent->getQValue($observation));
+                    //$qLog = sprintf('%1.1f',$agent->getQValue($states));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);
                     //$this->console("Step:".($step+1)." ep:".($episode+1)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, q={$qLog}, {$msPerStep}ms/st\n");
                     $this->console("Step:".($step+1)." ep:".($episode+1)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, {$msPerStep}ms/st\n");
@@ -206,20 +211,22 @@ class StepDriver extends AbstractDriver
             }
             if($maxSteps!==null) {
                 if($episodeSteps>=$maxSteps) {
-                    $done=true;
+                    //$done=true;
+                    $truncated = true;
                 }
             }
-            if($done) {
+            if($done||$truncated) {
                 // start episode
                 $episode++;
                 $this->onStartEpisode();
-                $observation = $env->reset();
-                $observation = $this->customObservation($env,$observation,false);
+                [$states,$info] = $env->reset();
+                $states = $this->customState($env,$states,false,false,$info);
                 $experience = $this->experience;
                 $episodeReward = $reward = 0.0;
                 $episodeSteps = 0;
                 $episodeLoss = 0.0;
                 $done = false;
+                $truncated = false;
             }
         }
         return $history;

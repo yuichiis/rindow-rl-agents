@@ -6,7 +6,7 @@ use Rindow\RL\Agents\Network\AbstractNetwork;
 
 class CriticNetwork extends AbstractNetwork
 {
-    protected $actionSize;
+    protected $actionShape;
     protected $stateLayers;
     protected $actionLayers;
     protected $concat;
@@ -22,18 +22,18 @@ class CriticNetwork extends AbstractNetwork
     //protected $outputDense;
 
     public function __construct($la,$builder,
-        array $obsSize, array $actionSize,
-        array $obsConvLayers=null,string $obsConvType=null,array $obsFcLayers=null,
+        array $stateShape, array $actionShape,
+        array $staConvLayers=null,string $staConvType=null,array $staFcLayers=null,
         array $actConvLayers=null,string $actConvType=null,array $actFcLayers=null,
         array $conConvLayers=null,string $conConvType=null,array $conFcLayers=null,
         string $activation=null, string $kernelInitializer=null,
         )
     {
-        parent::__construct($builder,$obsSize);
-        $this->actionSize = $actionSize;
+        parent::__construct($builder,$stateShape);
+        $this->actionShape = $actionShape;
 
-        if($obsConvLayers===null && $obsFcLayers===null) {
-            $obsFcLayers = [16, 32];
+        if($staConvLayers===null && $staFcLayers===null) {
+            $staFcLayers = [16, 32];
         }
         if($actConvLayers===null && $actFcLayers===null) {
             $actFcLayers = [32];
@@ -42,15 +42,15 @@ class CriticNetwork extends AbstractNetwork
             $conFcLayers = [256,256];
         }
         $this->stateLayers = $this->buildMlpLayers(
-            $obsSize,
-            convLayers:$obsConvLayers,
-            convType:$obsConvType,
-            fcLayers:$obsFcLayers,
+            $stateShape,
+            convLayers:$staConvLayers,
+            convType:$staConvType,
+            fcLayers:$staFcLayers,
             activation:$activation,
             kernelInitializer:$kernelInitializer
         );
         $this->actionLayers = $this->buildMlpLayers(
-            $actionSize,
+            $actionShape,
             convLayers:$actConvLayers,
             convType:$actConvType,
             fcLayers:$actFcLayers,
@@ -58,7 +58,7 @@ class CriticNetwork extends AbstractNetwork
             kernelInitializer:$kernelInitializer
         );
         $this->concatLayers = $this->buildMlpLayers(
-            $actionSize,
+            $actionShape,
             convLayers:$conConvLayers,
             convType:$conConvType,
             fcLayers:$conFcLayers,
@@ -75,11 +75,6 @@ class CriticNetwork extends AbstractNetwork
         //$this->concatDense1 = $nn->layers->Dense(256, activation:'relu');
         //$this->concatDense2 = $nn->layers->Dense(256, activation:'relu');
         //$this->outputDense = $nn->layers->Dense(1);
-    }
-
-    public function actionSize()
-    {
-        return $this->actionSize;
     }
 
     public function call($state_input,$action_input,$training)

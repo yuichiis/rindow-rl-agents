@@ -18,12 +18,12 @@ $nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 $work = new ArrayObject();
 
-$customReward2 = function($env,$stepCount,$observation,$reward,$done,$info) use ($work) {
+$customReward2 = function($env,$stepCount,$state,$reward,$done,$info) use ($work) {
     $oid = spl_object_id($env);
     if(!isset($work[$oid])) {
         $work[$oid] = (object)['position'=>-INF,'velocity'=>-INF,'success'=>0];
     }
-    [$position,$velocity] = $observation;
+    [$position,$velocity] = $state;
     if($done&&$stepCount<199) {
         $work[$oid]->success++;
         //echo "success!! step=".$stepCount."\n";
@@ -44,9 +44,9 @@ $customReward2 = function($env,$stepCount,$observation,$reward,$done,$info) use 
     return $reward;
 };
 
-$customReward2 = function($env,$stepCount,$observation,$reward,$done,$info) use ($work) {
+$customReward2 = function($env,$stepCount,$state,$reward,$done,$info) use ($work) {
     $oid = spl_object_id($env);
-    [$position,$velocity] = $observation;
+    [$position,$velocity] = $state;
     //echo sprintf('pos=[%5.3f],vel=[%5.3f]',abs(-0.5-$position),abs($velocity))."\r";
     $reward = 0;
     if($done) {
@@ -60,7 +60,7 @@ $customReward2 = function($env,$stepCount,$observation,$reward,$done,$info) use 
     return $reward;
 };
 
-$customReward = function($env,$stepCount,$observation,$reward,$done,$info) use ($work) {
+$customReward = function($env,$stepCount,$state,$reward,$done,$info) use ($work) {
     $oid = spl_object_id($env);
     if(!isset($work[$oid])) {
         $work[$oid] = (object)[
@@ -69,7 +69,7 @@ $customReward = function($env,$stepCount,$observation,$reward,$done,$info) use (
             'success'=>0,'steps'=>INF, 'velocity_cut'=>0
         ];
     }
-    [$position,$velocity] = $observation;
+    [$position,$velocity] = $state;
     if($done) {
         if($position>=0.5) {
             $work[$oid]->success++;
@@ -125,17 +125,17 @@ $lossFn = $nn->losses->MeanSquaredError();
 $episodeAnnealing = true;
 
 $env = new MountainCarV0($la);
-$obsSize = $env->observationSpace()->shape();
+$stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
-$obs = $env->reset();
-echo $mo->toString($obs,'%1.2f')."\n";
+[$state,$info] = $env->reset();
+echo $mo->toString($state,'%1.2f')."\n";
 //$env->render();
 //$env->show();
 //exit();
 
 $evalEnv = new MountainCarV0($la);
-$network = new QNetwork($la,$nn,$obsSize,$numActions,
+$network = new QNetwork($la,$nn,$stateShape,$numActions,
     convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,activation:$activation);
 $policy = new AnnealingEpsGreedy($la,$network,
     start:$epsStart,stop:$epsStop,decayRate:$decayRate,episodeAnnealing:$episodeAnnealing);
@@ -185,12 +185,12 @@ if(!file_exists($filename)) {
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     echo ".";
-    $observation = $env->reset();
+    [$state,$info] = $env->reset();
     $env->render();
     $done=false;
     while(!$done) {
-        $action = $dqnAgent->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
+        $action = $dqnAgent->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $env->render();
     }
 }

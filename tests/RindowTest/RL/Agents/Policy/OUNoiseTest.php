@@ -5,14 +5,14 @@ use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
-use Rindow\RL\Agents\QPolicy;
+use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\OUNoise;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use LogicException;
 use InvalidArgumentException;
 use function Rindow\Math\Matrix\R;
 
-class TestQPolicy implements QPolicy
+class TestEstimator implements Estimator
 {
     protected $la;
 
@@ -21,9 +21,14 @@ class TestQPolicy implements QPolicy
         $this->la = $la;
     }
 
-    public function obsSize()
+    public function stateShape() : array
     {
         return [1];
+    }
+
+    public function actionShape() : array
+    {
+        return [];
     }
 
     public function numActions() : int
@@ -35,15 +40,15 @@ class TestQPolicy implements QPolicy
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getQValues(NDArray $state) : NDArray
+    public function getActionValues(NDArray $state) : NDArray
     {
         return $state;
     }
 
-    public function sample(NDArray $state) : NDArray
-    {
-        throw new \Exception("ILLEGAL operation", 1);
-    }
+    //public function probabilities(NDArray $state) : NDArray
+    //{
+    //    throw new \Exception("ILLEGAL operation", 1);
+    //}
 }
 
 class OUNoiseTest extends TestCase
@@ -78,7 +83,7 @@ class OUNoiseTest extends TestCase
         $std_dev = $la->array([0.1]);
         $lower_bound = $la->array([-1.0]);
         $upper_bound = $la->array([ 1.0]);
-        $qpolicy = new TestQPolicy($la);
+        $estimator = new TestEstimator($la);
         $policy = new OUNoise(
             $la,
             $mean, $std_dev, $lower_bound, $upper_bound
@@ -91,8 +96,8 @@ class OUNoiseTest extends TestCase
         for($i=0;$i<$steps;$i++) {
             $q = $c+$v*$i;
             $q = $la->array([[$q]]);
-            $actions[] = $policy->action($qpolicy,$q,true)[0][0];
-            $prods[]   = $policy->action($qpolicy,$q,false)[0][0];
+            $actions[] = $policy->actions($estimator,$q,training:true,masks:null)[0][0];
+            $prods[]   = $policy->actions($estimator,$q,training:false,masks:null)[0][0];
         }
         $actions = $la->array($actions);
         $prods = $la->array($prods);
@@ -113,13 +118,13 @@ class OUNoiseTest extends TestCase
         $la = $this->newLa($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $episodes = 100;
-        $steps = 200;
+        $episodes = 50;
+        $steps = 100;
         $mean = $la->array([0.0]);
         $std_dev = $la->array([0.2]);
         $lower_bound = $la->array([-2.0]);
         $upper_bound = $la->array([ 2.0]);
-        $qpolicy = new TestQPolicy($la);
+        $estimator = new TestEstimator($la);
         $policy = new OUNoise(
             $la, 
             $mean, $std_dev, $lower_bound, $upper_bound
@@ -132,7 +137,7 @@ class OUNoiseTest extends TestCase
             for($i=0;$i<$steps;$i++) {
                 $q = $c+$v*$i;
                 $q = $la->array([[$q]]);
-                $la->axpy($policy->action($qpolicy,$q,true)[0],$avg[R($i,$i+1)]);
+                $la->axpy($policy->actions($estimator,$q,training:true,masks:null)[0],$avg[R($i,$i+1)]);
             }
         }
         $la->scal(1/$episodes,$avg);
@@ -158,7 +163,7 @@ class OUNoiseTest extends TestCase
         $std_dev = $la->array([0.1,0.1]);
         $lower_bound = $la->array([-1.0,-1.0]);
         $upper_bound = $la->array([ 1.0, 1.0]);
-        $qpolicy = new TestQPolicy($la);
+        $estimator = new TestEstimator($la);
         $policy = new OUNoise(
             $la,
             $mean, $std_dev, $lower_bound, $upper_bound
@@ -172,9 +177,9 @@ class OUNoiseTest extends TestCase
             [$q,$q],
             [$q,$q],
         ]);
-        $actions = $policy->action($qpolicy,$q,true);
+        $actions = $policy->actions($estimator,$q,training:true,masks:null);
         $this->assertEquals([3,2],$actions->shape());
-        $prods   = $policy->action($qpolicy,$q,false);
+        $prods   = $policy->actions($estimator,$q,training:false,masks:null);
         $this->assertEquals([3,2],$prods->shape());
     }
 

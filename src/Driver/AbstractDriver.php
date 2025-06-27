@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Driver;
 
 use Interop\Polite\AI\RL\Environment as Env;
+use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Driver;
 use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
@@ -11,18 +12,18 @@ use Rindow\RL\Agents\Util\EventManager;
 
 abstract class AbstractDriver implements Driver
 {
-    protected $la;
-    protected $agent;
-    protected $experience;
-    protected $eventManager;
-    protected $experienceSize;
-    protected $customRewardFunction;
-    protected $customObservationFunction;
+    protected object $la;
+    protected Agent $agent;
+    protected ReplayBufferInterface $experience;
+    protected EventManagerInterface $eventManager;
+    protected int $experienceSize;
+    protected mixed $customRewardFunction=null;
+    protected mixed $customStateFunction=null;
 
     public function __construct(
         object $la, Agent $agent, int $experienceSize,
-        ReplayBufferInterface $replayBuffer=null,
-        EventManagerInterface $eventManager=null)
+        ?ReplayBufferInterface $replayBuffer=null,
+        ?EventManagerInterface $eventManager=null)
     {
         $this->la = $la;
         $this->agent = $agent;
@@ -53,30 +54,44 @@ abstract class AbstractDriver implements Driver
         $this->customRewardFunction = $func;
     }
 
-    public function setCustomObservationFunction(callable $func) : void
+    public function setCustomStateFunction(callable $func) : void
     {
-        $this->customObservationFunction = $func;
+        $this->customStateFunction = $func;
     }
 
-    protected function customReward($env,$stepCount,$observation,$reward,$done,$info) : float
+    protected function customReward(
+        Env $env,
+        int $stepCount,
+        NDArray $states,
+        float $reward,
+        bool $done,
+        bool $truncated,
+        ?array $info,
+        ) : float
     {
         $func = $this->customRewardFunction;
         if($func===null) {
             return $reward;
         }
-        return $func($env,$stepCount,$observation,$reward,$done,$info);
+        return $func($env,$stepCount,$states,$reward,$done,$truncated,$info);
     }
 
-    protected function customObservation($env,$observation,$done)
+    protected function customState(
+        Env $env,
+        NDArray $states,
+        bool $done,
+        bool $truncated,
+        ?array $info,
+        ) : NDArray
     {
-        $func = $this->customObservationFunction;
+        $func = $this->customStateFunction;
         if($func===null) {
-            return $observation;
+            return $states;
         }
-        return $func($env,$observation,$done);
+        return $func($env,$states,$done,$truncated,$info);
     }
 
-    protected function initialize()
+    protected function initialize() : void
     {
         $this->experience->clear();
     }
@@ -86,27 +101,32 @@ abstract class AbstractDriver implements Driver
         return $this->agent;
     }
 
-    protected function console($message)
+    protected function console(string $message)
     {
         if(defined('STDERR')) {
             fwrite(STDERR,$message);
         }
     }
 
-    public function evaluation(Env $env,int $episodes, array $metrics) : array
+    public function evaluation(
+        Env $env,
+        int $episodes,
+        array $metrics
+        ) : array
     {
         $agent = $this->agent;
         $sumReward = $sumSteps = 0;
         for($episode=0;$episode<$episodes;$episode++) {
-            $observation = $env->reset();
-            $observation = $this->customObservation($env,$observation,false);
+            [$states,$info] = $env->reset();
+            $states = $this->customState($env,$states,false,false,$info);
             $done = false;
+            $truncated = false;
             $episodeSteps = 0;
-            while(!$done) {
-                $action = $agent->action($observation,$training=false);
-                [$observation,$reward,$done,$info] = $env->step($action);
-                $observation = $this->customObservation($env,$observation,$done);
-                $reward = $this->customReward($env,$episodeSteps,$observation,$reward,$done,$info);
+            while(!($done || $truncated)) {
+                $action = $agent->action($states,training:false,info:$info);
+                [$states,$reward,$done,$truncated,$info] = $env->step($action);
+                $states = $this->customState($env,$states,$done,$truncated,$info);
+                $reward = $this->customReward($env,$episodeSteps,$states,$reward,$done,$truncated,$info);
                 $sumReward += $reward;
                 $episodeSteps++;
             }
@@ -118,7 +138,14 @@ abstract class AbstractDriver implements Driver
         return $report;
     }
 
-    protected function progressBar($title,$iterNumber,$numIterations,$evalInterval,$startTime,$maxDot)
+    protected function progressBar(
+        string $title,
+        int $iterNumber,
+        int $numIterations,
+        int $evalInterval,
+        int $startTime,
+        int $maxDot,
+        ) : void
     {
         if($iterNumber<0) {
             $this->console("\r{$title} 1/{$numIterations} ");

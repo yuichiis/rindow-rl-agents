@@ -8,7 +8,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Driver\StepDriver;
-use Rindow\RL\Agents\Agent\Dqn;
+use Rindow\RL\Agents\Agent\Dqn\Dqn;
 use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 
@@ -44,11 +44,11 @@ $learningRate = 1e-3;#1e-5;#
 $epsStart = 1.0; #1.0; #0.9;#1.0; #
 $epsStop =  0.05;#0.01;#0.1;#0.05;#
 $epsDecayRate = 0.001;#0.0005;#
-$ddqn = false;#true;#
+$ddqn = true;#false;#
 $lossFn = $nn->losses->MeanSquaredError();
 
 $env = new CartPoleV0($la);
-$obsSize = $env->observationSpace()->shape();
+$stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
 //$env->reset();
@@ -57,11 +57,11 @@ $numActions = $env->actionSpace()->n();
 //exit();
 
 $evalEnv = new CartPoleV0($la);
-//$network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers,$convType,$fcLayers);
+//$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $dqnAgent = new Dqn(
     $la,
-    nn:$nn,obsSize:$obsSize,numActions:$numActions,fcLayers:$fcLayers,
+    nn:$nn,stateShape:$stateShape,numActions:$numActions,fcLayers:$fcLayers,
     epsStart:$epsStart,epsStop:$epsStop,epsDecayRate:$epsDecayRate,
     batchSize:$batchSize,gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
@@ -102,12 +102,12 @@ if(!$dqnAgent->fileExists($filename)) {
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     echo ".";
-    $observation = $env->reset();
+    [$state,$info] = $env->reset();
     $env->render();
     $done=false;
     while(!$done) {
-        $action = $dqnAgent->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
+        $action = $dqnAgent->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $env->render();
     }
 }

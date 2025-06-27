@@ -17,9 +17,9 @@ class OUProcess
         object $la,
         NDArray $mean,
         NDArray $std_deviation,
-        float $theta=null,
-        float $dt=null,
-        NDArray $x_initial=null)
+        ?float $theta=null,
+        ?float $dt=null,
+        ?NDArray $x_initial=null)
     {
         $theta = $theta ?? 0.15;
         $dt = $dt ?? 1e-2;

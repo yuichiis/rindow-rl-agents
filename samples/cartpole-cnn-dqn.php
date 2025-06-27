@@ -18,15 +18,15 @@ $la = $mo->laRawMode();
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 
-function get_cart_location($screen_width,$obs)
+function get_cart_location($screen_width,$state)
 {
     $x_threshold = 2.4;
     $world_width = $x_threshold * 2;
     $scale = $screen_width / $world_width;
-    return (int)floor($obs[0] * $scale + $screen_width / 2.0);
+    return (int)floor($state[0] * $scale + $screen_width / 2.0);
 }
 
-function get_screen($la,$observation,$env)
+function get_screen($la,$state,$env)
 {
     //$screen = $env->render($mode='rgb_array');
     $gd = $env->render($mode='handler');
@@ -37,7 +37,7 @@ function get_screen($la,$observation,$env)
     $top = (int)floor($screen_height*0.4);
     $bottom = (int)floor($screen_height * 0.8);
     $view_width = (int)floor($screen_width * 0.6);
-    $cart_location = get_cart_location($screen_width,$observation);
+    $cart_location = get_cart_location($screen_width,$state);
     if($cart_location < (int)floor($view_width/2)) {
         $slice_range = [0,$view_width];
     } elseif ($cart_location > ($screen_width - (int)floor($view_width/2))) {
@@ -68,8 +68,8 @@ function get_screen($la,$observation,$env)
 
 $last_screen_container = new stdClass();
 $last_screen_container->last_screen = [];
-$customObservationFunction = function($env,$observation,$done) use ($la,$last_screen_container) {
-    $current_screen = get_screen($la,$observation,$env);
+$customStateFunction = function($env,$state,$done) use ($la,$last_screen_container) {
+    $current_screen = get_screen($la,$state,$env);
     $current_screen = $la->astype($current_screen,NDArray::float32);
     if(isset($last_screen_container->last_screen[spl_object_id($env)])) {
         $state = $la->axpy($last_screen_container->last_screen[spl_object_id($env)],
@@ -86,7 +86,7 @@ $customObservationFunction = function($env,$observation,$done) use ($la,$last_sc
     return $state;
 };
 
-//$obsSize = [160, 360, 3];
+//$stateShape = [160, 360, 3];
 //$numActions = 2;
 ## { $numIterations = 300; $evalInterval = 50; $numEvalEpisodes = 10;
 ##   $maxExperienceSize = 10000; $batchSize = 32;
@@ -130,26 +130,26 @@ $lossFn = null;#$nn->losses->MeanSquaredError();
 $optimizer = $nn->optimizers->RMSprop(lr:$learningRate);
 
 $env = new CartPoleV0($la);
-$obs = $env->reset();
-$image = get_screen($la,$obs,$env);
-$obsSize = $image->shape();
+[$state,$info] = $env->reset();
+$image = get_screen($la,$state,$env);
+$stateShape = $image->shape();
 $numActions = $env->actionSpace()->n();
 
 
 //$done = false;
-//echo $mo->toString($obs)."\n";
+//echo $mo->toString($state)."\n";
 //$step = 0;
 //while(!$done) {
-//    [$obs,$reward,$done,$info] = $env->step(rand(0,1));
+//    [$state,$reward,$done,$truncated,$info] = $env->step(rand(0,1));
 //    $step++;
 //}
-//echo $mo->toString($obs)."\n";
+//echo $mo->toString($state)."\n";
 //echo "step=".$step."\n";
-//$image2 = get_screen($la,$obs,$env);
+//$image2 = get_screen($la,$state,$env);
 
 //$image = $env->render($mode='rgb_array');
 //$image = $image[R(170,320+1)];
-//echo $mo->toString($obs,"%1.1f")."\n";
+//echo $mo->toString($state,"%1.1f")."\n";
 //$plt->figure();
 //$plt->imshow($image,null,null,null,$origin='upper');
 //$plt->figure();
@@ -160,7 +160,7 @@ $numActions = $env->actionSpace()->n();
 //exit();
 
 $evalEnv = new CartPoleV0($la);
-$network = new QNetwork($la,$nn,$obsSize,$numActions,$convLayers,$convType,$fcLayers);
+$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 $policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
 $dqnAgent = new Dqn(
     $la,network:$network,policy:$policy,batchSize:$batchSize,gamma:$gamma,
@@ -172,7 +172,7 @@ $filename = __DIR__.'\\cartpole-cnn-dqn.model';
 if(!file_exists($filename)) {
     //$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize);
     $driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,null,null,$evalEnv);
-    $driver->setCustomObservationFunction($customObservationFunction);
+    $driver->setCustomStateFunction($customStateFunction);
     $arts = [];
     //$driver->agent()->initialize();
     $history = $driver->train($numIterations,$maxSteps=null,
@@ -202,14 +202,14 @@ if(!file_exists($filename)) {
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     echo ".";
-    $observation = $env->reset();
-    $observation = $customObservationFunction($env,$observation,false);
+    [$state,$info] = $env->reset();
+    $state = $customStateFunction($env,$state,false);
     $env->render();
     $done=false;
     while(!$done) {
-        $action = $dqnAgent->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
-        $observation = $customObservationFunction($env,$observation,$done);
+        $action = $dqnAgent->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $state = $customStateFunction($env,$state,$done);
         $env->render();
     }
 }

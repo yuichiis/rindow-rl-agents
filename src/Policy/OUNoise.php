@@ -3,26 +3,26 @@ namespace Rindow\RL\Agents\Policy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use Rindow\RL\Agents\QPolicy;
+use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Util\OUProcess;
 use function Rindow\Math\Matrix\R;
 
 class OUNoise extends AbstractPolicy
 {
-    protected $qPolicy;
+    protected $estimator;
     protected $lower_bound;
     protected $upper_bound;
     protected $noise;
 
     public function __construct(
-        $la,
+        object $la,
         NDArray $mean,
         NDArray $std_dev,
         NDArray $lower_bound,
         NDArray $upper_bound,
-        float $theta=null,
-        float $dt=null,
-        NDArray $x_initial=null
+        ?float $theta=null,
+        ?float $dt=null,
+        ?NDArray $x_initial=null
         )
     {
         parent::__construct($la);
@@ -34,19 +34,24 @@ class OUNoise extends AbstractPolicy
                 $x_initial);
     }
 
-    public function initialize()
+    public function isContinuousActions() : bool
+    {
+        return true;
+    }
+
+    public function initialize() : void
     {
         $this->ouProcess->reset();
     }
 
     /**
-    * @param NDArray<any> $states
-    * @return NDArray<float> $actions
+    * param  NDArray $states  : (batches,...StateDims)  typeof int32 or float32
+    * return NDArray $actions : (batches,...ActionDims) typeof float32
     */
-    public function action(QPolicy $qPolicy, NDArray $states, bool $training) : NDArray
+    public function actions(Estimator $estimator, NDArray $states, bool $training, ?NDArray $masks) : NDArray
     {
         $la = $this->la;
-        $actions = $qPolicy->getQValues($states);
+        $actions = $estimator->getActionValues($states);
 
         if($training) {
             $noise = $this->noise->process();

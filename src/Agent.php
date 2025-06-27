@@ -1,30 +1,32 @@
 <?php
 namespace Rindow\RL\Agents;
 
+use Interop\Polite\Math\Matrix\NDArray;
+
 /**
  *
  */
 interface Agent
 {
-    public function initialize(); // : Operation
+    public function initialize() : void; // : Operation
 
-    public function policy();
+    public function policy() : ?Policy;
 
-    public function register(EventManager $eventManager=null) : void;
+    public function register(?EventManager $eventManager=null) : void;
 
     /**
-    * @param  mixed $states : N x StatesDims typeof int or NDArray or array of int or array of NDArray
-    * @return mixed $action : N x ActionDims typeof int or NDArray
+    * @param  NDArray $states : N x StatesDims typeof NDArray
+    * @return NDArray $actions : N x ActionDims typeof NDArray
     */
-    public function action(mixed $observation, bool $training) : mixed;
+    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray;
 
-    public function maxQValue(mixed $observation) : float;
+    //public function maxQValue(NDArray $state) : float;
 
     /**
     * @param iterable $experience
     * @return float $loss
     */
-    public function update($experience) : float;
+    public function update(ReplayBuffer $experience) : float;
 
     /**
     * @return bool $stepUpdate

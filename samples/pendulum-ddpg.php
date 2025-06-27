@@ -27,7 +27,7 @@ $batchSize = 64;
 $gamma = 0.99;
 $std_dev = 0.2;
 # $fcLayers = [256, 256];
-# $obsFcLayers = [16, 32];
+# $staFcLayers = [16, 32];
 # $actFcLayers = [32];
 # $conFcLayers = [256,256];
 $targetUpdatePeriod = 1;    #1;    #5;    #200;#5;    #5;   #5;   #200;#
@@ -46,13 +46,13 @@ echo "actionSpace.high.dtype ".$mo->dtypeToString(($env->actionSpace()->high()->
 
 //exit();
 
-$obsSize = $env->observationSpace()->shape();
-$actionSize = $env->actionSpace()->shape();
+$stateShape = $env->observationSpace()->shape();
+$actionShape = $env->actionSpace()->shape()[0];
 $lower_bound = $env->actionSpace()->low();
 $upper_bound = $env->actionSpace()->high();
 
 $ddpgAgent = new Ddpg($la,$nn,
-    $obsSize,$actionSize,$lower_bound,$upper_bound,
+    $stateShape,$actionShape,$lower_bound,$upper_bound,
     std_dev:$std_dev,
     batchSize:$batchSize,
     gamma:$gamma,
@@ -114,14 +114,14 @@ if(!$ddpgAgent->fileExists($filename)) {
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     echo ".";
-    $observation = $env->reset();
+    [$state,$info] = $env->reset();
     $env->render();
     $maxSteps = 200;
     $done=false;
     $step = 0;
     while(!$done && $step<$maxSteps) {
-        $action = $ddpgAgent->action($observation,$training=false);
-        [$observation,$reward,$done,$info] = $env->step($action);
+        $action = $ddpgAgent->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $env->render();
         $step++;
     }
@@ -135,7 +135,7 @@ $env->show();
 //$step = 0;
 //while(!$done && $step<$maxSteps) {
 //    $action = $la->randomUniform([1],-2,2);
-//    [$observation,$reward,$done,$info] = $env->step($action);
+//    [$state,$reward,$done,$truncated,$info] = $env->step($action);
 //    $env->render();
 //    $step++;
 //}

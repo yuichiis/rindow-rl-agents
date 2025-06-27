@@ -12,16 +12,18 @@ interface Policy
     /**
     * @return void
     */
-    public function initialize();
+    public function initialize() : void;
 
     /**
     * @return void
     */
-    public function register(EventManager $eventManager=null) : void;
+    public function register(?EventManager $eventManager=null) : void;
+
+    public function isContinuousActions() : bool;
 
     /**
-    * @param NDArray $values   : N x ValuesDims typeof float32 ( ex. [[0.0,1.0],[0.5,1.5],[1.0,2.0]] )
-    * @return NDArray $actions : N x ActionsDims typeof int32 or float32 ( ex. [[0],[1],[2]] )
+    * @param NDArray  $values  : (batches,...ValueDims)  typeof int32 or float32
+    * @return NDArray $actions : (batches,...ActionDims) typeof int32 or float32
     */
-    public function action(QPolicy $qPolicy, NDArray $values, bool $training) : NDArray;
+    public function actions(Estimator $estimator, NDArray $values, bool $training, ?NDArray $masks) : NDArray;
 }
