@@ -55,11 +55,6 @@ abstract class AbstractTable implements Estimator,Table
         return [1];
     }
 
-    public function actionShape() : array
-    {
-        return [];
-    }
-
     public function numActions() : int
     {
         return $this->numActions;

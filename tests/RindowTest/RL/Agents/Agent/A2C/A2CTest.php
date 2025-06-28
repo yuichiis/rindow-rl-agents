@@ -76,7 +76,7 @@ class A2CTest extends TestCase
 
         $agent = new A2C($la,
             epsStart:0.0, epsStop:0.0,
-            nn:$nn, stateShape:[1], actionShape:[2],fcLayers:[100]);
+            nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
         //$agent->summary();
         $states = [
             $la->array([0]),
@@ -97,7 +97,7 @@ class A2CTest extends TestCase
 
         $agent = new A2C($la,
             epsStart:1.0, epsStop:1.0,
-            nn:$nn, stateShape:[1], actionShape:[2],fcLayers:[100]);
+            nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
         $states = [
             $la->array([0]),
             $la->array([1]),
@@ -119,7 +119,7 @@ class A2CTest extends TestCase
 
         $agent = new A2C($la,
             policy:$policy,
-            nn:$nn, stateShape:[1], actionShape:[2],fcLayers:[100]);
+            nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
         $states = [
             $la->array([0]),
             $la->array([1]),

@@ -26,11 +26,6 @@ class TestEstimator implements Estimator
         return [1];
     }
 
-    public function actionShape() : array
-    {
-        return [];
-    }
-
     public function numActions() : int
     {
         return 1;

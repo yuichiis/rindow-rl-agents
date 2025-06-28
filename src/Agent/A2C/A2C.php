@@ -16,7 +16,7 @@ class A2C extends AbstractAgent
     protected $gamma;
     protected $rewardScaleFactor;
     protected $stateShape;
-    protected $actionShape;
+    protected $numActions;
     protected $ddqn;
     protected $targetUpdatePeriod;
     protected $targetUpdateTimer;
@@ -46,7 +46,7 @@ class A2C extends AbstractAgent
         array $lossOpts=null,
         object $optimizer=null,
         array $optimizerOpts=null,
-        array $stateShape=null, array $actionShape=null,
+        array $stateShape=null, int $numActions=null,
         array $fcLayers=null,
         float $epsStart=null, float $epsStop=null, float $epsDecayRate=null,
         EventManager $eventManager=null,
@@ -54,7 +54,7 @@ class A2C extends AbstractAgent
         )
     {
         if($network===null) {
-            $network = $this->buildNetwork($la,$nn,$stateShape,$actionShape,$fcLayers);
+            $network = $this->buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers);
         }
         if(!($network instanceof Estimator)) {
             echo get_class($network);
@@ -68,8 +68,8 @@ class A2C extends AbstractAgent
         if($stateShape===null) {
             $stateShape = $network->stateShape();
         }
-        if($actionShape===null) {
-            $actionShape = $network->actionShape();
+        if($numActions===null) {
+            $numActions = $network->numActions();
         }
         if($batchSize===null) {
             $batchSize = 32;
@@ -87,7 +87,7 @@ class A2C extends AbstractAgent
             $ddqn = false;
         }
         $this->stateShape = $stateShape;
-        $this->actionShape = $actionShape;
+        $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
         $this->targetUpdatePeriod = $targetUpdatePeriod;
@@ -110,7 +110,7 @@ class A2C extends AbstractAgent
         $this->initialize();
     }
 
-    protected function buildNetwork($la,$nn,$stateShape,$actionShape,$fcLayers)
+    protected function buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers)
     {
         if($nn===null) {
             throw new InvalidArgumentException('nn must be specifed.');
@@ -118,11 +118,11 @@ class A2C extends AbstractAgent
         if($stateShape===null) {
             throw new InvalidArgumentException('stateShape must be specifed.');
         }
-        if($actionShape===null) {
-            throw new InvalidArgumentException('actionShape must be specifed.');
+        if($numActions===null) {
+            throw new InvalidArgumentException('numActions must be specifed.');
         }
         $network = new ActorCriticNetwork($la,$nn,
-            $stateShape, $actionShape,fcLayers:$fcLayers);
+            $stateShape, $numActions,fcLayers:$fcLayers);
         return $network;
     }
 

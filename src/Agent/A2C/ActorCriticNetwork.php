@@ -7,7 +7,7 @@ use Rindow\RL\Agents\Network\AbstractNetwork;
 
 class ActorCriticNetwork extends AbstractNetwork implements Estimator
 {
-    protected $actionShape;
+    protected $numActions;
     protected $stateLayers;
     protected $actionLayer;
     protected $criticLayer;
@@ -15,7 +15,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
     protected $masks;
 
     public function __construct($la,$builder,
-        array $stateShape, array $actionShape,
+        array $stateShape, int $numActions,
         array $convLayers=null,string $convType=null,array $fcLayers=null,
         string $activation=null, string $kernelInitializer=null,
         string $actionActivation=null, string $actionKernelInitializer=null,
@@ -25,7 +25,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         parent::__construct($builder,$stateShape);
         $this->la = $la;
         $nn = $this->builder();
-        $this->actionShape = $actionShape;
+        $this->numActions = $numActions;
 
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [16, 32];
@@ -45,9 +45,8 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             kernelInitializer:$kernelInitializer,
             name:'State'
         );
-        $actionShape = (int)array_product($actionShape);
         $this->actionLayer = $nn->layers()->Dense(
-            $actionShape,
+            $numActions,
             activation:$actionActivation,
             kernel_initializer:$actionKernelInitializer,
             name:'ActionDense'
@@ -57,12 +56,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             kernel_initializer:$criticKernelInitializer,
             name:'CriticDense'
         );
-        $this->numActions = $actionShape;
-    }
-
-    public function actionShape()
-    {
-        return $this->actionShape;
+        $this->numActions = $numActions;
     }
 
     public function call($state_input,$training=null)

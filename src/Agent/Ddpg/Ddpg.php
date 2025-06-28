@@ -19,7 +19,7 @@ class Ddpg extends AbstractAgent
     const CRITIC_FILENAME = '%s-critic.model';
     protected $gamma;
     protected $stateShape;
-    protected $actionShape;
+    protected $numActions;
     protected $targetUpdatePeriod;
     protected $targetUpdateTimer;
     protected $lossFn;
@@ -51,7 +51,7 @@ class Ddpg extends AbstractAgent
         object $la,
         object $nn,
         array $stateShape,
-        array $actionShape,
+        int $numActions,
         NDArray $lower_bound,
         NDArray $upper_bound,
         int $batchSize=null,
@@ -84,23 +84,23 @@ class Ddpg extends AbstractAgent
         $criticOptimizerOpts = $criticOptimizerOpts ?? ['lr'=>0.002];
         $actorOptimizerOpts  = $actorOptimizerOpts ?? ['lr'=>0.001];
 
-        $mean = $mean ?? $la->zeros($la->alloc($actionShape));
+        $mean = $mean ?? $la->zeros($la->alloc([$numActions]));
         if(is_numeric($std_dev)) {
-            $std_dev = $la->fill($std_dev,$la->zeros($la->alloc($actionShape)));
+            $std_dev = $la->fill($std_dev,$la->zeros($la->alloc([$numActions])));
         }
         $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
         $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
 
         $this->mo = $mo;
-        $this->actor_model   = $this->buildActorNetwork($la,$nn,$stateShape, $actionShape,
+        $this->actor_model   = $this->buildActorNetwork($la,$nn,$stateShape, $numActions,
              fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
-        $this->critic_model  = $this->buildCriticNetwork($la,$nn,$stateShape, $actionShape,
+        $this->critic_model  = $this->buildCriticNetwork($la,$nn,$stateShape, $numActions,
             staFcLayers:$staFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
         $this->actor_model->compile(optimizer:$actorOptimizer);
         $this->critic_model->compile(optimizer:$criticOptimizer);
-        $this->target_actor  = $this->buildActorNetwork($la,$nn,$stateShape, $actionShape,
+        $this->target_actor  = $this->buildActorNetwork($la,$nn,$stateShape, $numActions,
             fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
-        $this->target_critic  = $this->buildCriticNetwork($la,$nn,$stateShape, $actionShape,
+        $this->target_critic  = $this->buildCriticNetwork($la,$nn,$stateShape, $numActions,
             staFcLayers:$staFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
 
         $policy = $this->buildPolicy($la,
@@ -110,7 +110,7 @@ class Ddpg extends AbstractAgent
         parent::__construct($la,$policy,$eventManager);
         $this->nn = $nn;
         $this->stateShape = $stateShape;
-        $this->actionShape = $actionShape;
+        $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
         $this->lower_bound = $lower_bound;
@@ -141,7 +141,7 @@ class Ddpg extends AbstractAgent
 
     protected function buildActorNetwork(
         $la,$nn,
-        array $stateShape, array $actionShape,
+        array $stateShape, int $numActions,
         array $convLayers=null,string $convType=null,array $fcLayers=null,
         $activation=null,$kernelInitializer=null,
         float $minval=null, float $maxval=null
@@ -158,7 +158,7 @@ class Ddpg extends AbstractAgent
         ];
 
         $network = new ActorNetwork($nn,
-            $stateShape, $actionShape,
+            $stateShape, $numActions,
             convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,
             activation:$activation,kernelInitializer:$kernelInitializer,
             outputOptions:$outputOptions,
@@ -169,7 +169,7 @@ class Ddpg extends AbstractAgent
 
     protected function buildCriticNetwork(
         $la,$nn,
-        array $stateShape, array $actionShape,
+        array $stateShape, int $numActions,
         array $staConvLayers=null,string $staConvType=null,array $staFcLayers=null,
         array $actConvLayers=null,string $actConvType=null,array $actFcLayers=null,
         array $conConvLayers=null,string $conConvType=null,array $conFcLayers=null,
@@ -177,13 +177,13 @@ class Ddpg extends AbstractAgent
     )
     {
         $network = new CriticNetwork($la,$nn,
-            $stateShape, $actionShape,
+            $stateShape, $numActions,
             staConvLayers: $staConvLayers, staConvType:$staConvType, staFcLayers:$staFcLayers,
             actConvLayers: $actConvLayers, actConvType:$actConvType, actFcLayers:$actFcLayers,
             conConvLayers: $conConvLayers, conConvType:$conConvType, conFcLayers:$conFcLayers,
             activation: $activation,       kernelInitializer:$kernelInitializer
             );
-        $network->build(array_merge([1],$stateShape),array_merge([1],$actionShape));
+        $network->build(array_merge([1],$stateShape),[1,$numActions]);
         return $network;
     }
 
@@ -359,7 +359,7 @@ class Ddpg extends AbstractAgent
         $g = $nn->gradient();
         $batchSize = $this->batchSize;
         $stateShape = $this->stateShape;
-        $actionShape = $this->actionShape;
+        $numActions = $this->numActions;
         $gamma = $this->gamma;
 
         if($experience->size()<$batchSize) {
@@ -369,7 +369,7 @@ class Ddpg extends AbstractAgent
         $endEpisode = $transition[4];  // done
 
         $state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
-        $action_batch = $la->zeros($la->alloc(array_merge([$batchSize], $actionShape)));
+        $action_batch = $la->zeros($la->alloc(array_merge([$batchSize], $numActions)));
         $next_state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
         $reward_batch = $la->zeros($la->alloc([$batchSize,1]));
         //$discounts = $la->zeros($la->alloc([$batchSize]));

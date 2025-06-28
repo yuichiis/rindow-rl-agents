@@ -1,12 +1,9 @@
 <?php
 namespace Rindow\RL\Agents\Agent\Dqn;
 
-use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Estimator\AbstractEstimatorNetwork;
-use Rindow\RL\Agents\Util\Random;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Builder\Builder;
-
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 
@@ -66,11 +63,6 @@ class QNetwork extends AbstractEstimatorNetwork
     public function model() : Model
     {
         return $this->qmodel;
-    }
-
-    public function numActions() : int
-    {
-        return $this->numActions;
     }
 
     protected function buildModel(
@@ -138,7 +130,7 @@ class QNetwork extends AbstractEstimatorNetwork
 
     /**
     * $states : (batches,...stateShape) typeof int32 or float32
-    * $actionValues : (batches,...actionShape)  typeof float32
+    * $actionValues : (batches,...numActions)  typeof float32
     */
     public function getActionValues(NDArray $states) : NDArray
     {

@@ -70,11 +70,6 @@ class PolicyNetwork extends AbstractEstimatorNetwork
         return $this->policyModel;
     }
 
-    public function numActions() : int
-    {
-        return $this->numActions;
-    }
-
     protected function buildModel(
         array $stateShape,
         int $numActions,
@@ -146,7 +141,7 @@ class PolicyNetwork extends AbstractEstimatorNetwork
 
     /**
     * $states : (batches,...stateShape) typeof int32 or float32
-    * $actionValues : (batches,...actionShape)  typeof float32
+    * $actionValues : (batches,...numActions)  typeof float32
     */
     public function getActionValues(NDArray $states) : NDArray
     {

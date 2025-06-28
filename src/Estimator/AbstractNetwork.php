@@ -29,14 +29,9 @@ abstract class AbstractNetwork extends AbstractModel implements Network
         return $this->stateShape;
     }
 
-    public function actionShape() : array
-    {
-        return $this->actionShape;
-    }
-
     public function numActions() : int
     {
-        throw new LogicException('Unsupported operation: numActions');
+        return $this->numActions;
     }
 
     public function builder() : object
@@ -172,7 +167,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
 
     //
     // object $model
-    // param array $actionShape
+    // param int $numActions
     // param array $outputOptions = [
     //      'initializer' => [
     //          'kernelInitializer' => $initializer,
@@ -183,13 +178,12 @@ abstract class AbstractNetwork extends AbstractModel implements Network
     //
     public function addOutputLayer(
         object $model,
-        array $actionShape,
+        int $numActions,
         ?array $outputOptions,
         ) : void
     {
         $nn = $this->builder;
         // Last Output Layer
-        $actionShape = (int)array_product($actionShape);
         $last_init = null;
         $initializer = null;
         $initializerOpts = [];
@@ -207,7 +201,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
             $last_activation = $outputOptions['activation'];
         }
         $model->add(
-            $nn->layers->Dense($actionShape, activation:$last_activation, kernel_initializer:$last_init)
+            $nn->layers->Dense($numActions, activation:$last_activation, kernel_initializer:$last_init)
         );
     }
 

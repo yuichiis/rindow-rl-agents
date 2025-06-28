@@ -47,12 +47,12 @@ echo "actionSpace.high.dtype ".$mo->dtypeToString(($env->actionSpace()->high()->
 //exit();
 
 $stateShape = $env->observationSpace()->shape();
-$actionShape = $env->actionSpace()->shape()[0];
+$numActions = $env->actionSpace()->shape()[0]; # DDPG handles continuous actions
 $lower_bound = $env->actionSpace()->low();
 $upper_bound = $env->actionSpace()->high();
 
 $ddpgAgent = new Ddpg($la,$nn,
-    $stateShape,$actionShape,$lower_bound,$upper_bound,
+    $stateShape,$numActions,$lower_bound,$upper_bound,
     std_dev:$std_dev,
     batchSize:$batchSize,
     gamma:$gamma,

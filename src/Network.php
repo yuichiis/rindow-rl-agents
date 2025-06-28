@@ -10,8 +10,6 @@ interface Network
 {
     public function stateShape() : array;
 
-    public function actionShape() : array;
-
     public function numActions() : int;
 
     public function copyWeights(Network $source, ?float $tau=null) : void;

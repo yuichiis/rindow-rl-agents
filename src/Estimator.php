@@ -10,8 +10,6 @@ interface Estimator
 {
     public function stateShape() : array;
 
-    public function actionShape() : array;
-
     public function numActions() : int;
 
     /**

@@ -39,7 +39,7 @@ class Reinforce extends AbstractAgent
     public function __construct(
         object $la,
         ?Network $network=null,
-        //?Policy $policy=null,
+        ?Policy $policy=null,
         ?float $gamma=null,
         ?bool $useBaseline=null,
         ?object $nn=null,
@@ -65,7 +65,7 @@ class Reinforce extends AbstractAgent
         if(!($network instanceof Estimator)) {
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
-        $policy = $this->buildPolicy($la,$boltzTau);
+        $policy ??= $this->buildPolicy($la,$boltzTau);
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
         $gamma ??= 0.99;

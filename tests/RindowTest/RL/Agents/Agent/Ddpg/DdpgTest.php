@@ -77,11 +77,11 @@ class DdpgTest extends TestCase
         $g = $nn->gradient();
 
         $stateShape=[3];
-        $actionShape=[1];
+        $numActions=1;
         $lower_bound=$la->array([-2]);
         $upper_bound=$la->array([2]);
         $agent = new Ddpg($la,$nn,
-            $stateShape,$actionShape,$lower_bound,$upper_bound,
+            $stateShape,$numActions,$lower_bound,$upper_bound,
             std_dev:0.2,
             batchSize:2,
             gamma:0.99,
@@ -122,11 +122,11 @@ class DdpgTest extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
         //
         $stateShape=[3];
-        $actionShape=[1];
+        $numActions=1;
         $lower_bound=$la->array([-2]);
         $upper_bound=$la->array([2]);
         $agent = new Ddpg($la,$nn,
-            $stateShape,$actionShape,$lower_bound,$upper_bound,
+            $stateShape,$numActions,$lower_bound,$upper_bound,
             std_dev:0.2,
             batchSize:2,
             gamma:0.99,

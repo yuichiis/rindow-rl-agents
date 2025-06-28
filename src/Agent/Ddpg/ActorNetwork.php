@@ -1,55 +1,59 @@
 <?php
 namespace Rindow\RL\Agents\Agent\Ddpg;
 
-use Rindow\RL\Agents\Estimator;
-use Rindow\RL\Agents\Network;
-use Rindow\RL\Agents\Util\Random;
-use Rindow\NeuralNetworks\Model\AbstractModel;
+use Rindow\RL\Agents\Estimator\AbstractEstimatorNetwork;
+use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\Builder\Builder;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
-use LogicException;
 
-class ActorNetwork extends AbstractEstimatorNetwork implements Estimator
+class ActorNetwork extends AbstractEstimatorNetwork
 {
     protected object $model;
-    protected array $actionShape;
+    protected int $numActions;
     //protected $onesProb;
-    protected ?NDArray $masks=null;
-    protected ?NDArray $probabilities=null;
 
-    public function __construct($builder,
-            array $stateShape,
-            int|array $actionShape,
-            ?array $convLayers=null,?string $convType=null,?array $fcLayers=null,
-            $activation=null,$kernelInitializer=null,
-            ?array $outputOptions=null,
-            ?NDArray $rules=null,$model=null
+    public function __construct(
+        Builder $builder,
+        array $stateShape,
+        int $numActions,
+        ?array $convLayers=null,
+        ?string $convType=null,
+        ?array $fcLayers=null,
+        ?string $activation=null,
+        ?string $kernelInitializer=null,
+        ?string $outputActivation=null,
+        ?string $outputKernelInitializer=null,
+        ?Model $model=null
         )
     {
-        if(is_int($actionShape)) {
-            $actionShape = [$actionShape];
-        }
         parent::__construct($builder,$stateShape);
-        $this->actionShape = $actionShape;
+        $this->numActions = $numActions;
 
         $la = $this->la;
+
         if($model===null) {
             $model = $this->buildActorModel(
-                $stateShape,$actionShape,
+                $stateShape,$numActions,
                 $convLayers,$convType,$fcLayers,
                 $activation,$kernelInitializer,
-                $outputOptions,
+                $outputActivation,
+                $outputKernelInitializer,
             );
         }
-        $this->initializeRules($rules,$actionShape);
         $this->model = $model;
     }
 
     protected function buildActorModel(
-        $stateShape,$actionShape,
-        $convLayers,$convType,$fcLayers,
-        $activation,$kernelInitializer,
-        $outputOptions,
+        array $stateShape,
+        int $numActions,
+        ?array $convLayers=null,
+        ?string $convType=null,
+        ?array $fcLayers=null,
+        ?string $activation=null,
+        ?string $kernelInitializer=null,
+        ?string $outputActivation=null,
+        ?string $outputKernelInitializer=null,
         )
     {
         $nn = $this->builder;
@@ -68,11 +72,12 @@ class ActorNetwork extends AbstractEstimatorNetwork implements Estimator
             kernelInitializer:$kernelInitializer
         );
 
-        $this->addOutputLayer(
-            $model,
-            $actionShape,
-            $outputOptions,
-        );
+        $outputActivation ??= 'tanh';
+        $model->add($nn->layers->Dense(
+            $numActions,
+            activation:$outputActivation,
+            kernel_initializer:$outputKernelInitializer,
+        ));
 
         return $model;
     }
@@ -80,12 +85,5 @@ class ActorNetwork extends AbstractEstimatorNetwork implements Estimator
     public function __clone()
     {
         parent::__clone();
-        if($this->probabilities) {
-            //$this->thresholds = clone $this->thresholds;
-            $this->probabilities = clone $this->probabilities;
-        }
-        if($this->masks) {
-            $this->masks = clone $this->masks;
-        }
     }
 }

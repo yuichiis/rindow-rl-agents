@@ -36,13 +36,13 @@ abstract class AbstractEstimatorNetwork extends AbstractNetwork implements Estim
     //}
 
     ///**
-    // * @param array<int> $actionShape
+    // * @param array<int> $numActions
     // */
-    //protected function initializeRules(?NDArray $rules, array $actionShape) : void
+    //protected function initializeRules(?NDArray $rules, int $numActions) : void
     //{
     //    $la = $this->la;
     //    if($rules) {
-    //        if($rules->shape()[1]!=array_product($actionShape)) {
+    //        if($rules->shape()[1]!=$numActions) {
     //            throw new InvalidArgumentException('The rules must match numActions');
     //        }
     //        //$p = $this->generateProbabilities($rules);
@@ -51,7 +51,7 @@ abstract class AbstractEstimatorNetwork extends AbstractNetwork implements Estim
     //        $this->masks = $rules;
     //        //$this->masks = $la->nan2num($la->copy($rules),-INF);
     //    } else {
-    //    //    $p = $la->alloc([1,(int)array_product($actionShape)]);
+    //    //    $p = $la->alloc([1,$numActions]);
     //    //    $this->onesProb = $la->ones($p);
     //        //$this->probabilities = null;
     //        $this->masks = null;
@@ -60,7 +60,7 @@ abstract class AbstractEstimatorNetwork extends AbstractNetwork implements Estim
 
     /**
     * $states : (batches,...stateShape) typeof int32 or float32
-    * $actionValues : (batches,...actionShape)  typeof float32
+    * $actionValues : (batches,...numActions)  typeof float32
     */
     public function getActionValues(NDArray $states) : NDArray
     {
