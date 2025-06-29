@@ -63,7 +63,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
     // param string $name = '';
     //
     protected function buildMlpLayers(
-        array $inputSize,
+        array $inputShape,
         ?array $convLayers=null,
         ?string $convType=null,
         ?array $fcLayers=null,
@@ -89,7 +89,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
         $enableFlatten = false;
         $model = $nn->models->Sequential();
         if($convLayers&&count($convLayers)) {
-            $model->add($nn->layers->Input(shape:$inputSize));
+            $model->add($nn->layers->Input(shape:$inputShape));
             foreach ($convLayers as $config) {
                 $pooling = $batchNorm = $dropout = $activation = $globalPooling = null;
                 if(isset($config[2]['pooling'])) {
@@ -148,8 +148,8 @@ abstract class AbstractNetwork extends AbstractModel implements Network
             $flattenOptions = [];
             $enableFlatten = true;
         } else {
-            if(count($inputSize)>1) {
-                $flattenOptions = ['input_shape'=>$inputSize];
+            if(count($inputShape)>1) {
+                $flattenOptions = ['input_shape'=>$inputShape];
                 $enableFlatten = true;
             }
         }
@@ -159,7 +159,8 @@ abstract class AbstractNetwork extends AbstractModel implements Network
         $i = 0;
         foreach ($fcLayers as $units) {
             $model->add($nn->layers->Dense($units,
-                activation:$activation,kernel_initializer:$kernelInitializer,name:"{$name}FcDense{$i}"));
+                activation:$activation,kernel_initializer:$kernelInitializer,name:"{$name}FcDense{$i}"
+            ));
             $i++;
         }
         return $model;

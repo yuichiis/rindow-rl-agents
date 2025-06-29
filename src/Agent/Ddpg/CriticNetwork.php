@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Agent\Ddpg;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\RL\Agents\Network\AbstractNetwork;
 
 class CriticNetwork extends AbstractNetwork
@@ -21,11 +22,13 @@ class CriticNetwork extends AbstractNetwork
     //protected $concatDense2;
     //protected $outputDense;
 
-    public function __construct($la,$builder,
+    public function __construct(
+        object $la,
+        Builder $builder,
         array $stateShape, int $numActions,
         array $staConvLayers=null,string $staConvType=null,array $staFcLayers=null,
-        array $actConvLayers=null,string $actConvType=null,array $actFcLayers=null,
-        array $conConvLayers=null,string $conConvType=null,array $conFcLayers=null,
+        array $actLayers=null,
+        array $comLayers=null,
         string $activation=null, string $kernelInitializer=null,
         )
     {
@@ -35,11 +38,11 @@ class CriticNetwork extends AbstractNetwork
         if($staConvLayers===null && $staFcLayers===null) {
             $staFcLayers = [16, 32];
         }
-        if($actConvLayers===null && $actFcLayers===null) {
-            $actFcLayers = [32];
+        if($actLayers===null) {
+            $actLayers = [32];
         }
-        if($conConvLayers===null && $conFcLayers===null) {
-            $conFcLayers = [256,256];
+        if($comLayers===null) {
+            $comLayers = [256,256];
         }
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
@@ -50,18 +53,14 @@ class CriticNetwork extends AbstractNetwork
             kernelInitializer:$kernelInitializer
         );
         $this->actionLayers = $this->buildMlpLayers(
-            $numActions,
-            convLayers:$actConvLayers,
-            convType:$actConvType,
-            fcLayers:$actFcLayers,
+            [$numActions],
+            fcLayers:$actLayers,
             activation:$activation,
             kernelInitializer:$kernelInitializer
         );
-        $this->concatLayers = $this->buildMlpLayers(
-            $numActions,
-            convLayers:$conConvLayers,
-            convType:$conConvType,
-            fcLayers:$conFcLayers,
+        $this->combinedLayers = $this->buildMlpLayers(
+            [$numActions],
+            fcLayers:$comLayers,
             activation:$activation,
             kernelInitializer:$kernelInitializer
         );
