@@ -82,6 +82,12 @@ class ActorNetwork extends AbstractEstimatorNetwork
         return $model;
     }
 
+    protected function call(NDArray $inputs, ?bool $training) : NDArray
+    {
+        $outputs = $this->model->forward($inputs,$training);
+        return $outputs;
+    }
+
     public function __clone()
     {
         parent::__clone();

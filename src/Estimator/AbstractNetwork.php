@@ -13,6 +13,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
 {
     protected object $la;
     protected array $stateShape;
+    protected int $numActions;
 
     public function __construct(
         Builder $builder,
@@ -204,12 +205,6 @@ abstract class AbstractNetwork extends AbstractModel implements Network
         $model->add(
             $nn->layers->Dense($numActions, activation:$last_activation, kernel_initializer:$last_init)
         );
-    }
-
-    protected function call(NDArray $inputs, ?bool $training) : NDArray
-    {
-        $outputs = $this->model->forward($inputs,$training);
-        return $outputs;
     }
 
     public function copyWeights(Network $sourceNetwork, ?float $tau=null) : void

@@ -17,34 +17,28 @@ class Ddpg extends AbstractAgent
 {
     const ACTOR_FILENAME = '%s-actor.model';
     const CRITIC_FILENAME = '%s-critic.model';
-    protected $gamma;
-    protected $stateShape;
-    protected $numActions;
-    protected $targetUpdatePeriod;
-    protected $targetUpdateTimer;
-    protected $lossFn;
-    protected $lossOpts;
-    protected $optimizer;
-    protected $optimizerOpts;
-    protected $mo;
-    protected $network;
-    protected $trainModel;
-    protected $targetModel;
-    protected $enabledShapeInspection = true;
-    protected $nn;
-    protected $actor_model;
-    protected $critic_model;
-    protected $target_actor;
-    protected $target_critic;
-    protected $batchSize;
-    protected $lower_bound;
-    protected $upper_bound;
-    protected $targetUpdateTau;
-    protected $criticOptimizer;
-    protected $actorOptimizer;
-    protected $backend;
-    protected $actor_model_graph;
-    protected $critic_model_graph;
+    protected float $gamma;
+    protected array $stateShape;
+    protected int $numActions;
+    protected int $targetUpdatePeriod;
+    protected int $targetUpdateTimer;
+    protected ?Optimizer $optimizer;
+    protected ?array $optimizerOpts;
+    protected ?object $mo;
+    protected bool $enabledShapeInspection = true;
+    protected ?Builder $nn;
+    protected Model $actor_model;
+    protected Model $critic_model;
+    protected Model $target_actor;
+    protected Model $target_critic;
+    protected int $batchSize;
+    protected NDArray $lower_bound;
+    protected NDArray $upper_bound;
+    protected float $targetUpdateTau;
+    protected Optimizer $criticOptimizer;
+    protected Optimizer $actorOptimizer;
+    //protected GraphFunction $actor_model_graph;
+    //protected GraphFunction $critic_model_graph;
 
 
     public function __construct(
@@ -54,26 +48,26 @@ class Ddpg extends AbstractAgent
         int $numActions,
         NDArray $lower_bound,
         NDArray $upper_bound,
-        int $batchSize=null,
-        NDArray $mean=null,
-        float|NDArray $std_dev=null,
-        NDArray $x_initial=null,
-        float $gamma=null,
-        float $theta=null,
-        float $dt=null,
-        int $targetUpdatePeriod=null,
-        float $targetUpdateTau=null,
-        object $criticOptimizer=null,
-        array $criticOptimizerOpts=null,
-        object $actorOptimizer=null,
-        array $actorOptimizerOpts=null,
-        array $fcLayers=null,
-        array $staFcLayers=null,
-        array $actFcLayers=null,
-        array $conFcLayers=null,
-        float $actorInitMin=null, float $actorInitMax=null,
-        EventManager $eventManager=null,
-        object $mo = null,
+        ?int $batchSize=null,
+        ?NDArray $mean=null,
+        float|NDArray|null $std_dev=null,
+        ?NDArray $x_initial=null,
+        ?float $gamma=null,
+        ?float $theta=null,
+        ?float $dt=null,
+        ?int $targetUpdatePeriod=null,
+        ?float $targetUpdateTau=null,
+        ?Optimizer $criticOptimizer=null,
+        ?array $criticOptimizerOpts=null,
+        ?Optimizer $actorOptimizer=null,
+        ?array $actorOptimizerOpts=null,
+        ?array $fcLayers=null,
+        ?array $staConvLayers=null, ?string $staConvType=null, ?array $staFcLayers=null,
+        ?array $actLayers=null,
+        ?array $comLayers=null,
+        ?float $actorInitMin=null, ?float $actorInitMax=null,
+        ?EventManager $eventManager=null,
+        ?object $mo = null,
         )
     {
         $batchSize = $batchSize ?? 32;
@@ -119,7 +113,7 @@ class Ddpg extends AbstractAgent
         $this->targetUpdateTau = $targetUpdateTau;
         $this->criticOptimizer = $criticOptimizer;
         $this->actorOptimizer = $actorOptimizer;
-        $this->backend = $nn->backend();
+        //$this->backend = $nn->backend();
 
         //$this->actorTrainableVariables = $this->actor_model->trainableVariables();
         //$this->criticTrainableVariables = $this->critic_model->trainableVariables();
@@ -135,8 +129,8 @@ class Ddpg extends AbstractAgent
         //$this->targetActorGraph = $nn->gradient->function([$this->target_actor,'forward']);
         //$this->targetCriticGraph = $nn->gradient->function([$this->target_critic,'forward']);
         $this->initialize();
-        $this->actor_model_graph = null;
-        $this->critic_model_graph = null;
+        //$this->actor_model_graph = null;
+        //$this->critic_model_graph = null;
     }
 
     protected function buildActorNetwork(
@@ -355,7 +349,7 @@ class Ddpg extends AbstractAgent
     {
         $la = $this->la;
         $nn = $this->nn; 
-        $K = $this->backend; 
+        //$K = $this->backend; 
         $g = $nn->gradient();
         $batchSize = $this->batchSize;
         $stateShape = $this->stateShape;

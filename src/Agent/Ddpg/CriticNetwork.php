@@ -3,16 +3,19 @@ namespace Rindow\RL\Agents\Agent\Ddpg;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
-use Rindow\RL\Agents\Network\AbstractNetwork;
+use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\layer\Layer;
+use Rindow\RL\Agents\Estimator\AbstractNetwork;
+use InvalidArgumentException;
 
 class CriticNetwork extends AbstractNetwork
 {
-    protected $numActions;
-    protected $stateLayers;
-    protected $actionLayers;
-    protected $concat;
-    protected $concatLayers;
-    protected $outputDense;
+    protected int $numActions;
+    protected Model $stateLayers;
+    protected ?Model $actionLayers;
+    protected Layer $concat;
+    protected Model $combinedLayers;
+    protected Layer $outputDense;
 
     //protected $stateDense1;
     //protected $stateDense2;
@@ -23,13 +26,12 @@ class CriticNetwork extends AbstractNetwork
     //protected $outputDense;
 
     public function __construct(
-        object $la,
         Builder $builder,
         array $stateShape, int $numActions,
-        array $staConvLayers=null,string $staConvType=null,array $staFcLayers=null,
-        array $actLayers=null,
-        array $comLayers=null,
-        string $activation=null, string $kernelInitializer=null,
+        ?array $staConvLayers=null, ?string $staConvType=null, ?array $staFcLayers=null,
+        ?array $actLayers=null,
+        ?array $comLayers=null,
+        ?string $activation=null, ?string $kernelInitializer=null,
         )
     {
         parent::__construct($builder,$stateShape);
@@ -44,6 +46,20 @@ class CriticNetwork extends AbstractNetwork
         if($comLayers===null) {
             $comLayers = [256,256];
         }
+        $staLast = array_key_last($staFcLayers);
+        $actLast = array_key_last($actLayers);
+        if($staLast===null) {
+            throw new InvalidArgumentException("Must specify staFcLayers.");
+        }
+        if($actLast===null) {
+            if($staFcLayers[$staLast]!==$numActions) {
+                throw new InvalidArgumentException("the same last staFcLayers must be numActions.");
+            }
+        } else {
+            if($staFcLayers[$staLast]!==$actLayers[$actLast]) {
+                throw new InvalidArgumentException("Must be the same last staFcLayers and last actLayers.");
+            }
+        }
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
             convLayers:$staConvLayers,
@@ -52,20 +68,24 @@ class CriticNetwork extends AbstractNetwork
             activation:$activation,
             kernelInitializer:$kernelInitializer
         );
-        $this->actionLayers = $this->buildMlpLayers(
-            [$numActions],
-            fcLayers:$actLayers,
-            activation:$activation,
-            kernelInitializer:$kernelInitializer
-        );
+        if($actLast===null) {
+            $this->actionLayers = null;
+        } else {
+            $this->actionLayers = $this->buildMlpLayers(
+                [$numActions],
+                fcLayers:$actLayers,
+                activation:$activation,
+                kernelInitializer:$kernelInitializer
+            );
+        }
+        $this->concat = $builder->layers->Concatenate();
         $this->combinedLayers = $this->buildMlpLayers(
             [$numActions],
             fcLayers:$comLayers,
             activation:$activation,
             kernelInitializer:$kernelInitializer
         );
-        $this->concat = $builder->layers->Concatenate();
-        $this->outputDense = $builder->layers->Dense(1);
+        $this->outputDense = $builder->layers->Dense($numActions);
         
         //$this->stateDense1 = $nn->layers->Dense(16, activation:'relu');
         //$this->stateDense2 = $nn->layers->Dense(32, activation:'relu');
@@ -76,7 +96,7 @@ class CriticNetwork extends AbstractNetwork
         //$this->outputDense = $nn->layers->Dense(1);
     }
 
-    public function call($state_input,$action_input,$training)
+    public function call(NDArray $state_input, NDArray $action_input, ?bool $training)
     {
         //$state_out = $this->stateDense1->forward($state_input,$training);
         //$state_out = $this->stateDense2->forward($state_out,$training);
@@ -90,9 +110,13 @@ class CriticNetwork extends AbstractNetwork
         //$out = $this->outputDense->forward($out,$training);
 
         $state_out = $this->stateLayers->forward($state_input,$training);
-        $action_out = $this->actionLayers->forward($action_input,$training);
+        if($this->actionLayers) {
+            $action_out = $this->actionLayers->forward($action_input,$training);
+        } else {
+            $action_out = $action_input;
+        }
         $concat = $this->concat->forward([$state_out, $action_out],$training);
-        $out = $this->concatLayers->forward($concat,$training);
+        $out = $this->combinedLayers->forward($concat,$training);
         $out = $this->outputDense->forward($out,$training);
         return $out;
     }

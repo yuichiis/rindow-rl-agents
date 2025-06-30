@@ -5,7 +5,7 @@ use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\Ddpg\ActorNetwork;
+use Rindow\RL\Agents\Agent\Ddpg\CriticNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -47,11 +47,13 @@ class CriticNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $network = new ActorNetwork(
+        $combine = 32;
+        $network = new CriticNetwork(
             builder:$nn,
             stateShape:[1],
             numActions:2,
-            fcLayers:[100]
+            staFcLayers:[100,$combine],
+            actLayers:[$combine],
         );
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
@@ -61,8 +63,8 @@ class CriticNetworkTest extends TestCase
         for($i=0;$i<100;$i++) {
             $loss = $nn->with($tape=$g->GradientTape(), function()
                     use ($network,$lossFn,$states,$targetActions) {
-                $actorActions = $network($states,true);
-                $loss = $lossFn->forward($targetActions,$actorActions);
+                $critActions = $network($states,$targetActions,true);
+                $loss = $lossFn->forward($targetActions,$critActions);
                 return $loss;
             });
             $grads = $tape->gradient($loss,$trainableVariables);
@@ -72,7 +74,7 @@ class CriticNetworkTest extends TestCase
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('ActorNetwork for DDPG');
+        $plt->title('CriticNetwork for DDPG');
         $plt->show();
         $this->assertTrue(true);
     }
@@ -196,29 +198,4 @@ class CriticNetworkTest extends TestCase
 //
     //}
 
-    public function testGetQValues()
-    {
-        $mo = $this->newMatrixOperator();
-        $la = $mo->la();
-        $nn = $this->newBuilder($mo);
-
-        $network = new ActorNetwork(
-            builder:$nn,
-            stateShape:[1],
-            numActions:2,
-            fcLayers:[100]
-        );
-        $qValues = $network->getActionValues($la->array([[1.0]]));
-        $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
-        $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]));
-        $this->assertEquals([3,2],$qValues2->shape());
-        $qValues3 = $network->getActionValues($la->array([[1.0]]));
-        $this->assertEquals([1,2],$qValues3->shape());
-        $qValues4 = $network->getActionValues($la->array([[2.0]]));
-        $this->assertEquals([1,2],$qValues4->shape());
-        
-        $this->assertEquals($qValues->toArray(),$qValues3->toArray());
-        $this->assertNotEquals($qValues->toArray(),$qValues4->toArray());
-
-    }
 }
