@@ -24,6 +24,8 @@ class ActorNetwork extends AbstractEstimatorNetwork
         ?string $kernelInitializer=null,
         ?string $outputActivation=null,
         ?string $outputKernelInitializer=null,
+        ?float $minval=null,
+        ?float $maxval=null,
         ?Model $model=null
         )
     {
@@ -39,6 +41,8 @@ class ActorNetwork extends AbstractEstimatorNetwork
                 $activation,$kernelInitializer,
                 $outputActivation,
                 $outputKernelInitializer,
+                $minval=null,
+                $maxval=null,
             );
         }
         $this->model = $model;
@@ -53,7 +57,8 @@ class ActorNetwork extends AbstractEstimatorNetwork
         ?string $activation=null,
         ?string $kernelInitializer=null,
         ?string $outputActivation=null,
-        ?string $outputKernelInitializer=null,
+        ?float $minval=null,
+        ?float $maxval=null,
         )
     {
         $nn = $this->builder;
@@ -73,10 +78,14 @@ class ActorNetwork extends AbstractEstimatorNetwork
         );
 
         $outputActivation ??= 'tanh';
+        $minval ??= -0.003;
+        $maxval ??= 0.003;
+        $outputKernelInitializer ??= $this->backend->getInitializer('random_uniform',['minval'=>-0.003,'maxval'=>0.003]);
         $model->add($nn->layers->Dense(
             $numActions,
             activation:$outputActivation,
             kernel_initializer:$outputKernelInitializer,
+            bias_initializer:$outputKernelInitializer,
         ));
 
         return $model;

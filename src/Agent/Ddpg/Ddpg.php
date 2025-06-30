@@ -86,16 +86,20 @@ class Ddpg extends AbstractAgent
         $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
 
         $this->mo = $mo;
-        $this->actor_model   = $this->buildActorNetwork($la,$nn,$stateShape, $numActions,
-             fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
-        $this->critic_model  = $this->buildCriticNetwork($la,$nn,$stateShape, $numActions,
-            staFcLayers:$staFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
+        $this->actor_model   = $this->buildActorNetwork(
+            $nn, $stateShape, $numActions, $actorNetworkOptions,
+        );
+        $this->critic_model  = $this->buildCriticNetwork(
+            $nn, $stateShape, $numActions, $criticNetworkOptions,
+        );
         $this->actor_model->compile(optimizer:$actorOptimizer);
         $this->critic_model->compile(optimizer:$criticOptimizer);
-        $this->target_actor  = $this->buildActorNetwork($la,$nn,$stateShape, $numActions,
-            fcLayers:$fcLayers, minval:$actorInitMin, maxval:$actorInitMax);
-        $this->target_critic  = $this->buildCriticNetwork($la,$nn,$stateShape, $numActions,
-            staFcLayers:$staFcLayers,actFcLayers:$actFcLayers,conFcLayers:$conFcLayers);
+        $this->target_actor = $this->buildActorNetwork(
+            $nn, $stateShape, $numActions, $actorNetworkOptions,
+        );
+        $this->target_critic  = $this->buildCriticNetwork(
+            $nn, $stateShape, $numActions, $criticNetworkOptions,
+        );
 
         $policy = $this->buildPolicy($la,
             $this->actor_model,$mean,$std_dev,$lower_bound,$upper_bound,
@@ -134,49 +138,32 @@ class Ddpg extends AbstractAgent
     }
 
     protected function buildActorNetwork(
-        $la,$nn,
+        Builder $nn,
         array $stateShape, int $numActions,
-        array $convLayers=null,string $convType=null,array $fcLayers=null,
-        $activation=null,$kernelInitializer=null,
-        float $minval=null, float $maxval=null
+        array $actorNetworkOptions=null,
     )
     {
-        $minval = $minval ?? -0.003;
-        $maxval = $maxval ?? 0.003;
-        $outputOptions = [
-            'initializer' => [
-                'kernelInitializer'=>'random_uniform',
-                'options'=> ['minval'=>$minval, 'maxval'=>$maxval],
-            ],
-            'activation' => 'tanh',
-        ];
-
+        $actorNetworkOptions ??= [];
         $network = new ActorNetwork($nn,
             $stateShape, $numActions,
-            convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,
-            activation:$activation,kernelInitializer:$kernelInitializer,
-            outputOptions:$outputOptions,
-            );
+            ...$actorNetworkOptions,
+        );
         $network->build(array_merge([1],$stateShape));
         return $network;
     }
 
     protected function buildCriticNetwork(
-        $la,$nn,
+        Builder $nn,
         array $stateShape, int $numActions,
-        array $staConvLayers=null,string $staConvType=null,array $staFcLayers=null,
-        array $actConvLayers=null,string $actConvType=null,array $actFcLayers=null,
-        array $conConvLayers=null,string $conConvType=null,array $conFcLayers=null,
-        string $activation=null, string $kernelInitializer=null
+        array $criticNetworkOptions=null,
     )
     {
-        $network = new CriticNetwork($la,$nn,
+        $criticNetworkOptions ??= [];
+        $network = new CriticNetwork(
+            $nn,
             $stateShape, $numActions,
-            staConvLayers: $staConvLayers, staConvType:$staConvType, staFcLayers:$staFcLayers,
-            actConvLayers: $actConvLayers, actConvType:$actConvType, actFcLayers:$actFcLayers,
-            conConvLayers: $conConvLayers, conConvType:$conConvType, conFcLayers:$conFcLayers,
-            activation: $activation,       kernelInitializer:$kernelInitializer
-            );
+            ...$criticNetworkOptions,
+        );
         $network->build(array_merge([1],$stateShape),[1,$numActions]);
         return $network;
     }
