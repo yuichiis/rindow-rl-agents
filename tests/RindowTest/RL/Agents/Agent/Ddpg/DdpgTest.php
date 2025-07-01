@@ -9,9 +9,9 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
-use Rindow\RL\Agents\Agent\Ddpg;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Network\ActorNetwork;
+use Rindow\RL\Agents\Agent\Ddpg\Ddpg;
+use Rindow\RL\Agents\Agent\Ddpg\ActorNetwork;
 use Rindow\RL\Agents\Agent\Ddpg\CriticNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -20,6 +20,8 @@ use Throwable;
 
 class TestPolicy implements Policy
 {
+    protected NDArray $fixedAction;
+
     public function __construct($fixedAction)
     {
         $this->fixedAction = $fixedAction;
@@ -69,7 +71,7 @@ class DdpgTest extends TestCase
         ];
     }
 
-    public function testActorNetwork()
+    public function testBuildNetwork()
     {
         $mo = $this->newMatrixOperator();
         $la = $mo->la();
@@ -80,39 +82,79 @@ class DdpgTest extends TestCase
         $numActions=1;
         $lower_bound=$la->array([-2]);
         $upper_bound=$la->array([2]);
+        $critic_lr=0.002;
+        $actor_lr=0.001;
+        $actorNetworkOptions = [
+            'fcLayers' => [100],
+            'outputActivation' => 'tanh',
+            'minval' => -0.003,
+            'maxval' => 0.003,
+        ];
+        $criticNetworkOptions = [
+            'staFcLayers' => [128],
+            'actLayers' => [128],
+        ];
         $agent = new Ddpg($la,$nn,
             $stateShape,$numActions,$lower_bound,$upper_bound,
-            std_dev:0.2,
+            stdDev:0.2,
             batchSize:2,
             gamma:0.99,
             targetUpdatePeriod:1,
             targetUpdateTau:0.005,
-            criticOptimizerOpts:['lr'=>$critic_lr=0.002],
-            actorOptimizerOpts:['lr'=>$actor_lr=0.001],
+            actorNetworkOptions:$actorNetworkOptions,
+            criticNetworkOptions:$criticNetworkOptions,
+            criticOptimizerOpts:['lr'=>$critic_lr],
+            actorOptimizerOpts:['lr'=>$actor_lr],
         );
         $this->assertInstanceof(ActorNetwork::class,$agent->actorNetwork());
         $this->assertInstanceof(ActorNetwork::class,$agent->targetActorNetwork());
         $this->assertInstanceof(CriticNetwork::class,$agent->criticNetwork());
         $this->assertInstanceof(CriticNetwork::class,$agent->targetcriticNetwork());
-        //$actor->summary();
+        //$agent->summary();
+        $this->assertTrue(true);
+
+
+        // defaults
+        $stateShape=[3];
+        $numActions=1;
+        $lower_bound=$la->array([-2]);
+        $upper_bound=$la->array([2]);
+
+        $agent = new Ddpg($la,$nn,
+            $stateShape,$numActions,$lower_bound,$upper_bound,
+        );
+        //$agent->summary();
         $this->assertTrue(true);
     }
 
-    //public function testAction()
-    //{
-    //    $mo = $this->newMatrixOperator();
-    //    $la = $mo->la();
-    //    $nn = $this->newBuilder($mo);
-    //    //
-    //    $fixedActions = [0,1];
-    //    foreach($fixedActions as $fixedAction) {
-    //        $policy = new TestPolicy($fixedAction);
-    //        $agent = new Ddpg($la,policy:$policy,nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
-    //        for($i=0;$i<100;$i++) {
-    //            $this->assertEquals($fixedAction,$agent->action($la->array([1]),$training=true));
-    //        }
-    //    }
-    //}
+    public function testAction()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        $nn = $this->newBuilder($mo);
+        //
+        $stateShape=[1];
+        $numActions=2;
+        $lower_bound=$la->array([-2,-3]);
+        $upper_bound=$la->array([2,3]);
+        $fixedActions = [-1,1];
+        foreach($fixedActions as $fixedAction) {
+            $agent = new Ddpg(
+                $la,$nn,
+                $stateShape,
+                $numActions,
+                $lower_bound,
+                $upper_bound,
+            );
+            for($i=0;$i<100;$i++) {
+                $state = $la->array([1]);
+                $action = $agent->action($state,training:true);
+                $this->assertInstanceof(NDArray::class,$action);
+                $this->assertEquals([$numActions],$action->shape());
+                $this->assertEquals(NDArray::float32,$action->dtype());
+            }
+        }
+    }
 
     public function testUpdate()
     {
@@ -125,20 +167,18 @@ class DdpgTest extends TestCase
         $numActions=1;
         $lower_bound=$la->array([-2]);
         $upper_bound=$la->array([2]);
-        $agent = new Ddpg($la,$nn,
+        $agent = new Ddpg(
+            $la,$nn,
             $stateShape,$numActions,$lower_bound,$upper_bound,
-            std_dev:0.2,
             batchSize:2,
             gamma:0.99,
             targetUpdatePeriod:1,
             targetUpdateTau:0.005,
-            criticOptimizerOpts:['lr'=>$critic_lr=0.002],
-            actorOptimizerOpts:['lr'=>$actor_lr=0.001],
         );
         $mem = new ReplayBuffer($la,$maxsize=2);
         //[$state,$action,$nextState,$reward,$done,$info]
-        $mem->add([$la->array([0,0,0]),$la->array([0.1]),$la->array([0,0.1,0.1]),-0.1,false,[]]);
-        $mem->add([$la->array([0,0,0]),$la->array([0.1]),$la->array([0,0.1,0.1]),-0.1,false,[]]);
+        $mem->add([$la->array([0,0,0]),$la->array([0.1]),$la->array([0,0.1,0.1]),-0.1,false,false,[]]);
+        $mem->add([$la->array([0,0,0]),$la->array([0.1]),$la->array([0,0.1,0.1]),-0.1,false,false,[]]);
         //$mem->add([$la->array([0,0.1,0.1]),$la->array([0.2]),$la->array([0,0.2,0.1]),-0.1,false,[]]);
         //$mem->add([$la->array([0,0.2,0.1]),$la->array([0.1]),$la->array([0,0.3,0.3]),-0.1,false,[]]);
         $losses = [];

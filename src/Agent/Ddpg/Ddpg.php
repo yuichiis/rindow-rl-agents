@@ -1,15 +1,19 @@
 <?php
-namespace Rindow\RL\Agents\Agent;
+namespace Rindow\RL\Agents\Agent\Ddpg;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\Loss\Loss;
+use Rindow\NeuralNetworks\Optimizer\Optimizer;
+use Rindow\NeuralNetworks\Layer\Layer;
+use Rindow\NeuralNetworks\Gradient\GraphFunction;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Policy\OUNoise;
-use Rindow\RL\Agents\Network\ActorNetwork;
-use Rindow\RL\Agents\Agent\Ddpg\CriticNetwork;
+use Rindow\RL\Agents\Agent\AbstractAgent;
 
 use InvalidArgumentException;
 
@@ -27,31 +31,32 @@ class Ddpg extends AbstractAgent
     protected ?object $mo;
     protected bool $enabledShapeInspection = true;
     protected ?Builder $nn;
-    protected Model $actor_model;
-    protected Model $critic_model;
-    protected Model $target_actor;
-    protected Model $target_critic;
+    protected Model $actorModel;
+    protected Model $criticModel;
+    protected Model $targetActor;
+    protected Model $targetCritic;
     protected int $batchSize;
-    protected NDArray $lower_bound;
-    protected NDArray $upper_bound;
+    protected NDArray $lowerBound;
+    protected NDArray $upperBound;
     protected float $targetUpdateTau;
     protected Optimizer $criticOptimizer;
     protected Optimizer $actorOptimizer;
-    //protected GraphFunction $actor_model_graph;
-    //protected GraphFunction $critic_model_graph;
-
+    //protected GraphFunction $actorModelGraph;
+    //protected GraphFunction $criticModelGraph;
+    //protected ?array $criticTrainableVariables=null;
 
     public function __construct(
         object $la,
         object $nn,
         array $stateShape,
         int $numActions,
-        NDArray $lower_bound,
-        NDArray $upper_bound,
+        NDArray $lowerBound,
+        NDArray $upperBound,
+        ?Policy $policy=null,
         ?int $batchSize=null,
         ?NDArray $mean=null,
-        float|NDArray|null $std_dev=null,
-        ?NDArray $x_initial=null,
+        float|NDArray|null $stdDev=null,
+        ?NDArray $xInitial=null,
         ?float $gamma=null,
         ?float $theta=null,
         ?float $dt=null,
@@ -61,49 +66,61 @@ class Ddpg extends AbstractAgent
         ?array $criticOptimizerOpts=null,
         ?Optimizer $actorOptimizer=null,
         ?array $actorOptimizerOpts=null,
-        ?array $fcLayers=null,
-        ?array $staConvLayers=null, ?string $staConvType=null, ?array $staFcLayers=null,
-        ?array $actLayers=null,
-        ?array $comLayers=null,
-        ?float $actorInitMin=null, ?float $actorInitMax=null,
+        //?array $fcLayers=null,
+        //?array $staConvLayers=null, ?string $staConvType=null, ?array $staFcLayers=null,
+        //?array $actLayers=null,
+        //?array $comLayers=null,
+        //?float $actorInitMin=null, ?float $actorInitMax=null,
+        ?array $actorNetworkOptions=null,
+        ?array $criticNetworkOptions=null,
         ?EventManager $eventManager=null,
         ?object $mo = null,
         )
     {
         $batchSize = $batchSize ?? 32;
-        $std_dev = $std_dev ?? 0.2;
-        $gamma = $gamma ?? 0.99;
-        $targetUpdatePeriod = $targetUpdatePeriod ?? 1;
-        $targetUpdateTau    = $targetUpdateTau ?? 0.005;
-        $criticOptimizerOpts = $criticOptimizerOpts ?? ['lr'=>0.002];
-        $actorOptimizerOpts  = $actorOptimizerOpts ?? ['lr'=>0.001];
+        $stdDev ??= 0.2;
+        $gamma ??= 0.99;
+        $targetUpdatePeriod  ??= 1;
+        $targetUpdateTau     ??= 0.005;
+        $criticOptimizerOpts ??=  ['lr'=>0.002];
+        $actorOptimizerOpts  ??=  ['lr'=>0.001];
 
-        $mean = $mean ?? $la->zeros($la->alloc([$numActions]));
-        if(is_numeric($std_dev)) {
-            $std_dev = $la->fill($std_dev,$la->zeros($la->alloc([$numActions])));
+        if($lowerBound->shape()!=[$numActions]) {
+            throw new InvalidArgumentException(
+                "shape of lowerBound must match to the numActions ($numActions): ".
+                $la->shapeToString($lowerBound->shape())." givien."
+            );
+        }
+        if($upperBound->shape()!=[$numActions]) {
+            throw new InvalidArgumentException(
+                "shape of upperBound must match to the numActions ($numActions): ".
+                $la->shapeToString($upperBound->shape())." givien."
+            );
+        }
+
+        $mean ??=  $la->zeros($la->alloc([$numActions]));
+        if(is_numeric($stdDev)) {
+            $stdDev = $la->fill($stdDev,$la->zeros($la->alloc([$numActions])));
         }
         $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
         $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
 
         $this->mo = $mo;
-        $this->actor_model   = $this->buildActorNetwork(
+        $this->actorModel   = $this->buildActorNetwork(
             $nn, $stateShape, $numActions, $actorNetworkOptions,
         );
-        $this->critic_model  = $this->buildCriticNetwork(
+        $this->criticModel  = $this->buildCriticNetwork(
             $nn, $stateShape, $numActions, $criticNetworkOptions,
         );
-        $this->actor_model->compile(optimizer:$actorOptimizer);
-        $this->critic_model->compile(optimizer:$criticOptimizer);
-        $this->target_actor = $this->buildActorNetwork(
-            $nn, $stateShape, $numActions, $actorNetworkOptions,
-        );
-        $this->target_critic  = $this->buildCriticNetwork(
-            $nn, $stateShape, $numActions, $criticNetworkOptions,
-        );
+        //$this->actorModel->compile(optimizer:$actorOptimizer);
+        //$this->criticModel->compile(optimizer:$criticOptimizer);
+        $this->targetActor = clone $this->actorModel;
+        $this->targetCritic = clone $this->criticModel;
 
-        $policy = $this->buildPolicy($la,
-            $this->actor_model,$mean,$std_dev,$lower_bound,$upper_bound,
-            $theta,$dt,$x_initial
+        $policy ??= $this->buildPolicy(
+            $la,
+            $mean,$stdDev,$lowerBound,$upperBound,
+            $theta,$dt,$xInitial,
         );
         parent::__construct($la,$policy,$eventManager);
         $this->nn = $nn;
@@ -111,36 +128,36 @@ class Ddpg extends AbstractAgent
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
-        $this->lower_bound = $lower_bound;
-        $this->upper_bound = $upper_bound;
+        $this->lowerBound = $lowerBound;
+        $this->upperBound = $upperBound;
         $this->targetUpdatePeriod = $targetUpdatePeriod;
         $this->targetUpdateTau = $targetUpdateTau;
         $this->criticOptimizer = $criticOptimizer;
         $this->actorOptimizer = $actorOptimizer;
         //$this->backend = $nn->backend();
 
-        //$this->actorTrainableVariables = $this->actor_model->trainableVariables();
-        //$this->criticTrainableVariables = $this->critic_model->trainableVariables();
+        //$this->actorTrainableVariables = $this->actorModel->trainableVariables();
+        //$this->criticTrainableVariables = $this->criticModel->trainableVariables();
 
-        //$this->actorVariables = $this->actor_model->variables();
-        //$this->criticVariables = $this->critic_model->variables();
-        //$this->targetActorVariables = $this->target_actor->variables();
-        //$this->targetCriticVariables = $this->target_critic->variables();
+        //$this->actorVariables = $this->actorModel->variables();
+        //$this->criticVariables = $this->criticModel->variables();
+        //$this->targetActorVariables = $this->targetActor->variables();
+        //$this->targetCriticVariables = $this->targetCritic->variables();
 
 
-        //$this->actorModelGraph = $nn->gradient->function([$this->actor_model,'forward']);
-        //$this->criticModelGraph = $nn->gradient->function([$this->critic_model,'forward']);
-        //$this->targetActorGraph = $nn->gradient->function([$this->target_actor,'forward']);
-        //$this->targetCriticGraph = $nn->gradient->function([$this->target_critic,'forward']);
+        //$this->actorModelGraph = $nn->gradient->function([$this->actorModel,'forward']);
+        //$this->criticModelGraph = $nn->gradient->function([$this->criticModel,'forward']);
+        //$this->targetActorGraph = $nn->gradient->function([$this->targetActor,'forward']);
+        //$this->targetCriticGraph = $nn->gradient->function([$this->targetCritic,'forward']);
         $this->initialize();
-        //$this->actor_model_graph = null;
-        //$this->critic_model_graph = null;
+        //$this->actorModelGraph = null;
+        //$this->criticModelGraph = null;
     }
 
     protected function buildActorNetwork(
         Builder $nn,
         array $stateShape, int $numActions,
-        array $actorNetworkOptions=null,
+        ?array $actorNetworkOptions=null,
     )
     {
         $actorNetworkOptions ??= [];
@@ -155,7 +172,7 @@ class Ddpg extends AbstractAgent
     protected function buildCriticNetwork(
         Builder $nn,
         array $stateShape, int $numActions,
-        array $criticNetworkOptions=null,
+        ?array $criticNetworkOptions=null,
     )
     {
         $criticNetworkOptions ??= [];
@@ -169,48 +186,54 @@ class Ddpg extends AbstractAgent
     }
 
     protected function buildPolicy(
-        $la,$network,$mean,$std_deviation,$lower_bound,$upper_bound,
-        $theta,$dt,$x_initial)
+        object $la,
+        NDArray $mean,
+        NDArray $stdDeviation,
+        NDArray $lowerBound,
+        NDArray $upperBound,
+        ?float $theta,
+        ?float $dt,
+        ?NDArray $xInitial)
     {
         $policy = new OUNoise(
             $la,
             $mean,
-            $std_deviation,
-            $lower_bound,
-            $upper_bound,
+            $stdDeviation,
+            $lowerBound,
+            $upperBound,
             theta:$theta,
             dt:$dt,
-            x_initial:$x_initial);
+            x_initial:$xInitial);
         return $policy;
     }
 
     public function actorNetwork()
     {
-        return $this->actor_model;
+        return $this->actorModel;
     }
 
     public function targetActorNetwork()
     {
-        return $this->target_actor;
+        return $this->targetActor;
     }
 
     public function criticNetwork()
     {
-        return $this->critic_model;
+        return $this->criticModel;
     }
 
     public function targetCriticNetwork()
     {
-        return $this->target_critic;
+        return $this->targetCritic;
     }
 
     public function summary()
     {
         echo "***** Actor Network *****\n";
-        $this->actor_model->summary();
+        $this->actorModel->summary();
         echo "\n";
         echo "***** Critic Network *****\n";
-        $this->critic_model->summary();
+        $this->criticModel->summary();
     }
 
     public function fileExists(string $filename) : bool
@@ -228,16 +251,16 @@ class Ddpg extends AbstractAgent
     {
         $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
         $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
-        $this->actor_model->saveWeightsToFile($actormodel);
-        $this->critic_model->saveWeightsToFile($criticmodel);
+        $this->actorModel->saveWeightsToFile($actormodel);
+        $this->criticModel->saveWeightsToFile($criticmodel);
     }
 
     public function loadWeightsFromFile(string $filename) : void
     {
         $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
         $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
-        $this->actor_model->loadWeightsFromFile($actormodel);
-        $this->critic_model->loadWeightsFromFile($criticmodel);
+        $this->actorModel->loadWeightsFromFile($actormodel);
+        $this->criticModel->loadWeightsFromFile($criticmodel);
         //$this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
         //$this->trainableVariables = $this->trainModel->trainableVariables();
         $this->initialize();
@@ -255,16 +278,16 @@ class Ddpg extends AbstractAgent
         //    $tau);
 
         //$this->copyWeights(
-        //    $this->target_actor->variables(),
-        //    $this->actor_model->variables(),
+        //    $this->targetActor->variables(),
+        //    $this->actorModel->variables(),
         //    $tau);
         //$this->copyWeights(
-        //    $this->target_critic->variables(),
-        //    $this->critic_model->variables(),
+        //    $this->targetCritic->variables(),
+        //    $this->criticModel->variables(),
         //    $tau);
 
-        $this->target_actor->copyWeights($this->actor_model,$tau);
-        $this->target_critic->copyWeights($this->critic_model,$tau);
+        $this->targetActor->copyWeights($this->actorModel,$tau);
+        $this->targetCritic->copyWeights($this->criticModel,$tau);
     }
 
     //public function copyWeights($target,$source,float $tau=null) : void
@@ -304,15 +327,15 @@ class Ddpg extends AbstractAgent
 
     protected function estimator() : Estimator
     {
-        return $this->actor_model;
+        return $this->actorModel;
     }
 
     //public function maxQValue(mixed $states) : float
     //{
     //    $la = $this->la;
     //    $states = $this->atleast2d($states);
-    //    $actions = $this->actor_model->predict($states);
-    //    $qValues = $this->critic_model->predict([$states, $actions]);
+    //    $actions = $this->actorModel->predict($states);
+    //    $qValues = $this->criticModel->predict([$states, $actions]);
     //    $q = $this->la->max($qValues);
     //    return $q;
     //}
@@ -336,7 +359,7 @@ class Ddpg extends AbstractAgent
     {
         $la = $this->la;
         $nn = $this->nn; 
-        //$K = $this->backend; 
+        $K = $nn->backend(); 
         $g = $nn->gradient();
         $batchSize = $this->batchSize;
         $stateShape = $this->stateShape;
@@ -350,7 +373,7 @@ class Ddpg extends AbstractAgent
         $endEpisode = $transition[4];  // done
 
         $state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
-        $action_batch = $la->zeros($la->alloc(array_merge([$batchSize], $numActions)));
+        $action_batch = $la->zeros($la->alloc([$batchSize, $numActions]));
         $next_state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
         $reward_batch = $la->zeros($la->alloc([$batchSize,1]));
         //$discounts = $la->zeros($la->alloc([$batchSize]));
@@ -389,58 +412,58 @@ class Ddpg extends AbstractAgent
         $action_batch = $g->Variable($action_batch);
         $next_state_batch = $g->Variable($next_state_batch);
         $reward_batch = $g->Variable($reward_batch);
-        $training = $g->Variable(true);
+        $training = true;//$g->Variable(true);
 
-        $target_actor = $this->target_actor;
-        $target_critic = $this->target_critic;
-        $critic_model = $this->critic_model;
-        $actor_model = $this->actor_model;
+        $targetActor = $this->targetActor;
+        $targetCritic = $this->targetCritic;
+        $criticModel = $this->criticModel;
+        $actorModel = $this->actorModel;
 
-        //$target_actor = $this->targetActorGraph;
-        //$target_critic = $this->targetCriticGraph;
-        //$critic_model = $this->criticModelGraph;
-        //$actor_model = $this->actorModelGraph;
+        //$targetActor = $this->targetActorGraph;
+        //$targetCritic = $this->targetCriticGraph;
+        //$criticModel = $this->criticModelGraph;
+        //$actorModel = $this->actorModelGraph;
 
 
         [$critic_loss,$actionValues] = $nn->with($tape=$g->GradientTape(),function () use (
-                $g,$target_actor,$target_critic,$critic_model,
+                $g,$targetActor,$targetCritic,$criticModel,
                 $next_state_batch,$reward_batch,$gamma,
                 $state_batch,$action_batch,$training,
             ) {
-                $target_actions = $target_actor($next_state_batch, $training);
-                $target_q_values = $target_critic($next_state_batch, $target_actions, $training);
+                $target_actions = $targetActor($next_state_batch, $training);
+                $target_q_values = $targetCritic($next_state_batch, $target_actions, $training);
 
                 $td_targets = $g->add($reward_batch,$g->mul($gamma,$target_q_values));
 
-                $actionValues = $critic_model($state_batch, $action_batch, $training);
+                $actionValues = $criticModel($state_batch, $action_batch, $training);
 
                 $critic_loss = $g->reduceMean($g->square($g->sub($td_targets,$actionValues)));
                 return [$critic_loss,$actionValues];
             }
         );
-        $this->criticTrainableVariables = $this->critic_model->trainableVariables();
-        $critic_grad = $tape->gradient($critic_loss, $this->criticTrainableVariables);
-        $this->criticOptimizer->update($this->criticTrainableVariables,$critic_grad);
+        $criticTrainableVariables = $this->criticModel->trainableVariables();
+        $critic_grad = $tape->gradient($critic_loss, $criticTrainableVariables);
+        $this->criticOptimizer->update($criticTrainableVariables,$critic_grad);
         //echo $K->toString($actionValues,null,true)."\n";
 
 
 
         [$actor_loss,$critic_value] = $nn->with($tape=$g->GradientTape(),function () use (
-                $g,$actor_model,$critic_model,
+                $g,$actorModel,$criticModel,
                 $next_state_batch,$reward_batch,$gamma,
                 $state_batch,$action_batch,$training,
             ) {
-                $actions = $actor_model($state_batch, $training);
-                $critic_value = $critic_model($state_batch, $actions, $training);
+                $actions = $actorModel($state_batch, $training);
+                $critic_value = $criticModel($state_batch, $actions, $training);
                 # Used `-value` as we want to maximize the value given
                 # by the critic for our actions
                 $actor_loss = $g->mul($g->Variable(-1),$g->reduceMean($critic_value));
                 return [$actor_loss,$critic_value];
             }
         );
-        $this->actorTrainableVariables = $this->actor_model->trainableVariables();
-        $actor_grad = $tape->gradient($actor_loss, $this->actorTrainableVariables);
-        $this->actorOptimizer->update($this->actorTrainableVariables,$actor_grad);
+        $actorTrainableVariables = $this->actorModel->trainableVariables();
+        $actor_grad = $tape->gradient($actor_loss, $actorTrainableVariables);
+        $this->actorOptimizer->update($actorTrainableVariables,$actor_grad);
         //echo $K->toString($critic_value,null,true)."\n";
 
 
@@ -448,17 +471,17 @@ class Ddpg extends AbstractAgent
         # Training and updating Actor & Critic networks.
         # See Pseudo Code.
 
-        if($this->critic_model_graph===null) {
-            $this->critic_model_graph = $g->function(function (
+        if($this->criticModelGraph===null) {
+            $this->criticModelGraph = $g->function(function (
                 $next_state_batch,$reward_batch,$gamma,
                 $state_batch,$action_batch,$training,
             ) use (
-                $g,$target_actor,$target_critic,$critic_model,
+                $g,$targetActor,$targetCritic,$criticModel,
             ) {
-                $target_actions = $target_actor($next_state_batch, $training);
+                $target_actions = $targetActor($next_state_batch, $training);
                 $y = $g->add($reward_batch,$g->mul($gamma,
-                    $target_critic($next_state_batch, $target_actions, $training)));
-                $critic_value = $critic_model($state_batch, $action_batch, $training);
+                    $targetCritic($next_state_batch, $target_actions, $training)));
+                $critic_value = $criticModel($state_batch, $action_batch, $training);
                 $critic_loss = $g->reduceMean($g->square($g->sub($y,$critic_value)));
                 return $critic_loss;
             });
@@ -469,20 +492,20 @@ class Ddpg extends AbstractAgent
                 $state_batch,$action_batch,$training,
             ],
             without_ctx:true,
-            func:$this->critic_model_graph,
+            func:$this->criticModelGraph,
         );
 
         $critic_grad = $tape->gradient($critic_loss, $this->criticTrainableVariables);
         $this->criticOptimizer->update($this->criticTrainableVariables,$critic_grad);
 
-        if($this->actor_model_graph===null) {
-            $this->actor_model_graph=$g->function(function(
+        if($this->actorModelGraph===null) {
+            $this->actorModelGraph=$g->function(function(
                 $state_batch,$training,
             ) use (
-                $g,$actor_model,$critic_model,
+                $g,$actorModel,$criticModel,
             ) {
-                $actions = $actor_model($state_batch, $training);
-                $critic_value = $critic_model($state_batch, $actions, $training);
+                $actions = $actorModel($state_batch, $training);
+                $critic_value = $criticModel($state_batch, $actions, $training);
                 # Used `-value` as we want to maximize the value given
                 # by the critic for our actions
                 $actor_loss = $g->mul($g->Variable(-1),$g->reduceMean($critic_value));
@@ -494,17 +517,17 @@ class Ddpg extends AbstractAgent
                 $state_batch,$training,
             ],
             without_ctx:true,
-            func:$this->actor_model_graph,
+            func:$this->actorModelGraph,
         );
         $actor_grad = $tape->gradient($actor_loss, $this->actorTrainableVariables);
         $this->actorOptimizer->update($this->actorTrainableVariables,$actor_grad);
 */
 
         if($this->enabledShapeInspection) {
-            $this->target_actor->setShapeInspection(false);
-            $this->target_critic->setShapeInspection(false);
-            $this->actor_model->setShapeInspection(false);
-            $this->critic_model->setShapeInspection(false);
+            $this->targetActor->setShapeInspection(false);
+            $this->targetCritic->setShapeInspection(false);
+            $this->actorModel->setShapeInspection(false);
+            $this->criticModel->setShapeInspection(false);
             $this->enabledShapeInspection = false;
         }
         

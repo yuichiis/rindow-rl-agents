@@ -8,7 +8,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 use Rindow\RL\Agents\Driver\EpisodeDriver;
 use Rindow\RL\Agents\Driver\StepDriver;
-use Rindow\RL\Agents\Agent\Ddpg;
+use Rindow\RL\Agents\Agent\Ddpg\Ddpg;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 use Rindow\RL\Gym\Core\Rendering\RenderFactory;
 
@@ -25,7 +25,7 @@ $numEvalEpisodes = 0;
 $maxExperienceSize = 50000;
 $batchSize = 64;
 $gamma = 0.99;
-$std_dev = 0.2;
+$stdDev = 0.2;
 # $fcLayers = [256, 256];
 # $staFcLayers = [16, 32];
 # $actFcLayers = [32];
@@ -48,12 +48,12 @@ echo "actionSpace.high.dtype ".$mo->dtypeToString(($env->actionSpace()->high()->
 
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->shape()[0]; # DDPG handles continuous actions
-$lower_bound = $env->actionSpace()->low();
-$upper_bound = $env->actionSpace()->high();
+$lowerBound = $env->actionSpace()->low();
+$upperBound = $env->actionSpace()->high();
 
 $ddpgAgent = new Ddpg($la,$nn,
-    $stateShape,$numActions,$lower_bound,$upper_bound,
-    std_dev:$std_dev,
+    $stateShape,$numActions,$lowerBound,$upperBound,
+    stdDev:$stdDev,
     batchSize:$batchSize,
     gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,
@@ -119,7 +119,7 @@ for($i=0;$i<5;$i++) {
     $maxSteps = 200;
     $done=false;
     $step = 0;
-    while(!$done && $step<$maxSteps) {
+    while(!($done||$truncated) && $step<$maxSteps) {
         $action = $ddpgAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $env->render();
