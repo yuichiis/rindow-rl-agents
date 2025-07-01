@@ -8,9 +8,6 @@ if(file_exists(__DIR__.'/../vendor/autoload.php')) {
 } else {
     $loader = require_once __DIR__.'/init_autoloader.php';
 }
-if(!file_exists(__DIR__.'/tmp')) {
-    mkdir(__DIR__.'/tmp');
-}
 #if(!class_exists('PHPUnit\Framework\TestCase')) {
 #    include __DIR__.'/travis/patch55.php';
 #}

@@ -118,6 +118,7 @@ for($i=0;$i<5;$i++) {
     $env->render();
     $maxSteps = 200;
     $done=false;
+    $truncated=false;
     $step = 0;
     while(!($done||$truncated) && $step<$maxSteps) {
         $action = $ddpgAgent->action($state,training:false,info:$info);
