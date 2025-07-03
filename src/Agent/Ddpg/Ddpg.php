@@ -74,6 +74,9 @@ class Ddpg extends AbstractAgent
         ?array $actorNetworkOptions=null,
         ?array $criticNetworkOptions=null,
         ?EventManager $eventManager=null,
+        ?float $noiseDecay=null,
+        float|NDArray|null $minStdDev=null,
+        ?bool $episodeAnnealing=null,
         ?object $mo = null,
         )
     {
@@ -102,6 +105,9 @@ class Ddpg extends AbstractAgent
         if(is_numeric($stdDev)) {
             $stdDev = $la->fill($stdDev,$la->zeros($la->alloc([$numActions])));
         }
+        if(is_numeric($minStdDev)) {
+            $minStdDev = $la->fill($minStdDev,$la->zeros($la->alloc([$numActions])));
+        }
         $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
         $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
 
@@ -121,6 +127,7 @@ class Ddpg extends AbstractAgent
             $la,
             $mean,$stdDev,$lowerBound,$upperBound,
             $theta,$dt,$xInitial,
+            $noiseDecay,$minStdDev,$episodeAnnealing,
         );
         parent::__construct($la,$policy,$eventManager);
         $this->nn = $nn;
@@ -193,7 +200,11 @@ class Ddpg extends AbstractAgent
         NDArray $upperBound,
         ?float $theta,
         ?float $dt,
-        ?NDArray $xInitial)
+        ?NDArray $xInitial,
+        ?float $noiseDecay,
+        ?NDArray $minStdDev,
+        ?bool $episodeAnnealing,
+        )
     {
         $policy = new OUNoise(
             $la,
@@ -203,7 +214,11 @@ class Ddpg extends AbstractAgent
             $upperBound,
             theta:$theta,
             dt:$dt,
-            x_initial:$xInitial);
+            x_initial:$xInitial,
+            noise_decay:$noiseDecay,
+            min_std_dev:$minStdDev,
+            episodeAnnealing:$episodeAnnealing,
+        );
         return $policy;
     }
 

@@ -38,27 +38,16 @@ class CriticNetwork extends AbstractNetwork
         $this->numActions = $numActions;
 
         if($staConvLayers===null && $staFcLayers===null) {
-            $staFcLayers = [16, 32];
+            $staFcLayers = [256];
         }
         if($actLayers===null) {
-            $actLayers = [32];
+            $actLayers = [];
         }
         if($comLayers===null) {
-            $comLayers = [256,256];
+            $comLayers = [256];
         }
-        $staLast = array_key_last($staFcLayers);
-        $actLast = array_key_last($actLayers);
-        if($staLast===null) {
+        if(count($staFcLayers)===0) {
             throw new InvalidArgumentException("Must specify staFcLayers.");
-        }
-        if($actLast===null) {
-            if($staFcLayers[$staLast]!==$numActions) {
-                throw new InvalidArgumentException("the same last staFcLayers must be numActions.");
-            }
-        } else {
-            if($staFcLayers[$staLast]!==$actLayers[$actLast]) {
-                throw new InvalidArgumentException("Must be the same last staFcLayers and last actLayers.");
-            }
         }
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
@@ -68,7 +57,7 @@ class CriticNetwork extends AbstractNetwork
             activation:$activation,
             kernelInitializer:$kernelInitializer
         );
-        if($actLast===null) {
+        if(count($actLayers)===0) {
             $this->actionLayers = null;
         } else {
             $this->actionLayers = $this->buildMlpLayers(
@@ -98,6 +87,7 @@ class CriticNetwork extends AbstractNetwork
 
     public function call(NDArray $state_input, NDArray $action_input, ?bool $training)
     {
+        $la = $this->la;
         //$state_out = $this->stateDense1->forward($state_input,$training);
         //$state_out = $this->stateDense2->forward($state_out,$training);
 

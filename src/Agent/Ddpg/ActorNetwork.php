@@ -38,11 +38,12 @@ class ActorNetwork extends AbstractEstimatorNetwork
             $model = $this->buildActorModel(
                 $stateShape,$numActions,
                 $convLayers,$convType,$fcLayers,
-                $activation,$kernelInitializer,
+                $activation,
+                $kernelInitializer,
                 $outputActivation,
                 $outputKernelInitializer,
-                $minval=null,
-                $maxval=null,
+                $minval,
+                $maxval,
             );
         }
         $this->model = $model;
@@ -57,6 +58,7 @@ class ActorNetwork extends AbstractEstimatorNetwork
         ?string $activation=null,
         ?string $kernelInitializer=null,
         ?string $outputActivation=null,
+        mixed $outputKernelInitializer=null,
         ?float $minval=null,
         ?float $maxval=null,
         )
@@ -80,7 +82,7 @@ class ActorNetwork extends AbstractEstimatorNetwork
         $outputActivation ??= 'tanh';
         $minval ??= -0.003;
         $maxval ??= 0.003;
-        $outputKernelInitializer ??= $this->backend->getInitializer('random_uniform',['minval'=>-0.003,'maxval'=>0.003]);
+        $outputKernelInitializer ??= $this->backend->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
         $model->add($nn->layers->Dense(
             $numActions,
             activation:$outputActivation,

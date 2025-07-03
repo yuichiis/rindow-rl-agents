@@ -85,7 +85,7 @@ class DdpgTest extends TestCase
         $critic_lr=0.002;
         $actor_lr=0.001;
         $actorNetworkOptions = [
-            'fcLayers' => [100],
+            'fcLayers' => [256, 256],
             'outputActivation' => 'tanh',
             'minval' => -0.003,
             'maxval' => 0.003,

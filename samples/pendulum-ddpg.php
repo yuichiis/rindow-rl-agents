@@ -23,23 +23,39 @@ $logInterval =   1; #
 $evalInterval =  1; #10; #
 $numEvalEpisodes = 0;
 $maxExperienceSize = 50000;
-$batchSize = 64;
+$batchSize = 128;
 $gamma = 0.99;
 $stdDev = 0.2;
-# $fcLayers = [256, 256];
+$noiseDecay = 0.999;
+$minStdDev = 0.01;
+$episodeAnnealing = true;
+
+$actorNetworkOptions = [
+    'fcLayers' => [256, 256],
+];
+$criticNetworkOptions = [
+    'staFcLayers' => [256],
+    'actLayers' => [],
+    'comLayers' => [256]
+];
 # $staFcLayers = [16, 32];
 # $actFcLayers = [32];
 # $conFcLayers = [256,256];
 $targetUpdatePeriod = 1;    #1;    #5;    #200;#5;    #5;   #5;   #200;#
-$targetUpdateTau =    0.005;#0.005;#0.005;#1.0;#0.025;#0.01;#0.05;#1.0;#
-$critic_lr = 0.002;#0.002;
-$actor_lr  = 0.001;#0.001;
+$targetUpdateTau =    1e-3;#0.005;#0.005;#0.005;#1.0;#0.025;#0.01;#0.05;#1.0;#
+$actorOptimizerOpts = [
+    'lr'=>1e-4,#0.001;#0.001;
+];
+$criticOptimizerOpts = [
+    'lr'=>1e-3,#0.002;#0.002;
+    'epsilon'=>1e-2,
+];
 
 
 $env = new PendulumV1($la);
 
-echo "observationSpace.shape [".implode(',',$env->observationSpace()->shape())."]\n";
-echo "actionSpace.shape [".implode(',',$env->actionSpace()->shape())."]\n";
+echo "observationSpace.shape (".implode(',',$env->observationSpace()->shape()).")\n";
+echo "actionSpace.shape (".implode(',',$env->actionSpace()->shape()).")\n";
 echo "actionSpace.high ".$mo->toString($env->actionSpace()->high())."\n";
 echo "actionSpace.low ".$mo->toString($env->actionSpace()->low())."\n";
 echo "actionSpace.high.dtype ".$mo->dtypeToString(($env->actionSpace()->high()->dtype()))."\n";
@@ -58,10 +74,15 @@ $ddpgAgent = new Ddpg($la,$nn,
     gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,
     targetUpdateTau:$targetUpdateTau,
-    criticOptimizerOpts:['lr'=>$critic_lr],
-    actorOptimizerOpts:['lr'=>$actor_lr],
+    criticOptimizerOpts:$criticOptimizerOpts,
+    actorOptimizerOpts:$actorOptimizerOpts,
+    noiseDecay:$noiseDecay,
+    minStdDev:$minStdDev,
+    actorNetworkOptions:$actorNetworkOptions,
+    criticNetworkOptions:$criticNetworkOptions,
+    episodeAnnealing:$episodeAnnealing,
 );
-//$ddpgAgent->summary();
+$ddpgAgent->summary();
 
 $env->reset();
 //$env->render();
