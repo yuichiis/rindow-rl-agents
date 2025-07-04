@@ -5,3 +5,4 @@ composer.lock
 composer.phar
 samples/*.pkl
 samples/*.model
+/tmp/
