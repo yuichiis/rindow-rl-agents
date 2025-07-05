@@ -1,106 +1,89 @@
 <?php
-namespace Rindow\RL\Agents\Agent;
+namespace Rindow\RL\Agents\Agent\A2C;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
+use LogicException;
+use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Optimizer\Optimizer;
+use Rindow\NeuralNetworks\Layer\Layer;
+use Rindow\NeuralNetworks\Gradient\GraphFunction;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Agent\A2C\ActorCriticNetwork;
-use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
+use Rindow\RL\Agents\Agent\AbstractAgent;
+use Rindow\RL\Agents\Policy\Boltzmann;
+use function Rindow\Math\Matrix\R;
 
 class A2C extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
-    protected $gamma;
-    protected $rewardScaleFactor;
-    protected $stateShape;
-    protected $numActions;
-    protected $ddqn;
-    protected $targetUpdatePeriod;
-    protected $targetUpdateTimer;
-    protected $lossFn;
-    protected $lossOpts;
-    protected $optimizer;
-    protected $optimizerOpts;
-    protected $mo;
-    protected $gather;
-    protected $trainModel;
-    protected $targetModel;
-    protected $trainModelGraph;
+    protected float $gamma;
+    //protected $rewardScaleFactor;
+    protected array $stateShape;
+    protected int $numActions;
+    protected int $targetUpdatePeriod;
+    protected int $targetUpdateTimer;
+    protected Optimizer $optimizer;
+    protected array $optimizerOpts;
+    protected ?object $mo;
+    protected Builder $nn;
+    protected object $g;
+    protected Layer $gather;
+    protected ActorCriticNetwork $trainModel;
+    protected ActorCriticNetwork $targetModel;
+    protected GraphFunction $trainModelGraph;
     protected $trainableVariables;
-    protected $enabledShapeInspection = true;
+    protected bool $enabledShapeInspection = true;
+    protected int $targetUpdateTau;
+    protected int $batchSize;
 
     public function __construct(
         object $la,
-        Network $network=null,
-        Policy $policy=null,
-        int $batchSize=null,
-        float $gamma=null,
-        int $targetUpdatePeriod=null,
-        float $targetUpdateTau=null,
-        bool $ddqn=null,
-        object $nn=null,
-        object $lossFn=null,
-        array $lossOpts=null,
-        object $optimizer=null,
-        array $optimizerOpts=null,
-        array $stateShape=null, int $numActions=null,
-        array $fcLayers=null,
-        float $epsStart=null, float $epsStop=null, float $epsDecayRate=null,
-        EventManager $eventManager=null,
-        object $mo = null
+        ?Network $network=null,
+        ?Policy $policy=null,
+        ?int $batchSize=null,
+        ?float $gamma=null,
+        ?int $targetUpdatePeriod=null,
+        ?float $targetUpdateTau=null,
+        ?object $nn=null,
+        ?object $optimizer=null,
+        ?array $optimizerOpts=null,
+        ?array $stateShape=null, ?int $numActions=null,
+        ?array $fcLayers=null,
+        ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
+        ?EventManager $eventManager=null,
+        ?object $mo = null
         )
     {
-        if($network===null) {
-            $network = $this->buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers);
-        }
+        $network ??= $this->buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers);
         if(!($network instanceof Estimator)) {
             echo get_class($network);
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
-        if($policy===null) {
-            $policy = $this->buildPolicy($la,$network,$epsStart,$epsStop,$epsDecayRate);
-        }
+        $policy ??= $this->buildPolicy($la,$policyTau,$policyMin,$policyMax);
         parent::__construct($la,$policy,$eventManager);
 
-        if($stateShape===null) {
-            $stateShape = $network->stateShape();
-        }
-        if($numActions===null) {
-            $numActions = $network->numActions();
-        }
-        if($batchSize===null) {
-            $batchSize = 32;
-        }
-        if($gamma===null) {
-            $gamma = 0.99;
-        }
-        if($targetUpdatePeriod===null) {
-            $targetUpdatePeriod = 100;
-        }
-        if($targetUpdateTau===null) {
-            $targetUpdateTau = 1.0;
-        }
-        if($ddqn===null) {
-            $ddqn = false;
-        }
+        $stateShape ??= $network->stateShape();
+        $numActions ??= $network->numActions();
+        $batchSize ??= 32;
+        $gamma ??= 0.99;
+        $targetUpdatePeriod ??= 100;
+        $targetUpdateTau ??= 1.0;
+        $nn ??= $network->builder();
+        $optimizerOpts ??= [];
+        $optimizer = $nn->optimizers->Adam(...$optimizerOpts);
+
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
         $this->targetUpdatePeriod = $targetUpdatePeriod;
         $this->targetUpdateTau = $targetUpdateTau;
-        $this->ddqn = $ddqn;
-        $this->lossFn = $lossFn;
-        $this->lossOpts = $lossOpts;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
         $this->mo = $mo;
-        if($nn===null) {
-            $nn = $network->builder();
-        }
         $this->nn = $nn;
         $this->g = $nn->gradient();
         $this->trainModel = $this->buildTrainingModel($la,$nn,$network);
@@ -130,24 +113,7 @@ class A2C extends AbstractAgent
         $la,$nn,$network,
         )
     {
-        $lossOpts = $this->lossOpts;
-        $optimizerOpts = $this->optimizerOpts;
-        if($lossOpts===null) {
-            $lossOpts=[];
-        }
-        if($optimizerOpts===null) {
-            $optimizerOpts=[];
-        }
-        if($this->lossFn===null) {
-            $this->lossFn=$nn->losses->Huber(...$lossOpts);
-        }
-        if($this->optimizer===null) {
-            $this->optimizer=$nn->optimizers->Adam(...$optimizerOpts);
-        }
-        if($this->gather===null) {
-            $this->gather = $nn->layers->Gather(axis:-1);
-        }
-        $network->compile(loss:$this->lossFn,optimizer:$this->optimizer);
+        $this->gather = $nn->layers->Gather(axis:-1);
         $network->build(array_merge([1],$this->stateShape));
 
         return $network;
@@ -158,11 +124,21 @@ class A2C extends AbstractAgent
         $this->trainModel->summary();
     }
 
-    protected function buildPolicy($la,$network,$start,$stop,$decayRate)
+    protected function buildPolicy(
+        object $la,
+        ?float $tau=null,
+        ?float $min=null,
+        ?float $max=null,
+        )
     {
-        $policy = new AnnealingEpsGreedy(
+        $fromLogits = true;
+        $policy = new Boltzmann(
             $la,
-            start:$start,stop:$stop,decayRate:$decayRate);
+            $tau,
+            $min,
+            $max,
+            $fromLogits,
+        );
         return $policy;
     }
 
@@ -252,13 +228,14 @@ class A2C extends AbstractAgent
         $la = $this->la;
         $nn = $this->nn;
         $g  = $this->g;
+        $K  = $nn->backend();
         $batchSize = $this->batchSize;
         $stateShape = $this->stateShape;
 
         $transition = $experience->last();
-        [$state,$action,$nextState,$reward,$endEpisode,$truncated,$info] = $transition;  // done
+        [$state,$action,$nextState,$reward,$terminated,$truncated,$info] = $transition;  // done
 
-        if(!$endEpisode && $experience->size()<$batchSize) {
+        if(!$terminated && $experience->size()<$batchSize) {
             return 0.0;
         }
 
@@ -267,15 +244,20 @@ class A2C extends AbstractAgent
         $rewards = $la->zeros($la->alloc([$batchSize]));
         $discounts = $la->zeros($la->alloc([$batchSize]));
         $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
+        $discountedRewards = $la->zeros($la->alloc([$batchSize,1]));;
 
 
-        if($endEpisode) {
+        if($terminated) {
             $discounted = 0;
         } else {
-            if(is_scalar($nextState)) {
-                $nextState = $la->array([[$nextState]]);
-            } elseif($nextState instanceof NDArray) {
-                $nextState = $la->expandDims($nextState);
+            if(!($nextState instanceof NDArray)) {
+                throw new LogicException("nextState must be NDArray");
+            }
+            if($la->isInt($state)) {
+                $state = $la->astype($state,dtype:NDArray::float32);
+            }
+            if($nextState->ndim()) {
+                $nextState = $la->expandDims($nextState,axis:0);
             }
             [$tmp,$v] = $this->trainModel->forward($nextState,false);
             $discounted = $la->scalar(($la->squeeze($v)));
@@ -284,7 +266,7 @@ class A2C extends AbstractAgent
         }
         $history = $experience->recently($experience->size());
         $totalReward = 0;
-        $i = $steps-1;
+        $i = $batchSize-1;
         $history = array_reverse($history);
         foreach ($history as $transition) {
             [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
@@ -292,14 +274,22 @@ class A2C extends AbstractAgent
                 $discounted = 0;
             }
             $discounted = $reward + $discounted*$this->gamma;
-            $discountedRewards[$i] = $discounted;
+            $discountedRewards[$i][0] = $discounted;
             $rewards[$i] = $reward;
-            if(is_numeric($state)) {
-                $states[$i][0] = $state;
-            } else {
-                $la->copy($state,$states[$i]);
+            if(!($state instanceof NDArray)) {
+                throw new LogicException("state must be NDArray.");
             }
-            $actions[$i] = $action;
+            if($la->isInt($state)) {
+                $state = $la->astype($state,dtype:NDArray::float32);
+            }
+            $la->copy($state,$states[$i]);
+            if(!($action instanceof NDArray)) {
+                throw new LogicException("action must be NDArray.");
+            }
+            if($action->ndim()!==0) {
+                throw new LogicException("shape of action must be scalar ndarray.");
+            }
+            $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
             if(!$done) {
                 $discounts[$i] = 1.0;
             }
@@ -314,7 +304,7 @@ class A2C extends AbstractAgent
         $discountedRewards = $g->Variable($discountedRewards);
 
         // gradients
-        $trainModel = $this->model;
+        $trainModel = $this->trainModel;
         $gather = $this->gather;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
@@ -323,7 +313,7 @@ class A2C extends AbstractAgent
             // action probs
             $actionProbs = $gather->forward([$actionProbs,$actions],$training);
             // advantage
-            $advantage = $discountedRewards - $g->stopGradient($values);
+            $advantage = $g->sub($discountedRewards,$g->stopGradient($values));
             $actionProbs = $g->clipByValue($actionProbs, 1e-10, 1.0);
             $policyLoss = $g->mul($g->log($actionProbs),$advantage);
 

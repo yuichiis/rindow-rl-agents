@@ -20,7 +20,7 @@ class Boltzmann extends AbstractPolicy
         ?bool $fromLogits=null,
         )
     {
-        $fromLogits ??= false;
+        $fromLogits ??= true;
         $tau ??= 1.0;
         if($fromLogits) {
             $min ??= -500.0;

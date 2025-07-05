@@ -9,7 +9,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Agent\A2C;
+use Rindow\RL\Agents\Agent\A2C\A2C;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\Math\Plot\Plot;
@@ -68,47 +68,6 @@ class A2CTest extends TestCase
         ];
     }
 
-    public function testActionWithPredictOnAnnealingEpsGreedy()
-    {
-        $mo = $this->newMatrixOperator();
-        $la = $mo->la();
-        $nn = $this->newBuilder($mo);
-
-        $agent = new A2C($la,
-            epsStart:0.0, epsStop:0.0,
-            nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
-        //$agent->summary();
-        $states = [
-            $la->array([0]),
-            $la->array([1]),
-        ];
-        for($i=0;$i<100;$i++) {
-            $actions = $agent->action($states,training:true);
-            $this->assertEquals([2],$actions->shape());
-            $this->assertEquals(NDArray::int32,$actions->dtype());
-        }
-    }
-
-    public function testActionWithSamplesOnAnnealingEpsGreedy()
-    {
-        $mo = $this->newMatrixOperator();
-        $la = $mo->la();
-        $nn = $this->newBuilder($mo);
-
-        $agent = new A2C($la,
-            epsStart:1.0, epsStop:1.0,
-            nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
-        $states = [
-            $la->array([0]),
-            $la->array([1]),
-        ];
-        for($i=0;$i<100;$i++) {
-            $actions = $agent->action($states,training:true);
-            $this->assertEquals([2],$actions->shape());
-            $this->assertEquals(NDArray::int32,$actions->dtype());
-        }
-    }
-
     public function testActionOnBoltzmann()
     {
         $mo = $this->newMatrixOperator();
@@ -131,28 +90,29 @@ class A2CTest extends TestCase
         }
     }
 
-    public function aaaaatestUpdate()
+    public function testUpdate()
     {
         $mo = $this->newMatrixOperator();
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $agent = new DQN($la,
-            batchSize:2, epsStart:0, epsStop:0,
-            nn:$nn, stateShape:[1], numActions:2, fcLayers:[100]);
+        $agent = new A2C($la,
+            batchSize:2,
+            nn:$nn, stateShape:[1], numActions:2, fcLayers:[100]
+        );
         $mem = new ReplayBuffer($la,$maxsize=2);
         //[$state,$action,$nextState,$reward,$done,$info]
-        $mem->add([0,1,1,1,false,[]]);
-        $mem->add([1,1,2,1,false,[]]);
         $losses = [];
         for($i=0;$i<100;$i++) {
+            $mem->add([$la->array([0]),$la->array(1,dtype:NDArray::int32),$la->array([1]),1,false,false,[]]);
+            $mem->add([$la->array([1]),$la->array(1,dtype:NDArray::int32),$la->array([2]),1,false,false,[]]);
             $losses[] = $agent->update($mem);
         }
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('DQN');
+        $plt->title('A2C');
         $plt->show();
         $this->assertTrue(true);
     }

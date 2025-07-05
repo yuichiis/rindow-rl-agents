@@ -1,25 +1,28 @@
 <?php
 namespace Rindow\RL\Agents\Agent\A2C;
 
-use Rindow\RL\Agents\Estimator;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Agents\Network\AbstractNetwork;
+use Rindow\RL\Agents\Estimator;
+use Rindow\RL\Agents\Estimator\AbstractNetwork;
+use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\Layer\Layer;
+use Rindow\NeuralNetworks\Builder\Builder;
 
 class ActorCriticNetwork extends AbstractNetwork implements Estimator
 {
-    protected $numActions;
-    protected $stateLayers;
-    protected $actionLayer;
-    protected $criticLayer;
-    protected $thresholds;
-    protected $masks;
+    protected int $numActions;
+    protected Model $stateLayers;
+    protected Layer $actionLayer;
+    protected Layer $criticLayer;
 
-    public function __construct($la,$builder,
+    public function __construct(
+        object $la,
+        Builder $builder,
         array $stateShape, int $numActions,
-        array $convLayers=null,string $convType=null,array $fcLayers=null,
-        string $activation=null, string $kernelInitializer=null,
-        string $actionActivation=null, string $actionKernelInitializer=null,
-        string $criticKernelInitializer=null,
+        ?array $convLayers=null,?string $convType=null,?array $fcLayers=null,
+        ?string $activation=null, ?string $kernelInitializer=null,
+        ?string $actionActivation=null, ?string $actionKernelInitializer=null,
+        ?string $criticKernelInitializer=null,
         )
     {
         parent::__construct($builder,$stateShape);
@@ -59,7 +62,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         $this->numActions = $numActions;
     }
 
-    public function call($state_input,$training=null)
+    public function call(NDArray $state_input, mixed $training=null) : array
     {
         $state_out = $this->stateLayers->forward($state_input,$training);
         $action_out = $this->actionLayer->forward($state_out,$training);
@@ -67,33 +70,23 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         return [$action_out,$critic_out];
     }
 
-    public function getActionValues($states) : NDArray
+    /**
+     * @param  NDArray $states : (batches,...StateDims) typeof int32 or float32
+     * @return NDArray $actionValues : (batches,...ValueDims) typeof float32
+     */
+    public function getActionValues(NDArray $states) : NDArray
     {
         $la = $this->la;
-        $orgStates = $states; 
-        if(is_array($states)) {
-            if($states[0] instanceof NDArray) {
-                $states = $la->stack($states,$axis=0);
-            } else {
-                $states = $la->expandDims($la->array($states),$axis=0);
-            }
-        } elseif($states instanceof NDArray) {
-            $states = $la->expandDims($states,$axis=0);
-        } else {
-            $states = $la->array([[$states]]);
+        if($states->ndim()<2) {
+            $specs = $la->dtypeToString($states->dtype())."(".implode(',',$states->shape()).")";
+            throw new InvalidArgumentException("states must be a 2-dimensional array or higher. $specs given.");
         }
-        [$action_out,$critic_out] = $this->forward($states);
-        if(!is_array($orgStates)) {
-            $action_out = $la->squeeze($action_out,axis:0);
+        $orgStates = $states;
+        if($la->isInt($states)) {
+            $states = $la->astype($states,NDArray::float32);
         }
-        if($this->masks) {
-            $states = $orgStates;
-            if($states instanceof NDArray) {
-                $states = (int)$states[0];
-            }
-            $la->multiply($this->masks[$states],$action_out);
-            $la->nan2num($action_out,-INF);
-        }
+
+        [$action_out,$critic_out] = $this->forward($states,false);
         return $action_out;
     }
 }
