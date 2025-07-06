@@ -98,15 +98,16 @@ class A2CTest extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
 
         $agent = new A2C($la,
-            batchSize:2,
+            batchSize:3,
             nn:$nn, stateShape:[1], numActions:2, fcLayers:[100]
         );
-        $mem = new ReplayBuffer($la,$maxsize=2);
+        $mem = new ReplayBuffer($la,$maxsize=3);
         //[$state,$action,$nextState,$reward,$done,$info]
         $losses = [];
         for($i=0;$i<100;$i++) {
             $mem->add([$la->array([0]),$la->array(1,dtype:NDArray::int32),$la->array([1]),1,false,false,[]]);
             $mem->add([$la->array([1]),$la->array(1,dtype:NDArray::int32),$la->array([2]),1,false,false,[]]);
+            $mem->add([$la->array([2]),$la->array(0,dtype:NDArray::int32),$la->array([3]),1,false,false,[]]);
             $losses[] = $agent->update($mem);
         }
         $losses = $la->array($losses);

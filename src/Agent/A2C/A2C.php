@@ -31,6 +31,7 @@ class A2C extends AbstractAgent
     protected Builder $nn;
     protected object $g;
     protected Layer $gather;
+    protected Layer $expandDims;
     protected ActorCriticNetwork $trainModel;
     protected ActorCriticNetwork $targetModel;
     protected GraphFunction $trainModelGraph;
@@ -86,6 +87,8 @@ class A2C extends AbstractAgent
         $this->mo = $mo;
         $this->nn = $nn;
         $this->g = $nn->gradient();
+        $this->gather = $nn->layers->Gather(axis:-1);
+        $this->expandDims = $nn->layers->ExpandDims(axis:-1);
         $this->trainModel = $this->buildTrainingModel($la,$nn,$network);
         $this->targetModel = clone $this->trainModel;
         $this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
@@ -113,7 +116,6 @@ class A2C extends AbstractAgent
         $la,$nn,$network,
         )
     {
-        $this->gather = $nn->layers->Gather(axis:-1);
         $network->build(array_merge([1],$this->stateShape));
 
         return $network;
@@ -306,12 +308,14 @@ class A2C extends AbstractAgent
         // gradients
         $trainModel = $this->trainModel;
         $gather = $this->gather;
+        $expandDims = $this->expandDims;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-                use ($g,$gather,$trainModel,$states,$training,$actions,$discountedRewards) {
+                use ($la,$g,$gather,$expandDims,$trainModel,$states,$training,$actions,$discountedRewards) {
             [$actionProbs, $values] = $trainModel($states,$training);
             // action probs
             $actionProbs = $gather->forward([$actionProbs,$actions],$training);
+            $actionProbs = $expandDims->forward($actionProbs);
             // advantage
             $advantage = $g->sub($discountedRewards,$g->stopGradient($values));
             $actionProbs = $g->clipByValue($actionProbs, 1e-10, 1.0);
@@ -319,10 +323,12 @@ class A2C extends AbstractAgent
 
             // Value loss
             // Mean Squared Error
-            $valueLoss = $g->reduceMean($g->pow($g->sub($discounted_rewards,$values) ,2.0), axis:1);
+            $valueLoss = $g->reduceMean($g->square($g->sub($discountedRewards,$values)), axis:1);
+            $valueLoss = $expandDims->forward($valueLoss);
 
             // policy entropy
             $entropy = $g->reduceSum($g->mul($g->log($actionProbs),$actionProbs), axis:1);
+            $entropy = $expandDims->forward($entropy);
 
             // total loss
             $value_loss_weight = $g->Variable(0.5);
