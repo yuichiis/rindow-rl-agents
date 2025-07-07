@@ -76,7 +76,7 @@ class EpisodeRunner extends AbstractRunner
             $truncated = false;
             [$states,$info] = $env->reset();
             $states = $this->customState($env,$states,$done,$truncated,$info);
-            while(!$done && !$truncated) {
+            while(!($done || $truncated)) {
                 if($maxSteps!==null) {
                     if($episodeSteps>=$maxSteps) {
                         break;

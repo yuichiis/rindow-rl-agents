@@ -198,18 +198,6 @@ class A2C extends AbstractAgent
         return $this->trainModel;
     }
 
-    public function getQValue($state) : float
-    {
-        if(is_numeric($state)) {
-            $state = $this->la->array([$state]);
-        } elseif(!($state instanceof NDArray)) {
-            throw new InvalidArgumentException('state must be NDArray');
-        }
-        $qValues = $this->trainModel->getActionValues($state);
-        $q = $this->la->max($qValues);
-        return $q;
-    }
-
     protected function updateTarget($endEpisode)
     {
         if($this->targetUpdatePeriod > 0) {
@@ -237,7 +225,7 @@ class A2C extends AbstractAgent
         $transition = $experience->last();
         [$state,$action,$nextState,$reward,$terminated,$truncated,$info] = $transition;  // done
 
-        if(!$terminated && $experience->size()<$batchSize) {
+        if(!($terminated||$truncated) && $experience->size()<$batchSize) {
             return 0.0;
         }
 
