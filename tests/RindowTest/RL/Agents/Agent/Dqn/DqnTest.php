@@ -11,7 +11,7 @@ use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\Dqn\Dqn;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -69,7 +69,7 @@ class DqnTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -200,7 +200,7 @@ class DqnTest extends TestCase
     //        batchSize:32, epsStart:0.9, epsStop:0.05, epsDecayRate:0.07, 
     //        nn:$nn, stateShape:$stateShape, numActions:$numActions, fcLayers:[100]
     //    );
-    //    $driver = new EpisodeDriver($la,$env,$agent,experienceSize:10000);
+    //    $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000);
     //    $driver->setCustomStateFunction($stateFunc);
 //
     //    $numIterations=200;

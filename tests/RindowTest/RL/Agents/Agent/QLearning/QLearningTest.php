@@ -9,7 +9,7 @@ use Rindow\RL\Agents\Agent\QLearning\QLearning;
 use Rindow\RL\Agents\Agent\QLearning\QTable as ValueTable;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -42,7 +42,7 @@ class QLearningTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -137,7 +137,7 @@ class QLearningTest extends TestCase
     //    $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
     //    $policy = new AnnealingEpsGreedy($la,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
     //    $agent = new QLearning($la,$rules,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
-    //    $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
+    //    $driver = new EpisodeRunner($la,$env,$agent,$experienceSize=10000);
     //    $driver->setCustomStateFunction($stateFunc);
 //
     //    $numIterations=200;
@@ -193,7 +193,7 @@ class QLearningTest extends TestCase
         $numActions = $env->actionSpace()->n();
         $policy = new AnnealingEpsGreedy($la,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
         $agent = new QLearning($la,$numStates,$numActions,$policy,eta:0.1,gamma:0.9,mo:$mo);
-        $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
+        $driver = new EpisodeRunner($la,$env,$agent,$experienceSize=10000);
         $driver->setCustomStateFunction($stateFunc);
 
         $numIterations=200;

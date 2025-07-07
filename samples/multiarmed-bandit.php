@@ -13,7 +13,7 @@ use Rindow\RL\Agents\Agent\PolicyGradient\PolicyGradient;
 use Rindow\RL\Agents\Agent\AverageReward\AverageReward;
 use Rindow\RL\Agents\Agent\AverageReward\ValueTable;
 use Rindow\RL\Agents\Agent\UCB1\UCB1;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 
 $mo = new MatrixOperator();
 $la = $mo->la();
@@ -35,11 +35,11 @@ $aegreedy = new AverageReward($la, numActions:count($probabilities),
 $aegreedy2 = new AverageReward($la, numActions:count($probabilities),
     policy:new AnnealingEpsGreedy($la,decayRate:$decayRate=0.03));
 $ucb1 = new UCB1($la, numActions:count($probabilities));
-$driver0 = new EpisodeDriver($la,$env,$boltzmann,1);
-$driver1 = new EpisodeDriver($la,$env,$egreedy,1);
-$driver2 = new EpisodeDriver($la,$env,$aegreedy,1);
-$driver3 = new EpisodeDriver($la,$env,$aegreedy2,1);
-$driver4 = new EpisodeDriver($la,$env,$ucb1,1);
+$driver0 = new EpisodeRunner($la,$env,$boltzmann,1);
+$driver1 = new EpisodeRunner($la,$env,$egreedy,1);
+$driver2 = new EpisodeRunner($la,$env,$aegreedy,1);
+$driver3 = new EpisodeRunner($la,$env,$aegreedy2,1);
+$driver4 = new EpisodeRunner($la,$env,$ucb1,1);
 $driver0->setCustomStateFunction($stateFunc);
 $driver1->setCustomStateFunction($stateFunc);
 $driver2->setCustomStateFunction($stateFunc);

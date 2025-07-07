@@ -7,7 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\PolicyGradient\PolicyGradient;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -35,7 +35,7 @@ class PolicyGradientTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -125,7 +125,7 @@ class PolicyGradientTest extends TestCase
     //    };
     //    $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
     //    $agent = new PolicyGradient($la,$rules,$eta=0.1,mo:$mo);
-    //    $driver = new EpisodeDriver($la,$env,$agent,experienceSize:10000);
+    //    $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000);
     //    $driver->setCustomStateFunction($stateFunc);
 //
     //    $numIterations=200;
@@ -174,7 +174,7 @@ class PolicyGradientTest extends TestCase
         };
         $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
         $agent = new PolicyGradient($la,$numStates,$numActions,$eta=0.1,mo:$mo);
-        $driver = new EpisodeDriver($la,$env,$agent,experienceSize:10000);
+        $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000);
         $driver->setCustomStateFunction($stateFunc);
 
         $numIterations=200;

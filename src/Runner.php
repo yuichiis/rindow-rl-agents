@@ -5,7 +5,7 @@ namespace Rindow\RL\Agents;
  *
  */
 
-interface Driver
+interface Runner
 {
     const EVENT_START_EPISODE = 'start-episode';
     const EVENT_END_EPISODE   = 'end-episode';

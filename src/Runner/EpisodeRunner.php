@@ -1,12 +1,12 @@
 <?php
-namespace Rindow\RL\Agents\Driver;
+namespace Rindow\RL\Agents\Runner;
 
 use Interop\Polite\AI\RL\Environment as Env;
-use Rindow\RL\Agents\Driver;
+use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\ReplayBuffer;
 
-class EpisodeDriver extends AbstractDriver
+class EpisodeRunner extends AbstractRunner
 {
     protected $env;
 

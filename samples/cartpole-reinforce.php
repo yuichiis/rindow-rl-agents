@@ -6,7 +6,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Agent\Reinforce\Reinforce;
 
 $mo = new MatrixOperator();
@@ -57,7 +57,7 @@ $agent->summary();
 
 $filename = __DIR__.'\\cartpole-reinforce';
 if(!$agent->fileExists($filename)) {
-    $driver = new EpisodeDriver($la,$env,$agent,$maxExperienceSize);
+    $driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
     $history = $driver->train(numIterations:$numIterations,
         metrics:['reward','val_reward'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1);

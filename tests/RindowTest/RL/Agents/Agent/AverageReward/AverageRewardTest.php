@@ -11,7 +11,7 @@ use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AverageReward\AverageReward;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -63,7 +63,7 @@ class AverageRewardTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -103,7 +103,7 @@ class AverageRewardTest extends TestCase
         $env = new Slots($la,$probabilities);
         $policy = new AnnealingEpsGreedy($la,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
         $agent = new AverageReward($la,numActions:count($probabilities),policy:$policy);
-        $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
+        $driver = new EpisodeRunner($la,$env,$agent,$experienceSize=10000);
         $driver->setCustomStateFunction($stateFunc);
 
         $numIterations = 50;

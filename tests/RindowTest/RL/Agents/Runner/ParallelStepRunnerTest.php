@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Driver\ParallelStepDriverTest;
+namespace RindowTest\RL\Agents\Runner\ParallelStepRunnerTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -11,7 +11,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
-use Rindow\RL\Agents\Driver\ParallelStepDriver;
+use Rindow\RL\Agents\Runner\ParallelStepRunner;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
@@ -235,7 +235,7 @@ class TestAgent implements Agent
     {}
 }
 
-class ParallelStepDriverTest extends TestCase
+class ParallelStepRunnerTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -251,7 +251,7 @@ class ParallelStepDriverTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -322,7 +322,7 @@ class ParallelStepDriverTest extends TestCase
             [['valid_directions'=>[99]],['valid_directions'=>[23]]],
         ];
         $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
-        $driver = new ParallelStepDriver($la,$envs, $agent, $experienceSize);
+        $driver = new ParallelStepRunner($la,$envs, $agent, $experienceSize);
         $history = $driver->train(numIterations:$steps,
             verbose:0,logInterval:1,evalInterval:2,numEvalEpisodes:0,
             metrics:['steps','reward','loss'],
@@ -440,7 +440,7 @@ class ParallelStepDriverTest extends TestCase
             ['valid_directions'=>[62]],
         ];
         $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
-        $driver = new ParallelStepDriver($la,$envs, $agent, $experienceSize, evalEnv:$evalEnv);
+        $driver = new ParallelStepRunner($la,$envs, $agent, $experienceSize, evalEnv:$evalEnv);
         $losses = $driver->train(
             numIterations:$steps,
             evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,

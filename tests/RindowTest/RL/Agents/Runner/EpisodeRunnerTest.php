@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Driver\StepDriverTest;
+namespace RindowTest\RL\Agents\Runner\EpisodeRunnerTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -11,7 +11,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
-use Rindow\RL\Agents\Driver\StepDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
@@ -19,7 +19,7 @@ use Throwable;
 class TestEnv implements Environment
 {
     protected $la;
-    protected $maxEpisodeSteps=200;
+    protected $maxEpisodeSteps=5;
     protected $rewardThreshold=195.0;
     protected $data;
 
@@ -41,6 +41,7 @@ class TestEnv implements Environment
     {
         return $this->rewardThreshold;
     }
+
     public function observationSpace() : ?Space
     {}
 
@@ -58,6 +59,7 @@ class TestEnv implements Environment
             var_dump($info['valid_directions']);
             throw new \InvalidArgumentException('invalid action');
         }
+
         [$states,$reward,$done,$truncated,$info] = next($this->data);
         $states = $la->array($states);
         return [$states,$reward,$done,$truncated,$info];
@@ -98,7 +100,7 @@ class TestEnv implements Environment
 
 class TestAgent implements Agent
 {
-    protected object $la;
+    protected $la;
     protected array $assertActionState;
     protected array $actionResult;
     protected array $assertUpdateLast;
@@ -140,7 +142,7 @@ class TestAgent implements Agent
     public function setElapsedTime($elapsedTime) : void
     {}
 
-    public function action(array|NDArray $state,?bool $training=null,?array $info=null) : NDArray
+    public function action(array|NDArray $state, ?bool $training=null,?array $info=null) : NDArray
     {
         $la = $this->la;
         $state = $la->scalar($state);
@@ -219,7 +221,7 @@ class TestAgent implements Agent
     {}
 }
 
-class StepDriverTest extends TestCase
+class EpisodeRunnerTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -235,7 +237,7 @@ class StepDriverTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -247,33 +249,43 @@ class StepDriverTest extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
         $experienceSize = 3;
         $batchSize = 1;
-        $steps = 4;
+        $episodes = 2;
         $envdata = [
             //[$state,$reward,$done,$truncated,$info]
-            [100, null, null,   null,  ['valid_directions'=>[10]]],
-            [101, 1,    false,  false, ['valid_directions'=>[11]]],
-            [102, 0.5,  false,  false, ['valid_directions'=>[12]]],
-            [103, 0,    true,   false, ['valid_directions'=>[20]]],
+            [100, null, null,   null, ['valid_directions'=>[10,20]]],
+            [101, 1,    false,  false,['valid_directions'=>[11,21]]],
+            [102, 0.5,  false,  false,['valid_directions'=>[12,22]]],
+            [103, 0,    true,   false,null],
         ];
         $env = new TestEnv($la,$envdata);
-        $assertActionState =  [100, 101, 102, 100];
-        $actionResult    =  [10,   11,  12,  10];
+        $assertActionState =  [
+            100, 101, 102,
+            100, 101, 102,
+        ];
+        $actionResult    =  [
+            10,   11,  12,
+            20,   21,  22,
+        ];
         $assertUpdateLast = [
             //[$state,$action,$nextState,$reward,$done,$truncated,$info]
-            [100, 10, 101, 1,   false, false, ['valid_directions'=>[11]]],
-            [101, 11, 102, 0.5, false, false, ['valid_directions'=>[12]]],
-            [102, 12, 103, 0,   true,  false, ['valid_directions'=>[20]]],
-            [100, 10, 101, 1,   false, false, ['valid_directions'=>[11]]],
+            [100, 10, 101, 1,   false, false, ['valid_directions'=>[11,21]],],
+            [101, 11, 102, 0.5, false, false, ['valid_directions'=>[12,22]],],
+            [102, 12, 103, 0,   true,  false, null,                     ],
+            [100, 20, 101, 1,   false, false, ['valid_directions'=>[11,21]],],
+            [101, 21, 102, 0.5, false, false, ['valid_directions'=>[12,22]],],
+            [102, 22, 103, 0,   true,  false, null                      ],
         ];
-        $assertActionInfo = [
-            ['valid_directions'=>[10]],
-            ['valid_directions'=>[11]],
-            ['valid_directions'=>[12]],
-            ['valid_directions'=>[10]],
+        $assertActionInfo =  [
+            ['valid_directions'=>[10,20]],
+            ['valid_directions'=>[11,21]],
+            ['valid_directions'=>[12,22]],
+            ['valid_directions'=>[10,20]],
+            ['valid_directions'=>[11,21]],
+            ['valid_directions'=>[12,22]],
         ];
         $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
-        $driver = new StepDriver($la,$env, $agent, $experienceSize);
-        $losses = $driver->train(numIterations:$steps);
+        $driver = new EpisodeRunner($la,$env, $agent, $experienceSize);
+        $losses = $driver->train(numIterations:$episodes);
         $this->assertEquals([],$losses);
         $this->assertEquals([false,false,false],$agent->currents());
         $this->assertTrue(true);
@@ -286,81 +298,100 @@ class StepDriverTest extends TestCase
         $plt = new Plot($this->getPlotConfig(),$mo);
         $experienceSize = 3;
         $batchSize = 1;
-        $steps = 4;
+        $episodes = 4;
         $evalInterval = 2;
         $numEvalEpisodes = 2;
         $envdata = [
             //[$state,$reward,$done,$truncated, $info]
-            [   100, null,  null,  null,  ['valid_directions'=>[10]]],
-            [   101,  1,    false, false, ['valid_directions'=>[11]]],
-            [   102,  0.5,  false, false, ['valid_directions'=>[12]]],
-            [   103,  0,    true,  false, ['valid_directions'=>[30]]],
-        ];
-        $evalEnvdata = [
-            //[$state,$reward,$done,$truncated, $info]
-            [   200, null,  null,  null,  ['valid_directions'=>[20]]],
-            [   201,  1,    false, false, ['valid_directions'=>[21]]],
-            [   202,  0.5,  false, false, ['valid_directions'=>[22]]],
-            [   203,  0,    true,  false, ['valid_directions'=>[40]]],
+            [   100, null,  null,  null,  ['valid_directions'=>[10,20,30,40,110,120,130,140]]],
+            [   101,  1,    false, false, ['valid_directions'=>[11,21,31,41,111,121,131,141]]],
+            [   102,  0.5,  false, false, ['valid_directions'=>[12,22,32,42,112,122,132,142]]],
+            [   103,  0,    true,  false, null],
         ];
         $env = new TestEnv($la,$envdata);
-        $evalEnv = new TestEnv($la,$evalEnvdata);
         $assertActionState =  [
-            100, 101,
-            200, 201, 202,
-            200, 201, 202,
-            102, 100,
-            200, 201, 202,
-            200, 201, 202,
+            100, 101, 102,
+            100, 101, 102,
+
+            100, 101, 102, // eval
+            100, 101, 102, // eval
+
+            100, 101, 102,
+            100, 101, 102,
+
+            100, 101, 102, // eval
+            100, 101, 102, // eval
         ];
         $actionResult = [
-            10, 11,
-            20, 21, 22,
-            20, 21, 22,
-            12, 10,
-            20, 21, 22,
-            20, 21, 22,
+            10,   11,  12,
+            20,   21,  22,
+
+            110,  111, 112, // eval
+            120,  121, 122, // eval
+
+            30,   31,  32,
+            40,   41,  42,
+
+            130,  131, 132, // eval
+            140,  141, 142, // eval
         ];
         $assertUpdateLast = [
             //[$states,$action,$nextState,$reward, $done,$truncated, $info]
-            [   100,     10,     101,    1,   false, false, ['valid_directions'=>[11]]],
-            [   101,     11,     102,    0.5, false, false, ['valid_directions'=>[12]]],
-            [   102,     12,     103,    0,    true, false, ['valid_directions'=>[30]]],
-            [   100,     10,     101,    1,   false, false, ['valid_directions'=>[11]]],
+            [100, 10, 101, 1,   false, false, ['valid_directions'=>[11,21,31,41,111,121,131,141]],],
+            [101, 11, 102, 0.5, false, false, ['valid_directions'=>[12,22,32,42,112,122,132,142]],],
+            [102, 12, 103, 0,   true,  false, null,                     ],
+            [100, 20, 101, 1,   false, false, ['valid_directions'=>[11,21,31,41,111,121,131,141]],],
+            [101, 21, 102, 0.5, false, false, ['valid_directions'=>[12,22,32,42,112,122,132,142]],],
+            [102, 22, 103, 0,   true,  false, null                      ],
+
+            [100, 30, 101, 1,   false, false, ['valid_directions'=>[11,21,31,41,111,121,131,141]],],
+            [101, 31, 102, 0.5, false, false, ['valid_directions'=>[12,22,32,42,112,122,132,142]],],
+            [102, 32, 103, 0,   true,  false, null,                     ],
+            [100, 40, 101, 1,   false, false, ['valid_directions'=>[11,21,31,41,111,121,131,141]],],
+            [101, 41, 102, 0.5, false, false, ['valid_directions'=>[12,22,32,42,112,122,132,142]],],
+            [102, 42, 103, 0,   true,  false, null                      ],
         ];
-        $assertActionInfo = [
-            ['valid_directions'=>[10]],
-            ['valid_directions'=>[11]],
+        $assertActionInfo =  [
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
 
-            ['valid_directions'=>[20]],
-            ['valid_directions'=>[21]],
-            ['valid_directions'=>[22]],
-            ['valid_directions'=>[20]],
-            ['valid_directions'=>[21]],
-            ['valid_directions'=>[22]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
 
-            ['valid_directions'=>[12]],
-            ['valid_directions'=>[10]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
 
-            ['valid_directions'=>[20]],
-            ['valid_directions'=>[21]],
-            ['valid_directions'=>[22]],
-            ['valid_directions'=>[20]],
-            ['valid_directions'=>[21]],
-            ['valid_directions'=>[22]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
+            ['valid_directions'=>[10,20,30,40,110,120,130,140]],
+            ['valid_directions'=>[11,21,31,41,111,121,131,141]],
+            ['valid_directions'=>[12,22,32,42,112,122,132,142]],
         ];
         $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
-        $driver = new StepDriver($la,$env, $agent, $experienceSize, evalEnv:$evalEnv);
+        $driver = new EpisodeRunner($la,$env, $agent, $experienceSize);
         $losses = $driver->train(
-            numIterations:$steps,
+            numIterations:$episodes,
             evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
             metrics:['steps','reward','loss','val_steps','val_reward']
         );
         $this->assertEquals([
-            'steps'     => [0,   3],
-            'reward'    => [0,   1.5],
+            'steps'     => [3,   3  ],
+            'reward'    => [1.5, 1.5],
             'loss'      => [1.0, 1.0],
-            'val_steps' => [3,   3],
+            'val_steps' => [3,   3  ],
             'val_reward'=> [1.5, 1.5],
         ],$losses);
         $this->assertEquals([false,false,false],$agent->currents());

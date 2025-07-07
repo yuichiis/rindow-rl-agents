@@ -4,7 +4,7 @@ namespace Rindow\RL\Agents\Policy;
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 use Rindow\RL\Agents\Estimator;
-use Rindow\RL\Agents\Driver;
+use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\EventManager;
 
 class AnnealingEpsGreedy extends AbstractPolicy
@@ -49,7 +49,7 @@ class AnnealingEpsGreedy extends AbstractPolicy
     public function register(?EventManager $eventManager=null) : void
     {
         if($this->episodeAnnealing) {
-            $eventManager->attach(Driver::EVENT_END_EPISODE,[$this,'updateTime']);
+            $eventManager->attach(Runner::EVENT_END_EPISODE,[$this,'updateTime']);
         }
     }
 

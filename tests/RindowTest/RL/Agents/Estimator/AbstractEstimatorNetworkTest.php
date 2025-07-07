@@ -82,6 +82,14 @@ class TestNetwork extends AbstractEstimatorNetwork
         return $model;
     }
 
+
+    protected function call(NDArray $inputs, mixed $training) : NDArray
+    {
+        $outputs = $this->model->forward($inputs,$training);
+        return $outputs;
+    }
+
+
 }
 
 class AbstractEstimatorNetworkTest extends TestCase
@@ -105,7 +113,7 @@ class AbstractEstimatorNetworkTest extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }

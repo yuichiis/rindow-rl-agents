@@ -6,7 +6,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
-use Rindow\RL\Agents\Driver\StepDriver;
+use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\A2C\A2C;
 
 $mo = new MatrixOperator();
@@ -62,8 +62,8 @@ $dqnAgent->summary();
 
 $filename = __DIR__.'\\cartpole-a2c';
 if(!$dqnAgent->fileExists($filename)) {
-    //$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize);
-    $driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
+    //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
+    $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
     $history = $driver->train($numIterations,$maxSteps=null,

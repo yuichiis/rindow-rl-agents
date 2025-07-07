@@ -6,8 +6,8 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 
-use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Driver\StepDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
+use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\Ddpg\Ddpg;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 use Rindow\RL\Gym\Core\Rendering\RenderFactory;
@@ -90,8 +90,8 @@ $env->reset();
 
 $filename = __DIR__.'\\pendulum-ddpg';
 if(!$ddpgAgent->fileExists($filename)) {
-    $driver = new EpisodeDriver($la,$env,$ddpgAgent,$maxExperienceSize);
-    //$driver = new StepDriver($la,$env,$ddpgAgent,$maxExperienceSize,evalEnv:$evalEnv);
+    $driver = new EpisodeRunner($la,$env,$ddpgAgent,$maxExperienceSize);
+    //$driver = new StepRunner($la,$env,$ddpgAgent,$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
     $history = $driver->train(

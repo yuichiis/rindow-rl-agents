@@ -6,8 +6,8 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
-use Rindow\RL\Agents\Driver\StepDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
+use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\Dqn;
 use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
@@ -170,8 +170,8 @@ $dqnAgent = new Dqn(
 $dqnAgent->summary();
 $filename = __DIR__.'\\cartpole-cnn-dqn.model';
 if(!file_exists($filename)) {
-    //$driver = new EpisodeDriver($la,$env,$dqnAgent,$maxExperienceSize);
-    $driver = new StepDriver($la,$env,$dqnAgent,$maxExperienceSize,null,null,$evalEnv);
+    //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
+    $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,null,null,$evalEnv);
     $driver->setCustomStateFunction($customStateFunction);
     $arts = [];
     //$driver->agent()->initialize();

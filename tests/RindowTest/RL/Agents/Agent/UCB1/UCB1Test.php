@@ -10,7 +10,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent\UCB1\UCB1;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -43,7 +43,7 @@ class UCB1Test extends TestCase
     {
         return [
             'renderer.skipCleaning' => true,
-            'renderer.skipRunViewer' => getenv('TRAVIS_PHP_VERSION') ? true : false,
+            'renderer.skipRunViewer' => getenv('PLOT_RENDERER_SKIP') ? true : false,
             'renderer.execBackground' => true,
         ];
     }
@@ -80,7 +80,7 @@ class UCB1Test extends TestCase
         //$valueTable = new ValueTable($la,$la->array([$probabilities]));
         $policy = new AnnealingEpsGreedy($la,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
         $agent = new UCB1($la,count($probabilities),mo:$mo);
-        $driver = new EpisodeDriver($la,$env,$agent,$experienceSize=10000);
+        $driver = new EpisodeRunner($la,$env,$agent,$experienceSize=10000);
 
         $numIterations = 2500;
         $evalInterval  =  100;

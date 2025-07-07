@@ -6,7 +6,7 @@ use Rindow\Math\Plot\Plot;
 //use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
-use Rindow\RL\Agents\Driver\EpisodeDriver;
+use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Agent\Dqn\Dqn;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 //use Rindow\RL\Agents\Network\QNetwork;
@@ -94,7 +94,7 @@ $dqn = new Dqn(
 );
 $dqn->summary();
 
-$driver4 = new EpisodeDriver($la,$env,$dqn,$experienceSize);
+$driver4 = new EpisodeRunner($la,$env,$dqn,$experienceSize);
 $driver4->setCustomStateFunction($customStateFunction);
 $drivers = [$driver4];
 

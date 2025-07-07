@@ -1,16 +1,16 @@
 <?php
-namespace Rindow\RL\Agents\Driver;
+namespace Rindow\RL\Agents\Runner;
 
 use Interop\Polite\AI\RL\Environment as Env;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Agent;
-use Rindow\RL\Agents\Driver;
+use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
 use Rindow\RL\Agents\EventManager as EventManagerInterface;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Util\EventManager;
 
-abstract class AbstractDriver implements Driver
+abstract class AbstractRunner implements Runner
 {
     protected object $la;
     protected Agent $agent;
@@ -41,12 +41,12 @@ abstract class AbstractDriver implements Driver
 
     protected function onStartEpisode() : void
     {
-        $this->eventManager->notify(Driver::EVENT_START_EPISODE);
+        $this->eventManager->notify(Runner::EVENT_START_EPISODE);
     }
 
     protected function onEndEpisode() : void
     {
-        $this->eventManager->notify(Driver::EVENT_END_EPISODE);
+        $this->eventManager->notify(Runner::EVENT_END_EPISODE);
     }
 
     public function setCustomRewardFunction(callable $func) : void
