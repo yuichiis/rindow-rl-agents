@@ -8,7 +8,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\Ddpg\Ddpg;
+use Rindow\RL\Agents\Agent\DDPG\DDPG;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 use Rindow\RL\Gym\Core\Rendering\RenderFactory;
 
@@ -67,7 +67,7 @@ $numActions = $env->actionSpace()->shape()[0]; # DDPG handles continuous actions
 $lowerBound = $env->actionSpace()->low();
 $upperBound = $env->actionSpace()->high();
 
-$ddpgAgent = new Ddpg($la,$nn,
+$ddpgAgent = new DDPG($la,$nn,
     $stateShape,$numActions,$lowerBound,$upperBound,
     stdDev:$stdDev,
     batchSize:$batchSize,

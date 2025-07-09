@@ -7,7 +7,7 @@ use Rindow\Math\Plot\Plot;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
-use Rindow\RL\Agents\Agent\Dqn\Dqn;
+use Rindow\RL\Agents\Agent\DQN\DQN;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 //use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
@@ -73,7 +73,7 @@ $numActions = $env->actionSpace()->n();
 //    estimator:$network,
 //    start:$epsStart,stop:$epsStop,decayRate:$decayRate,
 //    episodeAnnealing:$episodeAnnealing);
-$dqn = new Dqn(
+$dqn = new DQN(
     $la,
     batchSize:$batchSize,
     gamma:$gamma,

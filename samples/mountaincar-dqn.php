@@ -8,7 +8,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\Dqn;
+use Rindow\RL\Agents\Agent\DQN;
 use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 
@@ -139,7 +139,7 @@ $network = new QNetwork($la,$nn,$stateShape,$numActions,
     convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,activation:$activation);
 $policy = new AnnealingEpsGreedy($la,$network,
     start:$epsStart,stop:$epsStop,decayRate:$decayRate,episodeAnnealing:$episodeAnnealing);
-$dqnAgent = new Dqn(
+$dqnAgent = new DQN(
     $la,network:$network,policy:$policy,
     batchSize:$batchSize,gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,

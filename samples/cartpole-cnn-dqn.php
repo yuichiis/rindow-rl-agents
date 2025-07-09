@@ -8,7 +8,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\Dqn;
+use Rindow\RL\Agents\Agent\DQN;
 use Rindow\RL\Agents\Network\QNetwork;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\Util\GDUtil;
@@ -162,7 +162,7 @@ $numActions = $env->actionSpace()->n();
 $evalEnv = new CartPoleV0($la);
 $network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 $policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
-$dqnAgent = new Dqn(
+$dqnAgent = new DQN(
     $la,network:$network,policy:$policy,batchSize:$batchSize,gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
     ddqn:$ddqn,lossFn:$lossFn,optimizer:$optimizer,mo:$mo,

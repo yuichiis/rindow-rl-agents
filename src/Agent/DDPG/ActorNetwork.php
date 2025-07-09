@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\Ddpg;
+namespace Rindow\RL\Agents\Agent\DDPG;
 
 use Rindow\RL\Agents\Estimator\AbstractEstimatorNetwork;
 use Rindow\NeuralNetworks\Model\Model;

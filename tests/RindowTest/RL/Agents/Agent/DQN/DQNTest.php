@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DqnTest;
+namespace RindowTest\RL\Agents\Agent\DQNTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -9,7 +9,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Agent\Dqn\Dqn;
+use Rindow\RL\Agents\Agent\DQN\DQN;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
@@ -48,7 +48,7 @@ class TestPolicy implements Policy
 }
 
 
-class DqnTest extends TestCase
+class DQNTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -194,7 +194,7 @@ class DqnTest extends TestCase
     //    $stateShape = [1];
     //    $numActions = $env->actionSpace()->n();
     //    //$policy = new AnnealingEpsGreedy($la,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
-    //    $agent = new Dqn(
+    //    $agent = new DQN(
     //        $la,
     //        gamma:0.9,targetUpdatePeriod:5,targetUpdateTau:0.05,ddqn:true,
     //        batchSize:32, epsStart:0.9, epsStop:0.05, epsDecayRate:0.07, 

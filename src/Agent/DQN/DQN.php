@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\Dqn;
+namespace Rindow\RL\Agents\Agent\DQN;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
@@ -17,7 +17,7 @@ use Rindow\NeuralNetworks\Layer\Layer;
 use Rindow\NeuralNetworks\Gradient\GraphFunction;
 use function Rindow\Math\Matrix\R;
 
-class Dqn extends AbstractAgent
+class DQN extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
     protected float $gamma;

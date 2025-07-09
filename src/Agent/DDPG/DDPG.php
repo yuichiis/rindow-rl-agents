@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\Ddpg;
+namespace Rindow\RL\Agents\Agent\DDPG;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
@@ -17,7 +17,7 @@ use Rindow\RL\Agents\Agent\AbstractAgent;
 
 use InvalidArgumentException;
 
-class Ddpg extends AbstractAgent
+class DDPG extends AbstractAgent
 {
     const ACTOR_FILENAME = '%s-actor.model';
     const CRITIC_FILENAME = '%s-critic.model';

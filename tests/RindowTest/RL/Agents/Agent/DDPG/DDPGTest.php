@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DdpgTest;
+namespace RindowTest\RL\Agents\Agent\DDPGTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -10,9 +10,9 @@ use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
-use Rindow\RL\Agents\Agent\Ddpg\Ddpg;
-use Rindow\RL\Agents\Agent\Ddpg\ActorNetwork;
-use Rindow\RL\Agents\Agent\Ddpg\CriticNetwork;
+use Rindow\RL\Agents\Agent\DDPG\DDPG;
+use Rindow\RL\Agents\Agent\DDPG\ActorNetwork;
+use Rindow\RL\Agents\Agent\DDPG\CriticNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -45,7 +45,7 @@ class TestPolicy implements Policy
 }
 
 
-class DdpgTest extends TestCase
+class DDPGTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -94,7 +94,7 @@ class DdpgTest extends TestCase
             'staFcLayers' => [128],
             'actLayers' => [128],
         ];
-        $agent = new Ddpg($la,$nn,
+        $agent = new DDPG($la,$nn,
             $stateShape,$numActions,$lower_bound,$upper_bound,
             stdDev:0.2,
             batchSize:2,
@@ -120,7 +120,7 @@ class DdpgTest extends TestCase
         $lower_bound=$la->array([-2]);
         $upper_bound=$la->array([2]);
 
-        $agent = new Ddpg($la,$nn,
+        $agent = new DDPG($la,$nn,
             $stateShape,$numActions,$lower_bound,$upper_bound,
         );
         //$agent->summary();
@@ -139,7 +139,7 @@ class DdpgTest extends TestCase
         $upper_bound=$la->array([2,3]);
         $fixedActions = [-1,1];
         foreach($fixedActions as $fixedAction) {
-            $agent = new Ddpg(
+            $agent = new DDPG(
                 $la,$nn,
                 $stateShape,
                 $numActions,
@@ -167,7 +167,7 @@ class DdpgTest extends TestCase
         $numActions=1;
         $lower_bound=$la->array([-2]);
         $upper_bound=$la->array([2]);
-        $agent = new Ddpg(
+        $agent = new DDPG(
             $la,$nn,
             $stateShape,$numActions,$lower_bound,$upper_bound,
             batchSize:2,

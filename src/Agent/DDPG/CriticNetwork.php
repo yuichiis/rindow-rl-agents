@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\Ddpg;
+namespace Rindow\RL\Agents\Agent\DDPG;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;

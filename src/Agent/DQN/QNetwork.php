@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\Dqn;
+namespace Rindow\RL\Agents\Agent\DQN;
 
 use Rindow\RL\Agents\Estimator\AbstractEstimatorNetwork;
 use Rindow\NeuralNetworks\Model\Model;
