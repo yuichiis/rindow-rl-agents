@@ -23,15 +23,21 @@ class A2C extends AbstractAgent
     //protected $rewardScaleFactor;
     protected array $stateShape;
     protected int $numActions;
+    protected int $targetUpdatePeriod;
+    protected int $targetUpdateTimer;
     protected Optimizer $optimizer;
     protected array $optimizerOpts;
     protected ?object $mo;
     protected Builder $nn;
     protected object $g;
-    protected ActorCriticNetwork $model;
-    protected GraphFunction $modelGraph;
+    protected Layer $gather;
+    protected Layer $expandDims;
+    protected ActorCriticNetwork $trainModel;
+    protected ActorCriticNetwork $targetModel;
+    protected GraphFunction $trainModelGraph;
     protected $trainableVariables;
     protected bool $enabledShapeInspection = true;
+    protected int $targetUpdateTau;
     protected int $batchSize;
 
     public function __construct(
@@ -40,6 +46,8 @@ class A2C extends AbstractAgent
         ?Policy $policy=null,
         ?int $batchSize=null,
         ?float $gamma=null,
+        ?int $targetUpdatePeriod=null,
+        ?float $targetUpdateTau=null,
         ?object $nn=null,
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
@@ -72,14 +80,19 @@ class A2C extends AbstractAgent
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
+        $this->targetUpdatePeriod = $targetUpdatePeriod;
+        $this->targetUpdateTau = $targetUpdateTau;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
         $this->mo = $mo;
         $this->nn = $nn;
         $this->g = $nn->gradient();
-        $this->model = $this->buildModel($la,$nn,$network);
-        $this->modelGraph = $nn->gradient->function([$this->model,'forward']);
-        $this->trainableVariables = $this->model->trainableVariables();
+        $this->gather = $nn->layers->Gather(axis:-1);
+        $this->expandDims = $nn->layers->ExpandDims(axis:-1);
+        $this->trainModel = $this->buildTrainingModel($la,$nn,$network);
+        $this->targetModel = clone $this->trainModel;
+        $this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
+        $this->trainableVariables = $this->trainModel->trainableVariables();
         $this->initialize();
     }
 
@@ -99,7 +112,7 @@ class A2C extends AbstractAgent
         return $network;
     }
 
-    protected function buildModel(
+    protected function buildTrainingModel(
         $la,$nn,$network,
         )
     {
@@ -140,20 +153,22 @@ class A2C extends AbstractAgent
     public function saveWeightsToFile(string $filename) : void
     {
         $filename = sprintf(self::MODEL_FILENAME,$filename);
-        $this->model->saveWeightsToFile($filename);
+        $this->trainModel->saveWeightsToFile($filename);
     }
 
     public function loadWeightsFromFile(string $filename) : void
     {
         $filename = sprintf(self::MODEL_FILENAME,$filename);
-        $this->model->loadWeightsFromFile($filename);
+        $this->trainModel->loadWeightsFromFile($filename);
+        $this->targetModel = clone $this->trainModel;
         //$this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
         //$this->trainableVariables = $this->trainModel->trainableVariables();
         //$this->initialize();
     }
 
-    public function syncWeights($tau=null) : void
+    public function syncWeights($tau=null)
     {
+        $this->targetModel->copyWeights($this->trainModel,$tau);
     }
 
     public function initialize() : void // : Operation
@@ -162,6 +177,10 @@ class A2C extends AbstractAgent
         //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
         //$this->targetModel->compileQModel(
         //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
+        if($this->targetUpdatePeriod>0) {
+            $this->targetUpdateTimer = $this->targetUpdatePeriod;
+        }
+        $this->syncWeights($tau=1.0);
     }
 
     public function isStepUpdate() : bool
@@ -176,11 +195,22 @@ class A2C extends AbstractAgent
 
     protected function estimator() : Estimator
     {
-        return $this->model;
+        return $this->trainModel;
     }
 
     protected function updateTarget($endEpisode)
     {
+        if($this->targetUpdatePeriod > 0) {
+            $this->targetUpdateTimer--;
+            if($this->targetUpdateTimer <= 0) {
+                $this->syncWeights($this->targetUpdateTau);
+                $this->targetUpdateTimer = $this->targetUpdatePeriod;
+            }
+        } else {
+            if($endEpisode) {
+                $this->syncWeights($this->targetUpdateTau);
+            }
+        }
     }
 
     public function update($experience) : float
@@ -193,9 +223,9 @@ class A2C extends AbstractAgent
         $stateShape = $this->stateShape;
 
         $transition = $experience->last();
-        [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;  // done
+        [$state,$action,$nextState,$reward,$terminated,$truncated,$info] = $transition;  // done
 
-        if(!($done||$truncated) && $experience->size()<$batchSize) {
+        if(!($terminated||$truncated) && $experience->size()<$batchSize) {
             return 0.0;
         }
 
@@ -207,19 +237,19 @@ class A2C extends AbstractAgent
         $discountedRewards = $la->zeros($la->alloc([$batchSize,1]));;
 
 
-        if($done) {
+        if($terminated) {
             $discounted = 0;
         } else {
             if(!($nextState instanceof NDArray)) {
                 throw new LogicException("nextState must be NDArray");
             }
-            if($la->isInt($nextState)) {
-                $nextState = $la->astype($nextState,dtype:NDArray::float32);
+            if($la->isInt($state)) {
+                $state = $la->astype($state,dtype:NDArray::float32);
             }
             if($nextState->ndim()) {
                 $nextState = $la->expandDims($nextState,axis:0);
             }
-            [$tmp,$v] = $this->model->forward($nextState,false);
+            [$tmp,$v] = $this->trainModel->forward($nextState,false);
             $discounted = $la->scalar(($la->squeeze($v)));
             unset($tmp);
             unset($v);
@@ -262,33 +292,31 @@ class A2C extends AbstractAgent
         $la->increment($discountedRewards, -1.0*$baseline);
 
         $discountedRewards = $g->Variable($discountedRewards);
-        #onehot_actions = tf.one_hot(actions, model.output[0].shape[1])
 
         // gradients
-        $model = $this->model;
+        $trainModel = $this->trainModel;
+        $gather = $this->gather;
+        $expandDims = $this->expandDims;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-                use ($g,$model,$states,$training,$actions,$discountedRewards) {
-            [$logits, $values] = $model($states,$training);
-
+                use ($la,$g,$gather,$expandDims,$trainModel,$states,$training,$actions,$discountedRewards) {
+            [$actionProbs, $values] = $trainModel($states,$training);
+            // action probs
+            $actionProbs = $gather->forward([$actionProbs,$actions],$training);
+            $actionProbs = $expandDims->forward($actionProbs);
             // advantage
             $advantage = $g->sub($discountedRewards,$g->stopGradient($values));
+            $actionProbs = $g->clipByValue($actionProbs, 1e-10, 1.0);
+            $policyLoss = $g->mul($g->log($actionProbs),$advantage);
 
-            // action probs
-            $actionProbs = $g->softmax($logits);
-            $selectedActionProbs = $g->expandDims($g->gather($actionProbs,$actions,batchDims:-1),-1);
-            $selectedActionProbs = $g->clipByValue($selectedActionProbs, 1e-10, 1.0);
-
-            // policy loss
-            $policyLoss = $g->scale(-1,$g->mul($g->log($selectedActionProbs),$advantage));
-            
             // Value loss
-            // Mean Squared Error   => huberにしたい
-            $valueLoss = $g->reduceMean($g->square($g->sub($discountedRewards,$values)), axis:1, keepdims:true);
+            // Mean Squared Error
+            $valueLoss = $g->reduceMean($g->square($g->sub($discountedRewards,$values)), axis:1);
+            $valueLoss = $expandDims->forward($valueLoss);
 
             // policy entropy
-            $actionProbsCliped = $g->clipByValue($actionProbs, 1e-10, 1.0);
-            $entropy = $g->scale(-1,$g->reduceSum($g->mul($actionProbsCliped,$g->log($actionProbs)), axis:1, keepdims:true));
+            $entropy = $g->reduceSum($g->mul($g->log($actionProbs),$actionProbs), axis:1);
+            $entropy = $expandDims->forward($entropy);
 
             // total loss
             $value_loss_weight = $g->Variable(0.5);
@@ -296,10 +324,8 @@ class A2C extends AbstractAgent
             $loss = $g->sub( 
                 $g->sub(
                     $g->mul($value_loss_weight, $valueLoss),
-                    $g->mul($entropy_weight, $entropy)
-                ),
-                $policyLoss
-            );
+                    $g->mul($entropy_weight, $entropy)),
+                $policyLoss);
 
             $loss = $g->reduceMean($loss);
 

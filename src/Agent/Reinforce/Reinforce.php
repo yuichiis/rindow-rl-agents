@@ -30,7 +30,6 @@ class Reinforce extends AbstractAgent
     protected $mo;
     protected Builder $nn;
     protected object $g;
-    protected Layer $gather;
     protected PolicyNetwork $model;
     protected GraphFunction $trainModelGraph;
     protected array $trainableVariables;
@@ -143,7 +142,6 @@ class Reinforce extends AbstractAgent
         $optimizer ??=$nn->optimizers->Adam(...$optimizerOpts);
         $this->lossFn = $lossFn;
         $this->optimizer = $optimizer;
-        $this->gather = $nn->layers->Gather(axis:-1);
         $network->compile(loss:$this->lossFn,optimizer:$this->optimizer);
         $network->build(array_merge([1],$this->stateShape));
 
@@ -266,14 +264,13 @@ class Reinforce extends AbstractAgent
         $discountedRewards = $g->Variable($discountedRewards);
 
         $trainModel = $this->model;
-        $gather = $this->gather;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-                use ($g,$gather,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
+                use ($g,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
             $policyLogits = $trainModel($states,$training);
             $policyLogits = $g->masking($masks,$policyLogits,-1e9);
             $policyProbs = $g->softmax($policyLogits);
-            $policyProbs = $gather->forward([$policyProbs,$actions],$training);
+            $policyProbs = $g->gather($policyProbs,$actions,batchDims:-1);
             $policyProbs = $g->clipByValue($policyProbs, 1e-10, 1.0);
             $logProbs = $g->log($policyProbs);
             $lossPolicy = $g->mul($logProbs,$discountedRewards);

@@ -52,12 +52,12 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             $numActions,
             activation:$actionActivation,
             kernel_initializer:$actionKernelInitializer,
-            name:'ActionDense'
+            name:'Action'
         );
         $this->criticLayer = $nn->layers()->Dense(
             1,
             kernel_initializer:$criticKernelInitializer,
-            name:'CriticDense'
+            name:'Critic'
         );
         $this->numActions = $numActions;
     }

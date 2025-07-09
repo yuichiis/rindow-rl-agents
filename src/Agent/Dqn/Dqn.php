@@ -29,7 +29,6 @@ class Dqn extends AbstractAgent
     protected Loss $lossFn;
     protected Optimizer $optimizer;
     protected ?object $mo;
-    protected Layer $gather;
     protected QNetwork $trainModel;
     protected QNetwork $targetModel;
     protected GraphFunction $trainModelGraph;
@@ -138,11 +137,9 @@ class Dqn extends AbstractAgent
         $optimizerOpts ??= [];
         $lossFn ??= $nn->losses->Huber(...$lossOpts);
         $optimizer ??= $nn->optimizers->Adam(...$optimizerOpts);
-        $gather = $nn->layers->Gather(axis:-1);
 
         $this->lossFn = $lossFn;
         $this->optimizer = $optimizer;
-        $this->gather = $gather;
 
         $network->compile(loss:$this->lossFn,optimizer:$this->optimizer);
         $network->build(array_merge([1],$this->stateShape));
@@ -308,9 +305,9 @@ class Dqn extends AbstractAgent
             $mo = $this->trainModel->backend()->localMatrixOperator();
             //echo "NEXTQVALUES:".$mo->shapeToString($nextQValues->shape())."\n";
             //echo "nextActions:".$mo->shapeToString($nextActions->shape())."\n";
-            $nextQValues = $la->gather($nextQValues,$nextActions,$axis=-1);
+            $nextQValues = $la->gather($nextQValues,$nextActions,batchDims:-1);
             //echo "nextQValues:".$mo->shapeToString($nextQValues->shape())."\n";
-            //$nextQValues = $la->gatherb($nextQValues,$nextActions,axis:-1,indexDepth:-1);
+            //$nextQValues = $la->gather($nextQValues,$nextActions,axis:-1,indexDepth:-1);
         } else {
             $nextQValues = $la->reduceMax($nextQValues,axis:-1);
         }
@@ -326,7 +323,6 @@ class Dqn extends AbstractAgent
         //$history = $this->trainModel->fit([$states,$actions],$nextQValues,
         //    batch_size:$batchSize,epochs:1, verbose:0);
         $trainModel = $this->trainModelGraph;
-        $gather = $this->gather;
         $lossFn = $this->lossFn;
 
         $states = $g->Variable($states);
@@ -334,9 +330,9 @@ class Dqn extends AbstractAgent
         $nextQValues = $g->Variable($nextQValues);
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(), function()
-                use ($trainModel,$gather,$lossFn,$states,$actions,$nextQValues,$training) {
+                use ($g,$trainModel,$lossFn,$states,$actions,$nextQValues,$training) {
             $qValues = $trainModel($states,$training);
-            $qValues = $gather->forward([$qValues,$actions],$training);
+            $qValues = $g->gather($qValues,$actions,batchDims:-1);
             $loss = $lossFn->forward($nextQValues,$qValues);
             return $loss;
         });
