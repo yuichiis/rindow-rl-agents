@@ -86,7 +86,9 @@ trait Random
         if($dtype===null) {
             $dtype = NDArray::int32;
         }
+        #echo "logits  :".$la->toString($logits,format:'%.3f')."\n";
         $probabilities = $la->softmax($la->copy($logits));
+        #echo "probab  :".$la->toString($probabilities,format:'%.3f')."\n";
         $rand = $la->randomUniform([$batches],dtype:$probabilities->dtype(),low:0.0,high:1.0);// (batches)
         $thresholds = $la->cumsum($probabilities,axis:-1);      // (batches,numActions)
         $randints = $la->searchsorted(                          // (batches)

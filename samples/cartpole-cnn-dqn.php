@@ -206,7 +206,8 @@ for($i=0;$i<5;$i++) {
     $state = $customStateFunction($env,$state,false);
     $env->render();
     $done=false;
-    while(!$done) {
+    $truncated=false;
+    while(!($done||$truncated)) {
         $action = $dqnAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $state = $customStateFunction($env,$state,$done);

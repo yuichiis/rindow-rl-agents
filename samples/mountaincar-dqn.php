@@ -188,11 +188,16 @@ for($i=0;$i<5;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
-    while(!$done) {
+    $truncated=false;
+    $testReward = 0;
+    while(!($done||$truncated)) {
         $action = $dqnAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $testReward += $reward;
         $env->render();
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
 }
 echo "\n";
 $env->show();

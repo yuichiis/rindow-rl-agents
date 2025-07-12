@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
+use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\A2C\A2C;
 
@@ -39,7 +39,7 @@ $convType = null;
 $fcLayers = [64,64];# [32,32];#
 $learningRate = 1e-3;#1e-5;#
 
-$env = new CartPoleV1($la);
+$env = new MountainCarV0($la);
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
@@ -48,7 +48,7 @@ $numActions = $env->actionSpace()->n();
 //$env->show();
 //exit();
 
-$evalEnv = new CartPoleV1($la);
+$evalEnv = new MountainCarV0($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $dqnAgent = new A2C(
@@ -60,7 +60,7 @@ $dqnAgent = new A2C(
 );
 $dqnAgent->summary();
 
-$filename = __DIR__.'\\cartpole-a2c';
+$filename = __DIR__.'\\mountaincar-a2c';
 if(!$dqnAgent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
     $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
@@ -70,7 +70,7 @@ if(!$dqnAgent->fileExists($filename)) {
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','loss','val_steps','val_reward'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:1
+        logInterval:$logInterval,verbose:2
     );
     echo "\n";
     $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
@@ -93,7 +93,7 @@ if(!$dqnAgent->fileExists($filename)) {
 
 
 echo "Creating demo animation.\n";
-for($i=0;$i<1;$i++) {
+for($i=0;$i<5;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;

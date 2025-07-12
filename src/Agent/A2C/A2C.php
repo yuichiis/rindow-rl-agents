@@ -5,6 +5,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 use LogicException;
 use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Loss\Loss;
 use Rindow\NeuralNetworks\Optimizer\Optimizer;
 use Rindow\NeuralNetworks\Layer\Layer;
 use Rindow\NeuralNetworks\Gradient\GraphFunction;
@@ -20,9 +21,12 @@ class A2C extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
     protected float $gamma;
+    protected float $valueLossWeight;
+    protected float $entropyWeight;
     //protected $rewardScaleFactor;
     protected array $stateShape;
     protected int $numActions;
+    protected Loss $huber;
     protected Optimizer $optimizer;
     protected array $optimizerOpts;
     protected ?object $mo;
@@ -40,6 +44,8 @@ class A2C extends AbstractAgent
         ?Policy $policy=null,
         ?int $batchSize=null,
         ?float $gamma=null,
+        ?float $valueLossWeight=null,
+        ?float $entropyWeight=null,
         ?object $nn=null,
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
@@ -62,8 +68,8 @@ class A2C extends AbstractAgent
         $numActions ??= $network->numActions();
         $batchSize ??= 32;
         $gamma ??= 0.99;
-        $targetUpdatePeriod ??= 100;
-        $targetUpdateTau ??= 1.0;
+        $valueLossWeight ??= 0.5;
+        $entropyWeight ??= 0.01;
         $nn ??= $network->builder();
         $optimizerOpts ??= [];
         $optimizer = $nn->optimizers->Adam(...$optimizerOpts);
@@ -72,11 +78,14 @@ class A2C extends AbstractAgent
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
+        $this->valueLossWeight = $valueLossWeight;
+        $this->entropyWeight = $entropyWeight;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
         $this->mo = $mo;
         $this->nn = $nn;
         $this->g = $nn->gradient();
+        $this->huber = $nn->losses()->Huber();
         $this->model = $this->buildModel($la,$nn,$network);
         $this->modelGraph = $nn->gradient->function([$this->model,'forward']);
         $this->trainableVariables = $this->model->trainableVariables();
@@ -110,7 +119,7 @@ class A2C extends AbstractAgent
     
     public function summary()
     {
-        $this->trainModel->summary();
+        $this->model->summary();
     }
 
     protected function buildPolicy(
@@ -120,13 +129,15 @@ class A2C extends AbstractAgent
         ?float $max=null,
         )
     {
-        $fromLogits = true;
+        $tau ??= 1.0;
+        $min ??= -INF;
+        $max ??= INF;
         $policy = new Boltzmann(
             $la,
             $tau,
             $min,
             $max,
-            $fromLogits,
+            fromLogits:true,
         );
         return $policy;
     }
@@ -147,8 +158,8 @@ class A2C extends AbstractAgent
     {
         $filename = sprintf(self::MODEL_FILENAME,$filename);
         $this->model->loadWeightsFromFile($filename);
-        //$this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
-        //$this->trainableVariables = $this->trainModel->trainableVariables();
+        //$this->modelGraph = $nn->gradient->function([$this->model,'forward']);
+        //$this->trainableVariables = $this->model->trainableVariables();
         //$this->initialize();
     }
 
@@ -158,7 +169,7 @@ class A2C extends AbstractAgent
 
     public function initialize() : void // : Operation
     {
-        //$this->trainModel->compileQModel(
+        //$this->model->compileQModel(
         //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
         //$this->targetModel->compileQModel(
         //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
@@ -195,7 +206,7 @@ class A2C extends AbstractAgent
         $transition = $experience->last();
         [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;  // done
 
-        if(!($done||$truncated) && $experience->size()<$batchSize) {
+        if($experience->size()<$batchSize) {
             return 0.0;
         }
 
@@ -264,11 +275,16 @@ class A2C extends AbstractAgent
         $discountedRewards = $g->Variable($discountedRewards);
         #onehot_actions = tf.one_hot(actions, model.output[0].shape[1])
 
+        $valueLossWeight = $g->Variable($this->valueLossWeight);
+        $entropyWeight = $g->Variable($this->entropyWeight);
         // gradients
         $model = $this->model;
+        $huber = $this->huber;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-                use ($g,$model,$states,$training,$actions,$discountedRewards) {
+            use ($g,$huber,$model,$states,$training,$actions,$discountedRewards,
+                $valueLossWeight,$entropyWeight)
+        {
             [$logits, $values] = $model($states,$training);
 
             // advantage
@@ -284,19 +300,18 @@ class A2C extends AbstractAgent
             
             // Value loss
             // Mean Squared Error   => huberにしたい
-            $valueLoss = $g->reduceMean($g->square($g->sub($discountedRewards,$values)), axis:1, keepdims:true);
+            //$valueLoss = $g->reduceMean($g->square($g->sub($discountedRewards,$values)), axis:1, keepdims:true);
+            $valueLoss = $huber($discountedRewards,$values);
 
             // policy entropy
             $actionProbsCliped = $g->clipByValue($actionProbs, 1e-10, 1.0);
-            $entropy = $g->scale(-1,$g->reduceSum($g->mul($actionProbsCliped,$g->log($actionProbs)), axis:1, keepdims:true));
+            $entropy = $g->scale(-1,$g->reduceSum($g->mul($actionProbsCliped,$g->log($actionProbsCliped)), axis:1, keepdims:true));
 
             // total loss
-            $value_loss_weight = $g->Variable(0.5);
-            $entropy_weight = $g->Variable(0.1);
-            $loss = $g->sub( 
-                $g->sub(
-                    $g->mul($value_loss_weight, $valueLoss),
-                    $g->mul($entropy_weight, $entropy)
+            $loss = $g->add(
+                $g->add(
+                    $g->mul($valueLossWeight, $valueLoss),
+                    $g->mul($entropyWeight, $entropy)
                 ),
                 $policyLoss
             );

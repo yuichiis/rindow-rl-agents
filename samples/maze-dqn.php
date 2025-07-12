@@ -134,7 +134,8 @@ foreach($drivers as $i => $driver) {
         $state = $customStateFunction($env,$state,false);
         $env->render();
         $done=false;
-        while(!$done) {
+        $truncated=false;
+        while(!($done||$truncated)) {
             $action = $agent->action($state,training:false,info:$info);
             [$state,$reward,$done,$truncated,$info] = $env->step($action);
             $state = $customStateFunction($env,$state,$done);

@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
+use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\DQN\DQN;
@@ -47,7 +47,7 @@ $epsDecayRate = 0.001;#0.0005;#
 $ddqn = true;#false;#
 $lossFn = $nn->losses->MeanSquaredError();
 
-$env = new CartPoleV0($la);
+$env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
@@ -56,7 +56,7 @@ $numActions = $env->actionSpace()->n();
 //$env->show();
 //exit();
 
-$evalEnv = new CartPoleV0($la);
+$evalEnv = new CartPoleV1($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $dqnAgent = new DQN(
@@ -101,15 +101,19 @@ if(!$dqnAgent->fileExists($filename)) {
 
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
-    echo ".";
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
-    while(!$done) {
+    $truncated=false;
+    $testReward = 0;
+    while(!($done||$truncated)) {
         $action = $dqnAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $testReward += $reward;
         $env->render();
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
 }
 echo "\n";
 $env->show();

@@ -305,7 +305,7 @@ class DQN extends AbstractAgent
             $mo = $this->trainModel->backend()->localMatrixOperator();
             //echo "NEXTQVALUES:".$mo->shapeToString($nextQValues->shape())."\n";
             //echo "nextActions:".$mo->shapeToString($nextActions->shape())."\n";
-            $nextQValues = $la->gather($nextQValues,$nextActions,batchDims:-1);
+            $nextQValues = $la->gatherb($nextQValues,$nextActions,batchDims:-1);
             //echo "nextQValues:".$mo->shapeToString($nextQValues->shape())."\n";
             //$nextQValues = $la->gather($nextQValues,$nextActions,axis:-1,indexDepth:-1);
         } else {

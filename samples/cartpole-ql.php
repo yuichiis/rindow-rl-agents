@@ -81,17 +81,21 @@ $plt->show();
 
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
-    echo ".";
     [$state,$info] = $env->reset();
     $state = $digitizeStateFunc($env,$state,false);
     $env->render();
     $done=false;
-    while(!$done) {
+    $truncated=false;
+    $testReward = 0;
+    while(!($done||$truncated)) {
         $action = $qlearning->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $state = $digitizeStateFunc($env,$state,$done);
+        $testReward += $reward;
         $env->render();
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
 }
 echo "\n";
 $env->show();

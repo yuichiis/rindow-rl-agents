@@ -140,13 +140,17 @@ for($i=0;$i<5;$i++) {
     $maxSteps = 200;
     $done=false;
     $truncated=false;
+    $testReward = 0;
     $step = 0;
     while(!($done||$truncated) && $step<$maxSteps) {
         $action = $ddpgAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $testReward += $reward;
         $env->render();
         $step++;
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
 }
 echo "\n";
 $env->show();
