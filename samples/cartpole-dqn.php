@@ -100,21 +100,23 @@ if(!$dqnAgent->fileExists($filename)) {
 
 
 echo "Creating demo animation.\n";
-for($i=0;$i<5;$i++) {
+for($i=0;$i<1;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
     $truncated=false;
     $testReward = 0;
+    $testSteps = 0;
     while(!($done||$truncated)) {
         $action = $dqnAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $testReward += $reward;
+        $testSteps++;
         $env->render();
     }
     $ep = $i+1;
-    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$env->show();
-
+$filename = $env->show(path:__DIR__.'\\cartpole-dqn-trained.gif');
+echo "filename: {$filename}\n";

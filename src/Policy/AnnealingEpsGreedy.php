@@ -66,7 +66,8 @@ class AnnealingEpsGreedy extends AbstractPolicy
     public function getEpsilon()
     {
         $time = $this->currentTime;
-        return $this->stop + ($this->start-$this->stop)*exp(-$this->decayRate*$time);
+        $eps = $this->stop + ($this->start-$this->stop)*exp(-$this->decayRate*$time);
+        return $eps;
     }
 
     /**

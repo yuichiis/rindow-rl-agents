@@ -12,8 +12,12 @@ class ParallelStepRunner extends AbstractRunner
     protected $evalEnv;
     protected $experiences;
 
-    public function __construct(object $la,
-        array $envs, Agent $agent, int $experienceSize, ?array $replayBuffers=null,
+    public function __construct(
+        object $la,
+        array $envs,
+        Agent $agent,
+        int $experienceSize,
+        ?array $replayBuffers=null,
         ?Env $evalEnv=null)
     {
         parent::__construct($la,$agent,$experienceSize);
@@ -97,7 +101,7 @@ class ParallelStepRunner extends AbstractRunner
                 $action = $la->squeeze($actions[[$i,$i+1]],axis:0);
                 [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
                 $nextStates[$i] = $this->customState($env,$nextState,$done,$truncated,$info);
-                $reward = $this->customReward($env,$episodeSteps[$i],$nextState,$reward,$done,$truncated,$info);
+                $reward = $this->customReward($env,$episodeSteps[$i],$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info);
                 $infos[] = $info;
                 $experiences[$i]->add([$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info]);
                 $loss = $agent->update($experiences[$i]);

@@ -86,7 +86,7 @@ class EpisodeRunner extends AbstractRunner
 
                 [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
                 $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
-                $reward = $this->customReward($env,$episodeSteps,$nextState,$reward,$done,$truncated,$info);
+                $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextState,$reward,$done,$truncated,$info);
                 $experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
                 $totalStep++;
                 if($agent->isStepUpdate() && $totalStep>=$subStepLen) {

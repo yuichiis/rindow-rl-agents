@@ -19,18 +19,22 @@ class QLearning extends AbstractAgent
     protected float $eta;
     protected float $gamma;
 
-    public function __construct($la,
+    public function __construct(
+        object $la,
         int $numStates,
         int $numActions,
-        Policy $policy,
-        float $eta,
-        float $gamma,
+        ?Policy $policy=null,
+        ?float $eta=null,
+        ?float $gamma=null,
         ?EventManager $eventManager=null,
         ?object $mo=null,
         )
     {
         $table = $this->buildNetwork($la,$numStates, $numActions);
-        $policy = $this->buildPolicy($la);
+        $policy ??= $this->buildPolicy($la);
+        $eta ??=0.1;
+        $gamma ??=0.9;
+
         parent::__construct($la,$policy,$eventManager);
         $this->valueTable = $table;
         $this->eta = $eta;

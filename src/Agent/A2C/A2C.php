@@ -71,7 +71,7 @@ class A2C extends AbstractAgent
         $valueLossWeight ??= 0.5;
         $entropyWeight ??= 0.01;
         $nn ??= $network->builder();
-        $optimizerOpts ??= [];
+        $optimizerOpts ??= ['lr'=>7e-4];
         $optimizer = $nn->optimizers->Adam(...$optimizerOpts);
 
         $this->stateShape = $stateShape;

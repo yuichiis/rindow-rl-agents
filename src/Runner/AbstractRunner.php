@@ -63,6 +63,8 @@ abstract class AbstractRunner implements Runner
         Env $env,
         int $stepCount,
         NDArray $states,
+        NDArray $action,
+        NDArray $nextStates,
         float $reward,
         bool $done,
         bool $truncated,
@@ -73,7 +75,7 @@ abstract class AbstractRunner implements Runner
         if($func===null) {
             return $reward;
         }
-        return $func($env,$stepCount,$states,$reward,$done,$truncated,$info);
+        return $func($env,$stepCount,$states,$action,$nextStates,$reward,$done,$truncated,$info);
     }
 
     protected function customState(
@@ -124,11 +126,12 @@ abstract class AbstractRunner implements Runner
             $episodeSteps = 0;
             while(!($done || $truncated)) {
                 $action = $agent->action($states,training:false,info:$info);
-                [$states,$reward,$done,$truncated,$info] = $env->step($action);
-                $states = $this->customState($env,$states,$done,$truncated,$info);
-                $reward = $this->customReward($env,$episodeSteps,$states,$reward,$done,$truncated,$info);
+                [$nextStates,$reward,$done,$truncated,$info] = $env->step($action);
+                $nextStates = $this->customState($env,$nextStates,$done,$truncated,$info);
+                $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextStates,$reward,$done,$truncated,$info);
                 $sumReward += $reward;
                 $episodeSteps++;
+                $states = $nextStates;
             }
             $sumSteps += $episodeSteps;
         }

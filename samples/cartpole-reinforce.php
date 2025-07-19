@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
+use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Agent\Reinforce\Reinforce;
 
@@ -34,10 +34,11 @@ $gamma = 0.9;#
 $convLayers = null;
 $convType = null;
 $fcLayers = [32,32];# [10,10];#
+$activation = null;
 $learningRate = 1e-2;#1e-5;#
 $useBaseline = true;#false;
 
-$env = new CartPoleV0($la);
+$env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
@@ -77,17 +78,21 @@ if(!$agent->fileExists($filename)) {
 
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
-    echo ".";
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
     $truncated=false;
+    $testReward = 0;
+    $testSteps = 0;
     while(!($done || $truncated)) {
         $action = $agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $testReward += $reward;
+        $testSteps++;
         $env->render();
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
-echo "\n";
-$env->show();
-
+$filename = $env->show(path:__DIR__.'\\cartpole-reinforce-trained.gif');
+echo "filename: {$filename}\n";

@@ -11,7 +11,8 @@ class StepRunner extends AbstractRunner
     protected Env $env;
     protected ?Env $evalEnv;
 
-    public function __construct(object $la,
+    public function __construct(
+        object $la,
         Env $env,
         Agent $agent,
         int $experienceSize,
@@ -86,7 +87,7 @@ class StepRunner extends AbstractRunner
             $action = $agent->action($states,training:true,info:$info);
             [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
             $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
-            $reward = $this->customReward($env,$episodeSteps,$nextState,$reward,$done,$truncated,$info);
+            $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextState,$reward,$done,$truncated,$info);
             $experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
             $totalStep++;
             if($agent->isStepUpdate() && $totalStep>=$subStepLen) {
@@ -137,7 +138,7 @@ class StepRunner extends AbstractRunner
                 }
                 if($verbose>1) {
                     $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
-                    $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
+                    $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($episodeReward/$logEpisodeCount) : 0);
                     $lossLog = sprintf('%3.2e',($logCountLoss>0)?($logSumLoss/$logCountLoss):0);
                     //$qLog = sprintf('%1.1f',$agent->getQValue($states));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);

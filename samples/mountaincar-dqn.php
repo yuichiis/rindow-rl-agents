@@ -8,8 +8,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\DQN;
-use Rindow\RL\Agents\Network\QNetwork;
+use Rindow\RL\Agents\Agent\DQN\DQN;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 
 $mo = new MatrixOperator();
@@ -18,7 +17,7 @@ $nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 $work = new ArrayObject();
 
-$customReward2 = function($env,$stepCount,$state,$reward,$done,$info) use ($work) {
+$customReward1 = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) use ($work) {
     $oid = spl_object_id($env);
     if(!isset($work[$oid])) {
         $work[$oid] = (object)['position'=>-INF,'velocity'=>-INF,'success'=>0];
@@ -44,7 +43,7 @@ $customReward2 = function($env,$stepCount,$state,$reward,$done,$info) use ($work
     return $reward;
 };
 
-$customReward2 = function($env,$stepCount,$state,$reward,$done,$info) use ($work) {
+$customReward2 = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) use ($work) {
     $oid = spl_object_id($env);
     [$position,$velocity] = $state;
     //echo sprintf('pos=[%5.3f],vel=[%5.3f]',abs(-0.5-$position),abs($velocity))."\r";
@@ -60,7 +59,7 @@ $customReward2 = function($env,$stepCount,$state,$reward,$done,$info) use ($work
     return $reward;
 };
 
-$customReward = function($env,$stepCount,$state,$reward,$done,$info) use ($work) {
+$customReward3 = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) use ($work) {
     $oid = spl_object_id($env);
     if(!isset($work[$oid])) {
         $work[$oid] = (object)[
@@ -95,6 +94,25 @@ $customReward = function($env,$stepCount,$state,$reward,$done,$info) use ($work)
     return $reward;
 };
 
+$customReward4 = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) use ($work) {
+    $nextPosition = $nextState[0];
+    $nextVelocity = $nextState[1];
+    $position = $state[0];
+    $velocity = $state[1];
+    $gravity = 0.0025;
+
+    $c = 1 / ($gravity*sin(3*0.5) + 0.5*0.07*0.07); #正規化定数
+
+    $nextEnergy = $c*($gravity*sin(3*$nextPosition) + 0.5*$nextVelocity*$nextVelocity);
+    $energy = $c*($gravity*sin(3*$position) + 0.5*$velocity*$velocity);
+    $energyGain = $nextEnergy - $energy;
+    $reward += $energyGain*10;
+    if(($done || $truncated) && $nextPosition>=0.5) {
+        $reward += 100;
+    }
+    return $reward;
+};
+
 // { $numIterations = 1000; $logInterval = 1; $evalInterval = 10; $numEvalEpisodes = 10;
 //   $maxExperienceSize = 50000; $batchSize = 32; $gamma = 0.99; $convLayers = null; $convType = null;
 //   $fcLayers = [16,16,16]; $activation = null; $targetUpdatePeriod = 10; $targetUpdateTau = 1e-2;
@@ -103,55 +121,55 @@ $customReward = function($env,$stepCount,$state,$reward,$done,$info) use ($work)
 //   // no custom reward
 // }
 
-$numIterations = 1000;#300;#20000;#
-$logInterval =   1;  #200;  #10; #
-$evalInterval =  1;#10; #1000; #
-$numEvalEpisodes = 0;#10;
+$numIterations = 20000;#1000;#300;#
+$logInterval =   500;  #5;  #10; #
+$evalInterval =  500;#10; #1000; #
+$numEvalEpisodes = 1;#10;
 $maxExperienceSize = 50000;#20000;#100000;
-$batchSize = 32;#256;#128;#64;#
+$batchSize = 256;#256;#128;#64;#
 $gamma = 0.99;#1.0;#
 $convLayers = null;
 $convType = null;
-$fcLayers = [16,16,16]; # [128,52];# [24,48];# [128,64,32];# [32,32];#
+$fcLayers = [64,64]; # [16,16,16]; # [128,52];# [24,48];# [128,64,32];# [32,32];#
 $activation = null;#'tanh';
 $targetUpdatePeriod = 10;  #-1; #5;    #5;   #5;   #200;#
 $targetUpdateTau =    1e-2;#1.0;#0.025;#0.01;#0.05;#1.0;#
 $learningRate = 1e-3;#1e-5;#
-$epsStart = 0.1;#1.0;#1.0; #1.0; #0.9;#1.0; #
-$epsStop =  0.1;#0.1;#0.05;#0.01;#0.1;#0.05;#
+$epsStart = 1.0;#1.0; #1.0; #0.9;#1.0; #
+$epsStop =  0.1;#0.05;#0.01;#0.1;#0.05;#
 $decayRate = 0.0005;#0.01;#0.001;#
 $ddqn = true;#false;# 
-$lossFn = $nn->losses->MeanSquaredError();
-$episodeAnnealing = true;
+$lossFn = null; #$nn->losses->MeanSquaredError();
+$episodeAnnealing = false; #true;
 
 $env = new MountainCarV0($la);
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
 
-[$state,$info] = $env->reset();
-echo $mo->toString($state,'%1.2f')."\n";
+//[$state,$info] = $env->reset();
+//echo $mo->toString($state,'%1.2f')."\n";
 //$env->render();
 //$env->show();
 //exit();
 
 $evalEnv = new MountainCarV0($la);
-$network = new QNetwork($la,$nn,$stateShape,$numActions,
-    convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,activation:$activation);
-$policy = new AnnealingEpsGreedy($la,$network,
-    start:$epsStart,stop:$epsStop,decayRate:$decayRate,episodeAnnealing:$episodeAnnealing);
 $dqnAgent = new DQN(
-    $la,network:$network,policy:$policy,
+    $la,
+    nn:$nn,
+    stateShape:$stateShape,numActions:$numActions,
+    fcLayers:$fcLayers,
     batchSize:$batchSize,gamma:$gamma,
+    epsStart:$epsStart,epsStop:$epsStop,epsDecayRate:$decayRate,episodeAnnealing:$episodeAnnealing,
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
     ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],
     mo:$mo
 );
 $dqnAgent->summary();
-$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
-//$driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,$evalEnv);
-$driver->setCustomRewardFunction($customReward);
-$filename = __DIR__.'\\mountaincar-dqn.model';
-if(!file_exists($filename)) {
+//$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
+$driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
+$driver->setCustomRewardFunction($customReward4);
+$filename = __DIR__.'\\mountaincar-dqn';
+if(!$dqnAgent->fileExists($filename)) {
     $arts = [];
     //$driver->agent()->initialize();
     $history = $driver->train(
@@ -183,23 +201,24 @@ if(!file_exists($filename)) {
 
 
 echo "Creating demo animation.\n";
-for($i=0;$i<5;$i++) {
-    echo ".";
+for($i=0;$i<1;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
     $truncated=false;
     $testReward = 0;
+    $testSteps = 0;
     while(!($done||$truncated)) {
         $action = $dqnAgent->action($state,training:false,info:$info);
-        [$state,$reward,$done,$truncated,$info] = $env->step($action);
-        $testReward += $reward;
+        [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
+        $testReward += $customReward4($env,$testSteps,$state,$action,$nextState,$reward,$done,$truncated,$info);
+        //$testReward += $reward;
+        $testSteps++;
+        $state = $nextState;
         $env->render();
     }
     $ep = $i+1;
-    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
-echo "\n";
-$env->show();
-
-print_r($work->getArrayCopy());
+$filename = $env->show(path:__DIR__.'\\mountaincar-dqn-trained.gif');
+echo "filename: {$filename}\n";

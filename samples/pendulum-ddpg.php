@@ -133,36 +133,24 @@ if(!$ddpgAgent->fileExists($filename)) {
 
 
 echo "Creating demo animation.\n";
-for($i=0;$i<5;$i++) {
-    echo ".";
+for($i=0;$i<1;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
-    $maxSteps = 200;
+    $maxSteps = 210;
     $done=false;
     $truncated=false;
     $testReward = 0;
-    $step = 0;
-    while(!($done||$truncated) && $step<$maxSteps) {
+    $testSteps = 0;
+    while(!($done||$truncated) && $testSteps<$maxSteps) {
         $action = $ddpgAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $testReward += $reward;
+        $testSteps++;
         $env->render();
-        $step++;
     }
     $ep = $i+1;
-    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$env->show();
-
-//$env->reset();
-//$maxSteps = 10;
-//$done = false;
-//$step = 0;
-//while(!$done && $step<$maxSteps) {
-//    $action = $la->randomUniform([1],-2,2);
-//    [$state,$reward,$done,$truncated,$info] = $env->step($action);
-//    $env->render();
-//    $step++;
-//}
-//$env->show(null,$delay=10);
+$filename = $env->show(path:__DIR__.'\\pendulum-ddpg-trained.gif');
+echo "filename: {$filename}\n";

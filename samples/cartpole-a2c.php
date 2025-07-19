@@ -25,7 +25,7 @@ $plt = new Plot(null,$mo);
 ##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
-$numIterations = 150000;#300;#1000;#
+$numIterations = 200000;#300;#1000;#
 $logInterval =   1000;  #10; #
 $evalInterval = 20000; #10; #
 $numEvalEpisodes = 10;
@@ -34,10 +34,8 @@ $batchSize = 256;#32;#
 $gamma = 0.99;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.01;
-$convLayers = null;
-$convType = null;
 $fcLayers = [64,64];# [32,32];#
-$learningRate = 1e-3;#1e-5;#
+$learningRate = 7e-4;#1e-3;#1e-5;#
 
 $env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
@@ -99,15 +97,17 @@ for($i=0;$i<1;$i++) {
     $done=false;
     $truncated=false;
     $testReward = 0;
+    $testSteps = 0;
     while(!($done||$truncated)) {
         $action = $dqnAgent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $testReward += $reward;
+        $testSteps++;
         $env->render();
     }
     $ep = $i+1;
-    echo "Test Episode {$ep}, Total Reward: {$testReward}\n";
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$env->show();
-
+$filename = $env->show(path:__DIR__.'\\cartpole-a2c-trained.gif');
+echo "filename: {$filename}\n";

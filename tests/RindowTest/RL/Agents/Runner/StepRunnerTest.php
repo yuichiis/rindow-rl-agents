@@ -83,7 +83,7 @@ class TestEnv implements Environment
     public function seed(?int $seed=null) : array
     {}
 
-    public function show(?bool $loop=null, ?int $delay=null) : mixed
+    public function show(?string $path=null,?bool $loop=null, ?int $delay=null) : mixed
     {}
 
     public function toString() : string
