@@ -25,7 +25,7 @@ $plt = new Plot(null,$mo);
 ##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
-$numIterations = 200000;#300;#1000;#
+$numIterations = 500000;#200000;#300;#1000;#
 $logInterval =   1000;  #10; #
 $evalInterval = 20000; #10; #
 $numEvalEpisodes = 10;
@@ -33,7 +33,7 @@ $maxExperienceSize = 10000;#100000;
 $batchSize = 256;#32;#
 $gamma = 0.99;
 $valueLossWeight = 0.5;
-$entropyWeight = 0.01;
+$entropyWeight = 0.0;#0.01;
 $fcLayers = [64,64];# [32,32];#
 $learningRate = 7e-4;#1e-3;#1e-5;#
 

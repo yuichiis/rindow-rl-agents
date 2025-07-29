@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\A2C;
+namespace Rindow\RL\Agents\Agent\PPO;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Estimator;
@@ -31,7 +31,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         $this->numActions = $numActions;
 
         if($convLayers===null && $fcLayers===null) {
-            $fcLayers = [64, 64];
+            $fcLayers = [128, 128];
         }
         if($activation===null) {
             $activation = 'tanh'; #'relu';

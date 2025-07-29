@@ -26,7 +26,7 @@ class A2C extends AbstractAgent
     //protected $rewardScaleFactor;
     protected array $stateShape;
     protected int $numActions;
-    protected Loss $huber;
+    protected Loss $lossFunc;
     protected Optimizer $optimizer;
     protected array $optimizerOpts;
     protected ?object $mo;
@@ -49,6 +49,7 @@ class A2C extends AbstractAgent
         ?object $nn=null,
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
+        ?Loss $lossFunc=null,
         ?array $stateShape=null, ?int $numActions=null,
         ?array $fcLayers=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
@@ -69,10 +70,13 @@ class A2C extends AbstractAgent
         $batchSize ??= 32;
         $gamma ??= 0.99;
         $valueLossWeight ??= 0.5;
-        $entropyWeight ??= 0.01;
+        $entropyWeight ??= 0.0;
         $nn ??= $network->builder();
         $optimizerOpts ??= ['lr'=>7e-4];
-        $optimizer = $nn->optimizers->Adam(...$optimizerOpts);
+        $optimizer ??= $nn->optimizers->Adam(...$optimizerOpts);
+        //$optimizer ??= $nn->optimizers->RMSprop(...$optimizerOpts);
+        //$lossFunc ??= $nn->losses()->Huber();
+        $lossFunc ??= $nn->losses()->MeanSquaredError();
 
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
@@ -82,10 +86,10 @@ class A2C extends AbstractAgent
         $this->entropyWeight = $entropyWeight;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
+        $this->lossFunc = $lossFunc;
         $this->mo = $mo;
         $this->nn = $nn;
         $this->g = $nn->gradient();
-        $this->huber = $nn->losses()->Huber();
         $this->model = $this->buildModel($la,$nn,$network);
         $this->modelGraph = $nn->gradient->function([$this->model,'forward']);
         $this->trainableVariables = $this->model->trainableVariables();
@@ -279,10 +283,10 @@ class A2C extends AbstractAgent
         $entropyWeight = $g->Variable($this->entropyWeight);
         // gradients
         $model = $this->model;
-        $huber = $this->huber;
+        $lossFunc = $this->lossFunc;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-            use ($g,$huber,$model,$states,$training,$actions,$discountedRewards,
+            use ($g,$lossFunc,$model,$states,$training,$actions,$discountedRewards,
                 $valueLossWeight,$entropyWeight)
         {
             [$logits, $values] = $model($states,$training);
@@ -299,9 +303,8 @@ class A2C extends AbstractAgent
             $policyLoss = $g->scale(-1,$g->mul($g->log($selectedActionProbs),$advantage));
             
             // Value loss
-            // Mean Squared Error   => huberにしたい
-            //$valueLoss = $g->reduceMean($g->square($g->sub($discountedRewards,$values)), axis:1, keepdims:true);
-            $valueLoss = $huber($discountedRewards,$values);
+            // SB3ではMSE固定
+            $valueLoss = $lossFunc($discountedRewards,$values);
 
             // policy entropy
             $actionProbsCliped = $g->clipByValue($actionProbs, 1e-10, 1.0);

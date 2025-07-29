@@ -19,6 +19,7 @@ abstract class AbstractRunner implements Runner
     protected int $experienceSize;
     protected mixed $customRewardFunction=null;
     protected mixed $customStateFunction=null;
+    protected ?string $lastConsoleOutput = null;
 
     public function __construct(
         object $la, Agent $agent, int $experienceSize,
@@ -151,11 +152,14 @@ abstract class AbstractRunner implements Runner
         ) : void
     {
         if($iterNumber<0) {
-            $this->console("\r{$title} 1/{$numIterations} ");
+            $message = "\r{$title} 1/{$numIterations} ";
+            $this->console($message);
+            $this->lastConsoleOutputlength = strlen($message);
             return;
         }
         $iterNumber++;
         $elapsed = time() - $startTime;
+        $evalInterval = $numIterations;
         if($evalInterval) {
             $completion = $iterNumber / $numIterations;
             $progressOfAgg = ((($iterNumber-1)%$evalInterval)+1) / $evalInterval;
@@ -171,8 +175,28 @@ abstract class AbstractRunner implements Runner
             $rem_string = '????';
             $this->console($maxDot."\n");
         }
-        $this->console("\r{$title} {$iterNumber}/{$numIterations} [".
+        $message = "\r{$title} {$iterNumber}/{$numIterations} [".
             str_repeat('.',$dot).str_repeat(' ',$maxDot-$dot).
-            "] {$elapsed} sec. remaining:{$rem_string}  ");
+            "] {$elapsed} sec. remaining:{$rem_string}  ";
+        $this->console($message);
+        $this->lastConsoleOutput = $message;
     }
+
+    protected function clearProgressBar() : void
+    {
+        if($this->lastConsoleOutput===null) {
+            return;
+        }
+        $message = "\r".str_repeat(' ',strlen($this->lastConsoleOutput)-1)."\r";
+        $this->console($message);
+    }
+
+    protected function retriveProgressBar() : void
+    {
+        if($this->lastConsoleOutput===null) {
+            return;
+        }
+        $this->console($this->lastConsoleOutput);
+    }
+
 }

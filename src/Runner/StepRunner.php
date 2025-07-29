@@ -196,10 +196,14 @@ class StepRunner extends AbstractRunner
                         $valReward = '-';
                     }
                     if($verbose==1) {
-                        $this->console("\n");
+                        //$this->console("\n");
+                        $this->clearProgressBar();
                     }
                     $this->console("Avg Rwd={$avgReward}, St={$avgSteps}{$avgLoss},".
                                     " vRwd={$valReward}, vSt={$valSteps}{$epsilon}\n");
+                    if($verbose==1) {
+                        $this->retriveProgressBar();
+                    }
                 }
                 $episodeCount = 0;
                 $sumSteps = 0;
