@@ -285,7 +285,7 @@ class A2C extends AbstractAgent
         $model = $this->model;
         $lossFunc = $this->lossFunc;
         $training = $g->Variable(true);
-        $loss = $nn->with($tape=$g->GradientTape(),function() 
+        [$loss, $entropy] = $nn->with($tape=$g->GradientTape(),function() 
             use ($g,$lossFunc,$model,$states,$training,$actions,$discountedRewards,
                 $valueLossWeight,$entropyWeight)
         {
@@ -310,6 +310,7 @@ class A2C extends AbstractAgent
             $actionProbsCliped = $g->clipByValue($actionProbs, 1e-10, 1.0);
             $entropy = $g->scale(-1,$g->reduceSum($g->mul($actionProbsCliped,$g->log($actionProbsCliped)), axis:1, keepdims:true));
 
+
             // total loss
             $loss = $g->add(
                 $g->add(
@@ -320,14 +321,21 @@ class A2C extends AbstractAgent
             );
 
             $loss = $g->reduceMean($loss);
+            $entropy = $g->reduceMean($entropy);
 
-            return $loss;
+            return [$loss, $entropy];
         });
         $grads = $tape->gradient($loss,$this->trainableVariables);
         $this->optimizer->update($this->trainableVariables,$grads);
 
         $loss = $K->scalar($loss);
-        //echo "loss=".$loss."\n";
+        if($this->history->isAttracted('loss')) {
+            $this->history->update('loss',$loss);
+        }
+        if($this->history->isAttracted('entropy')) {
+            $entropy = $K->scalar($entropy);
+            $this->history->update('entropy',$entropy);
+        }
         return $loss;
     }
 

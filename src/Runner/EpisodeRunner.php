@@ -63,7 +63,7 @@ class EpisodeRunner extends AbstractRunner
         }
         for($episode=0;$episode<$numIterations;$episode++) {
             if($verbose==1&&$episode==0) {
-                $this->progressBar('Episode',$episode,$numIterations,$evalInterval,$startTime,25);
+                $this->progressBar('Episode',$episode,$numIterations,$startTime,25);
             }
             if($verbose>1) {
                 $epStartTime = microtime(true);
@@ -167,7 +167,7 @@ class EpisodeRunner extends AbstractRunner
                 //$this->console("Ep ".($episode+1).": rw={$strEpisodeReward}, st={$episodeSteps} loss={$lossLog}{$epsilon}, q={$qLog}, {$msPerStep}ms/step\n");
                 $this->console("Ep ".($episode+1).": rw={$strEpisodeReward}, st={$episodeSteps} loss={$lossLog}{$epsilon}, {$msPerStep}ms/step\n");
             } elseif($verbose==1) {
-                $this->progressBar('Episode',$episode,$numIterations,$evalInterval,$startTime,25);
+                $this->progressBar('Episode',$episode,$numIterations,$startTime,25);
             }
             if($verbose>0) {
                 if($episodeCount >= $evalInterval) {

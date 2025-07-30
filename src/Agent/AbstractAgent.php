@@ -6,6 +6,7 @@ use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
+use Rindow\RL\Agents\History;
 use InvalidArgumentException;
 use LogicException;
 
@@ -15,6 +16,7 @@ abstract class AbstractAgent implements Agent
 
     protected object $la;
     protected ?Policy $policy;
+    protected ?History $history;
 
     public function __construct(object $la,
         ?Policy $policy=null, ?EventManager $eventManager=null)
@@ -34,6 +36,16 @@ abstract class AbstractAgent implements Agent
     public function policy() : ?Policy
     {
         return $this->policy;
+    }
+
+    public function setHistory(History $history) : void
+    {
+        $this->history = $history;
+    }
+
+    public function history() : History
+    {
+        return $this->history;
     }
 
     public function resetData()

@@ -50,13 +50,12 @@ class StepRunner extends AbstractRunner
         }
         $env = $this->env;
         $agent = $this->agent;
-        $history = [];
         if($metrics===null) {
             $metrics = [];
         }
-        foreach($metrics as $key) {
-            $history[$key] = [];
-        }
+        $history = $this->history;
+        $history->attract($metrics);
+
         $isStepUpdate = $agent->isStepUpdate();
         $subStepLen = $agent->subStepLength();
         $totalStep = 0;
@@ -80,10 +79,19 @@ class StepRunner extends AbstractRunner
         $done = false;
         $truncated = false;
 
-        for($step=0;$step<$numIterations;$step++) {
-            if($verbose==1&&$step==0) {
-                $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
+        $epsilonMetric = false;
+        if($history->isAttracted('epsilon') &&
+            method_exists($agent,'policy') ) {
+            $policy = $agent->policy();
+            if($policy && method_exists($policy,'getEpsilon')) {
+                $epsilonMetric = true;
             }
+        }
+
+        if($verbose>=1) {
+            $this->progressBar('Step',0,$numIterations,$startTime,25);
+        }
+        for($step=0;$step<$numIterations;$step++) {
             $action = $agent->action($states,training:true,info:$info);
             [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
             $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
@@ -92,12 +100,6 @@ class StepRunner extends AbstractRunner
             $totalStep++;
             if($agent->isStepUpdate() && $totalStep>=$subStepLen) {
                 $loss = $agent->update($experience);
-                if($loss!==null) {
-                    $sumLoss += $loss;
-                    $logSumLoss += $loss;
-                }
-                $countLoss++;
-                $logCountLoss++;
             }
             $states = $nextState;
             $episodeReward += $reward;
@@ -106,110 +108,44 @@ class StepRunner extends AbstractRunner
             if($done || $truncated) {
                 if(!$agent->isStepUpdate()) {
                     $loss = $agent->update($experience);
-                    if($loss!==null) {
-                        $sumLoss += $loss;
-                        $logSumLoss += $loss;
-                    }
-                    $countLoss++;
-                    $logCountLoss++;
                 }
-                $sumReward += $episodeReward;
-                $sumSteps += $episodeSteps;
+                $this->history->update('reward',$episodeReward);
+                $this->history->update('steps',$episodeSteps);
                 $this->onEndEpisode();
-                $episodeCount++;
-                $logEpisodeCount++;
             }
-            $epsilon = null;
-            if(($step+1)%$logInterval==0 || ($step+1)%$evalInterval==0) {
-                if(in_array('epsilon',$metrics)) {
-                    if(method_exists($agent,'policy')) {
-                        $policy = $agent->policy();
-                        if($policy && method_exists($policy,'getEpsilon')) {
-                            $epsilon = $policy->getEpsilon();
-                        }
-                    }
-                }
-            }
+            // Update Progress bar and Logging metrics for short time.
             if(($step+1)%$logInterval==0) {
-                if($epsilon!==null) {
-                    $epsilonLog = ', eps='.sprintf('%5.3f',$epsilon);
-                } else {
-                    $epsilonLog = '';
+                if($epsilonMetric) {
+                    $epsilon = $policy->getEpsilon();
+                    $history->update('epsilon',$epsilon);
                 }
                 if($verbose>1) {
-                    $stepsLog = sprintf('%1.1f',($logEpisodeCount>0)? ($logInterval/$logEpisodeCount) : 0);
-                    $rewardLog = sprintf('%1.1f',($logEpisodeCount>0)? ($episodeReward/$logEpisodeCount) : 0);
-                    $lossLog = sprintf('%3.2e',($logCountLoss>0)?($logSumLoss/$logCountLoss):0);
+                    $logText = $history->render(exclude:['valSteps','valReward']);
                     //$qLog = sprintf('%1.1f',$agent->getQValue($states));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);
                     //$this->console("Step:".($step+1)." ep:".($episode+1)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, q={$qLog}, {$msPerStep}ms/st\n");
-                    $this->console("Step:".($step+1)." ep:".($episode+1)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, {$msPerStep}ms/st\n");
-                } elseif($verbose==1) {
-                    $this->progressBar('Step',$step,$numIterations,$evalInterval,$startTime,25);
+                    $this->clearProgressBar();
+                    $this->console("Step:".($step+1)." ep:".($episode+1)." {$logText} {$msPerStep}ms/st\n");
                 }
-                $logEpisodeCount = $logSumLoss = $logCountLoss = 0;
+                if($verbose>0) {
+                    $this->progressBar('Step',$step,$numIterations,$startTime,25);
+                }
             }
+            // Evaluation and Logging Metrics
             if(($step+1)%$evalInterval==0) {
                 if($numEvalEpisodes!=0) {
                     $evalReport = $this->evaluation($this->evalEnv,$numEvalEpisodes,$metrics);
-                } else {
-                    $evalReport = [];
-                }
-                if($epsilon!==null && in_array('epsilon',$metrics)) {
-                    $history['epsilon'][] = $epsilon;
-                }
-                $avgSteps = ($episodeCount>0)? ($sumSteps/$episodeCount) : 0;
-                $avgReward = ($episodeCount>0)? ($sumReward/$episodeCount) : 0;
-                $avgLoss = ($countLoss>0)? ($sumLoss/$countLoss) : 0;
-                if(in_array('steps',$metrics)) {
-                    $history['steps'][] = $avgSteps;
-                }
-                if(in_array('reward',$metrics)) {
-                    $history['reward'][] = $avgReward;
-                }
-                if(in_array('loss',$metrics)) {
-                    $history['loss'][] = $avgLoss;
-                }
-                foreach ($evalReport as $key => $value) {
-                    if(in_array($key, $metrics)) {
-                        $history[$key][] = $value;
-                    }
-                }
-                if($verbose>0) {
-                    if($epsilon!==null) {
-                        $epsilon = ', eps='.sprintf('%5.3f',$epsilon);
-                    } else {
-                        $epsilon = '';
-                    }
-                    $avgSteps = sprintf('%3.1f',$avgSteps);
-                    $avgReward = sprintf('%3.2f',$avgReward);
-                    if($avgLoss!=0) {
-                        $avgLoss = ', Loss='.sprintf('%3.2e',$avgLoss);
-                    } else {
-                        $avgLoss = '';
-                    }
-                    if($numEvalEpisodes>0) {
-                        $valSteps = sprintf('%3.1f',$evalReport['val_steps']);
-                        $valReward = sprintf('%3.2f',$evalReport['val_reward']);
-                    } else {
-                        $valSteps = '-';
-                        $valReward = '-';
-                    }
-                    if($verbose==1) {
-                        //$this->console("\n");
+                    if($verbose>0) {
+                        $this->history->update('valSteps',$evalReport['valSteps']);
+                        $this->history->update('valReward',$evalReport['valReward']);
+                        $logText = $history->render();
                         $this->clearProgressBar();
-                    }
-                    $this->console("Avg Rwd={$avgReward}, St={$avgSteps}{$avgLoss},".
-                                    " vRwd={$valReward}, vSt={$valSteps}{$epsilon}\n");
-                    if($verbose==1) {
-                        $this->retriveProgressBar();
+                        $this->console("Step:".($step+1)." ep:".($episode+1)." $logText\n");
+                        $this->progressBar('Step',$step,$numIterations,$startTime,25);
                     }
                 }
-                $episodeCount = 0;
-                $sumSteps = 0;
-                $sumReward = 0;
-                $sumLoss = 0;
-                $countLoss = 0;
+                $history->record();
+                $history->resetAll();
             }
             if(($step+1)%$logInterval==0) {
                 $logStartTime = microtime(true);
@@ -227,13 +163,12 @@ class StepRunner extends AbstractRunner
                 [$states,$info] = $env->reset();
                 $states = $this->customState($env,$states,false,false,$info);
                 $experience = $this->experience;
-                $episodeReward = $reward = 0.0;
+                $episodeReward = 0.0;
                 $episodeSteps = 0;
-                $episodeLoss = 0.0;
                 $done = false;
                 $truncated = false;
             }
         }
-        return $history;
+        return $history->history();
     }
 }

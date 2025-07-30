@@ -9,11 +9,13 @@ use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
 use Rindow\RL\Agents\EventManager as EventManagerInterface;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Util\EventManager;
+use Rindow\RL\Agents\Metrics\History;
 
 abstract class AbstractRunner implements Runner
 {
     protected object $la;
     protected Agent $agent;
+    protected History $history;
     protected ReplayBufferInterface $experience;
     protected EventManagerInterface $eventManager;
     protected int $experienceSize;
@@ -38,6 +40,8 @@ abstract class AbstractRunner implements Runner
         }
         $this->eventManager = $eventManager;
         $agent->register($eventManager);
+        $this->history = new History();
+        $this->agent->setHistory($this->history);
     }
 
     protected function onStartEpisode() : void
@@ -137,8 +141,8 @@ abstract class AbstractRunner implements Runner
             $sumSteps += $episodeSteps;
         }
         $report = [];
-        $report['val_steps'] = $sumSteps/$episodes;
-        $report['val_reward'] = $sumReward/$episodes;
+        $report['valSteps'] = $sumSteps/$episodes;
+        $report['valReward'] = $sumReward/$episodes;
         return $report;
     }
 
@@ -146,7 +150,6 @@ abstract class AbstractRunner implements Runner
         string $title,
         int $iterNumber,
         int $numIterations,
-        int $evalInterval,
         int $startTime,
         int $maxDot,
         ) : void
@@ -159,10 +162,9 @@ abstract class AbstractRunner implements Runner
         }
         $iterNumber++;
         $elapsed = time() - $startTime;
-        $evalInterval = $numIterations;
-        if($evalInterval) {
+        if($numIterations) {
             $completion = $iterNumber / $numIterations;
-            $progressOfAgg = ((($iterNumber-1)%$evalInterval)+1) / $evalInterval;
+            $progressOfAgg = ((($iterNumber-1)%$numIterations)+1) / $numIterations;
             $estimated = $elapsed / $completion;
             $remaining = $estimated - $elapsed;
             $dot = (int)ceil($maxDot*$progressOfAgg);
