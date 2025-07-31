@@ -7,7 +7,7 @@ use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\A2C\A2C;
+use Rindow\RL\Agents\Agent\PPO\PPO;
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
@@ -25,16 +25,20 @@ $plt = new Plot(null,$mo);
 ##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
+
 $numIterations = 500000;#200000;#300;#1000;#
 $logInterval =   1000;  #10; #
 $evalInterval = 20000; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
-$batchSize = 256;#32;#
+$rolloutSteps = 2048;
+$batchSize = 64;#32;#
+$epochs = 10;
 $gamma = 0.99;
+$gaeLambda = 0.95;
 $valueLossWeight = 0.5;
-$entropyWeight = 0.0;#0.01;
-$fcLayers = [64,64];# [32,32];#
+$entropyWeight = 0.01;
+$fcLayers = [128,128];
 $learningRate = 7e-4;#1e-3;#1e-5;#
 
 $env = new CartPoleV1($la);
@@ -49,16 +53,18 @@ $numActions = $env->actionSpace()->n();
 $evalEnv = new CartPoleV1($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
-$dqnAgent = new A2C(
+$dqnAgent = new PPO(
     $la,
-    nn:$nn,stateShape:$stateShape,numActions:$numActions,fcLayers:$fcLayers,
-    batchSize:$batchSize,gamma:$gamma,
+    nn:$nn,stateShape:$stateShape,numActions:$numActions,
+    rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
+    fcLayers:$fcLayers,
+    gamma:$gamma,gaeLambda:$gaeLambda,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
     optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
 $dqnAgent->summary();
 
-$filename = __DIR__.'\\cartpole-a2c';
+$filename = __DIR__.'\\cartpole-ppo';
 if(!$dqnAgent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
     $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
@@ -68,7 +74,7 @@ if(!$dqnAgent->fileExists($filename)) {
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:2,
+        logInterval:$logInterval,verbose:1,
     );
     echo "\n";
     $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
@@ -109,5 +115,5 @@ for($i=0;$i<1;$i++) {
     echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$filename = $env->show(path:__DIR__.'\\cartpole-a2c-trained.gif');
+$filename = $env->show(path:__DIR__.'\\cartpole-ppo-trained.gif');
 echo "filename: {$filename}\n";

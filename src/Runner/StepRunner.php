@@ -32,7 +32,6 @@ class StepRunner extends AbstractRunner
         ?int $verbose=null) : array
     {
         $numIterations ??= 1000;
-        $numRolloutSteps ??= 1;
         $evalInterval ??= 100;
         $numEvalEpisodes ??= 0;
         $logInterval ??= 100;
@@ -41,8 +40,16 @@ class StepRunner extends AbstractRunner
         $agent = $this->agent;
         $metrics ??= [];
 
-        $history = $this->history;
-        $history->attract($metrics);
+        $numRolloutSteps = $this->agent->numRolloutSteps();
+        $numIterations = max($numIterations,$numRolloutSteps);
+        $evalInterval = max($evalInterval,$numRolloutSteps);
+        $logInterval = max($logInterval,$numRolloutSteps);
+        $evalInterval = $evalInterval - ($evalInterval % $numRolloutSteps);
+        $logInterval = $logInterval - ($logInterval % $numRolloutSteps);
+
+
+        $this->metrics->attract($metrics);
+        $metrics = $this->metrics;
         $isStepUpdate = $agent->isStepUpdate();
         $subStepLen = $agent->subStepLength();
         $startTime = time();
@@ -66,7 +73,7 @@ class StepRunner extends AbstractRunner
         $truncated = false;
 
         $epsilonMetric = false;
-        if($history->isAttracted('epsilon') &&
+        if($metrics->isAttracted('epsilon') &&
             method_exists($agent,'policy') ) {
             $policy = $agent->policy();
             if($policy && method_exists($policy,'getEpsilon')) {
@@ -94,8 +101,8 @@ class StepRunner extends AbstractRunner
 
                 // End Episode
                 if($done || $truncated) {
-                    $history->update('reward',$episodeReward);
-                    $history->update('steps',$episodeSteps);
+                    $metrics->update('reward',$episodeReward);
+                    $metrics->update('steps',$episodeSteps);
                     $this->onEndEpisode();
                     $episode++;
                     $episodeReward = 0.0;
@@ -118,10 +125,10 @@ class StepRunner extends AbstractRunner
             if(($step)%$logInterval==0) {
                 if($epsilonMetric) {
                     $epsilon = $policy->getEpsilon();
-                    $history->update('epsilon',$epsilon);
+                    $metrics->update('epsilon',$epsilon);
                 }
                 if($verbose>1) {
-                    $logText = $history->render(exclude:['valSteps','valRewards']);
+                    $logText = $metrics->render(exclude:['valSteps','valRewards']);
                     //$qLog = sprintf('%1.1f',$agent->getQValue($states));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logInterval*1000):0);
                     //$this->console("Step:".($step)." Ep:".($episode)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, q={$qLog}, {$msPerStep}ms/st\n");
@@ -135,18 +142,18 @@ class StepRunner extends AbstractRunner
             // Evaluation and Logging Metrics
             if(($step)%$evalInterval==0) {
                 if($numEvalEpisodes!=0) {
-                    $evalReport = $this->evaluation($this->evalEnv,$numEvalEpisodes,$metrics);
+                    $evalReport = $this->evaluation($this->evalEnv,$numEvalEpisodes);
                     if($verbose>0) {
-                        $history->update('valSteps',$evalReport['valSteps']);
-                        $history->update('valRewards',$evalReport['valRewards']);
-                        $logText = $history->render();
+                        $metrics->update('valSteps',$evalReport['valSteps']);
+                        $metrics->update('valRewards',$evalReport['valRewards']);
+                        $logText = $metrics->render();
                         $this->clearProgressBar();
                         $this->console("Step:".($step)." Ep:".($episode)." $logText\n");
                         $this->progressBar('Step',$step,$numIterations,$startTime,25);
                     }
                 }
-                $history->record();
-                $history->resetAll();
+                $metrics->record();
+                $metrics->resetAll();
             }
             if(($step)%$logInterval==0) {
                 $logStartTime = microtime(true);
@@ -158,6 +165,6 @@ class StepRunner extends AbstractRunner
                 }
             }
         }
-        return $history->history();
+        return $metrics->history();
     }
 }

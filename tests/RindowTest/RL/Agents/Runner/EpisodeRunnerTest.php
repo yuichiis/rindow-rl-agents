@@ -203,10 +203,12 @@ class TestAgent implements Agent
         return true;
     }
 
-    /**
-    * @return bool $stepUpdate
-    */
     public function subStepLength() : int
+    {
+        return 1;
+    }
+
+    public function numRolloutSteps() : int
     {
         return 1;
     }

@@ -1,10 +1,10 @@
 <?php
-namespace Rindow\RL\Agents\Metrics;
+namespace Rindow\RL\Agents\Util;
 
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Agents\History as HistoryInterface;
+use Rindow\RL\Agents\Metrics as MetricsInterface;
 
-class History implements HistoryInterface
+class Metrics implements MetricsInterface
 {
     protected array $defaults = [
         'epsilon' => ['label'=>'eps','format'=>'%5.3f'],

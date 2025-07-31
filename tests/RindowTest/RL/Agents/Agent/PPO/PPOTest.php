@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\PPOTest;
+namespace RindowTest\RL\Agents\Agent\PPO\PPOTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -9,9 +9,10 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Agent\A2C\A2C;
+use Rindow\RL\Agents\Agent\PPO\PPO;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Policy\Boltzmann;
+use Rindow\RL\Agents\Util\Metrics;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -42,7 +43,7 @@ class TestPolicy implements Policy
 }
 
 
-class A2CTest extends TestCase
+class PPOTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -76,7 +77,7 @@ class A2CTest extends TestCase
 
         $policy = new Boltzmann($la);
 
-        $agent = new A2C($la,
+        $agent = new PPO($la,
             policy:$policy,
             nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
         $states = [
@@ -97,10 +98,14 @@ class A2CTest extends TestCase
         $nn = $this->newBuilder($mo);
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $agent = new A2C($la,
-            batchSize:3,
-            nn:$nn, stateShape:[1], numActions:2, fcLayers:[100]
+        $agent = new PPO($la,
+            batchSize:3,epochs:4,rolloutSteps:3,
+            nn:$nn, stateShape:[1], numActions:2, fcLayers:[100],
+            normAdv:true,
         );
+        $metrics = new Metrics();
+        $agent->setMetrics($metrics);
+        $metrics->attract(['loss','entropy']);
         $mem = new ReplayBuffer($la,$maxsize=3);
         //[$state,$action,$nextState,$reward,$done,$info]
         $losses = [];
@@ -113,7 +118,7 @@ class A2CTest extends TestCase
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('A2C');
+        $plt->title('PPO');
         $plt->show();
         $this->assertTrue(true);
     }

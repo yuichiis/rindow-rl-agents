@@ -6,7 +6,7 @@ use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\History;
+use Rindow\RL\Agents\Metrics;
 use InvalidArgumentException;
 use LogicException;
 
@@ -16,7 +16,7 @@ abstract class AbstractAgent implements Agent
 
     protected object $la;
     protected ?Policy $policy;
-    protected ?History $history;
+    protected ?Metrics $metrics;
 
     public function __construct(object $la,
         ?Policy $policy=null, ?EventManager $eventManager=null)
@@ -38,14 +38,14 @@ abstract class AbstractAgent implements Agent
         return $this->policy;
     }
 
-    public function setHistory(History $history) : void
+    public function setMetrics(Metrics $metrics) : void
     {
-        $this->history = $history;
+        $this->metrics = $metrics;
     }
 
-    public function history() : History
+    public function metrics() : Metrics
     {
-        return $this->history;
+        return $this->metrics;
     }
 
     public function resetData()
@@ -151,5 +151,30 @@ abstract class AbstractAgent implements Agent
     //    $q = $la->max($qValues);
     //    return $q;
     //}
+
+    protected function standardize(NDArray $x, ?bool $ddof=null) : NDArray
+    {
+        $ddof ??= false;
+
+        $la = $this->la;
+
+        // baseline
+        $mean = $la->reduceMean($x,axis:0);
+        $baseX = $la->add($mean,$la->copy($x),alpha:-1.0,trans:true);
+
+        // std
+        if($ddof) {
+            $n = $x->size()-1;
+        } else {
+            $n = $x->size();
+        }
+        $variance = $la->scal(1/$n, $la->reduceSum($la->square($baseX),axis:0));
+        $stdDev = $la->sqrt($variance);
+
+        // standardize
+        $result = $la->multiply($la->reciprocal($stdDev,beta:1e-8),$baseX);
+
+        return $result;
+    }
 
 }

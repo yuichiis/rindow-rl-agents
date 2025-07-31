@@ -189,6 +189,11 @@ class A2C extends AbstractAgent
         return 1;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
     protected function estimator() : Estimator
     {
         return $this->model;
@@ -329,12 +334,12 @@ class A2C extends AbstractAgent
         $this->optimizer->update($this->trainableVariables,$grads);
 
         $loss = $K->scalar($loss);
-        if($this->history->isAttracted('loss')) {
-            $this->history->update('loss',$loss);
+        if($this->metrics->isAttracted('loss')) {
+            $this->metrics->update('loss',$loss);
         }
-        if($this->history->isAttracted('entropy')) {
+        if($this->metrics->isAttracted('entropy')) {
             $entropy = $K->scalar($entropy);
-            $this->history->update('entropy',$entropy);
+            $this->metrics->update('entropy',$entropy);
         }
         return $loss;
     }

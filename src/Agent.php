@@ -33,10 +33,9 @@ interface Agent
     */
     public function isStepUpdate() : bool;
 
-    /**
-    * @return bool $stepUpdate
-    */
     public function subStepLength() : int;
+
+    public function numRolloutSteps() : int;
 
     public function fileExists(string $filename) : bool;
 

@@ -1,7 +1,7 @@
 <?php
 namespace Rindow\RL\Agents;
 
-interface History
+interface Metrics
 {
     public function attract(array $metrics) : void;
     public function isAttracted(string $name) : bool;

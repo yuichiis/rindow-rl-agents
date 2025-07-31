@@ -225,6 +225,11 @@ class TestAgent implements Agent
         return 1;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
     public function fileExists(string $filename) : bool
     {}
 

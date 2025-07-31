@@ -17,7 +17,7 @@ use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use function Rindow\Math\Matrix\R;
 
-class A2C extends AbstractAgent
+class PPO extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
     protected float $gamma;
@@ -25,6 +25,7 @@ class A2C extends AbstractAgent
     protected float $valueLossWeight;
     protected float $entropyWeight;
     protected float $clipEpsilon;
+    protected bool $normAdv;
     //protected $rewardScaleFactor;
     protected array $stateShape;
     protected int $numActions;
@@ -54,6 +55,7 @@ class A2C extends AbstractAgent
         ?float $valueLossWeight=null,
         ?float $entropyWeight=null,
         ?float $clipEpsilon=null,
+        ?bool $normAdv=null,
         ?object $nn=null,
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
@@ -75,7 +77,7 @@ class A2C extends AbstractAgent
 
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
-        $batchSize ??= 32;
+        $batchSize ??= 64;
         $epochs ??= 10;
         $rolloutSteps ??= 2048;
         $gamma ??= 0.99;
@@ -83,6 +85,11 @@ class A2C extends AbstractAgent
         $valueLossWeight ??= 0.5;
         $entropyWeight ??= 0.0;
         $clipEpsilon ??= 0.2;
+        $normAdv ??= true;
+
+        if(($rolloutSteps % $batchSize) != 0) {
+            throw new InvalidArgumentException('rolloutSteps must be divisible by batchSize.');
+        }
         $nn ??= $network->builder();
         $optimizerOpts ??= ['lr'=>7e-4];
         $optimizer ??= $nn->optimizers->Adam(...$optimizerOpts);
@@ -99,6 +106,8 @@ class A2C extends AbstractAgent
         $this->gaeLambda = $gaeLambda;
         $this->valueLossWeight = $valueLossWeight;
         $this->entropyWeight = $entropyWeight;
+        $this->clipEpsilon = $clipEpsilon;
+        $this->normAdv = $normAdv;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
         $this->lossFunc = $lossFunc;
@@ -204,6 +213,11 @@ class A2C extends AbstractAgent
         return $this->rolloutSteps;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return $this->rolloutSteps;
+    }
+
     protected function estimator() : Estimator
     {
         return $this->model;
@@ -222,24 +236,38 @@ class A2C extends AbstractAgent
         NDArray $values,
         array $dones,
         float $gamma,
-        float $lambda_gae,
+        float $gaeLambda,
         ) : array
     {
+        $la = $this->la;
+
         $advantages = $la->zerosLike($rewards);
         $last_advantage = 0.0;
 
         $batchSize = count($rewards);
         for($t=$batchSize-1;$t>=0;$t--) {
             if($dones[$t]) {
-                $delta = $rewards[$t] - $values[$t];
+                $delta = $rewards[$t] - $values[$t][0];
+                //$delta = $la->axpy($values[$t],$la->copy($rewards[$t]),alpha:-1);
                 $last_advantage = $delta;
             } else {
-                $delta = $rewards[t] + $gamma * $values[$t+1] - $values[$t];
-                $last_advantage = $delta + $gamma * $lambda_gae * $last_advantage;
+                $delta = $rewards[$t] + $gamma * $values[$t+1][0] - $values[$t][0];
+                //$delta =  $la->axpy(
+                //    $la->axpy($values[$t+1],$la->copy($values[$t]),alpha:-$gamma),
+                //    $la->copy($rewards[$t]),
+                //    alpha:-1
+                //);
+                $last_advantage = $delta + $gamma * $gaeLambda * $last_advantage;
+                //$last_advantage = $la->axpy(
+                //    $last_advantage,
+                //    $delta,
+                //    alpha:($gamma * $gaeLambda),
+                //);
             }
             $advantages[$t] = $last_advantage;
         }
-        $returns = $advantages + $values[[0,$batchSize]];
+        // broadcast add
+        $returns = $la->add($advantages, $la->squeeze($values[[0,$batchSize]],axis:-1));
         return [$advantages, $returns];
     }
 
@@ -378,8 +406,9 @@ class A2C extends AbstractAgent
         NDArray $actions,
     ) : array
     {
+        $g = $this->g;
         $log_probs_all = $g->log($g->softmax($logits));
-        $selected_log_probs = $g->gatherb($log_probs_all, $actions, batchDims:1);
+        $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1);
 
         $probs = $g->softmax($logits);
         $entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
@@ -398,10 +427,12 @@ class A2C extends AbstractAgent
         $g  = $this->g;
         $K  = $nn->backend();
         $stateShape = $this->stateShape;
+        $batchSize = $this->batchSize;
+        $rolloutSteps = $this->rolloutSteps;
 
-        $states = $la->alloc(array_merge([$batchSize], $stateShape));
-        $rewards = $la->zeros($la->alloc([$batchSize]));
-        $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
+        $states = $la->alloc(array_merge([$rolloutSteps], $stateShape));
+        $rewards = $la->zeros($la->alloc([$rolloutSteps]));
+        $actions = $la->zeros($la->alloc([$rolloutSteps],NDArray::int32));
         $dones = [];
 
         // Rollout
@@ -435,27 +466,28 @@ class A2C extends AbstractAgent
         $experience->clear();
 
         $model = $this->model;
-        [$logitsOld, $valuesOld] = $model($states,false);
+        [$oldLogits, $oldValues] = $model($states,false);
         [$dmy, $nextValue] = $model($la->expandDims($nextState,0),false);
 
-        $valuesForGAE = $la->concat($logitsOld,$nextValue);
+        $valuesForGAE = $la->concat([$oldValues,$nextValue],axis:0);
 
         [$advantages, $returns] = $this->compute_advantages_and_returns(
             $rewards,
             $valuesForGAE,
             $dones,
             $this->gamma,
-            $this->lambda_gae,
+            $this->gaeLambda,
         );
 
-        if($this->standardize) {
+        if($this->normAdv) {
             // advantages = (advantages - mean(advantages)) / (std(advantages) + 1e-8)
-            $advantages = $la->multiply($la->add($la->reduceMean($advantages),$la->copy($advantages), alpha:-1), $la->reciprocal($la->std($advantages),1e-8));
+            //$advantages = $la->multiply($la->add($la->reduceMean($advantages),$la->copy($advantages), alpha:-1), $la->reciprocal($la->std($advantages),1e-8));
+            $advantages = $this->standardize($advantages);
         }
 
         #onehot_actions = tf.one_hot(actions, model.output[0].shape[1])
 
-        [$oldLogProbs, $dmy] = $this->log_prob_entropy($logits,$actions);
+        [$oldLogProbs, $dmy] = $this->log_prob_entropy($oldLogits,$actions);
 
         $valueLossWeight = $g->Variable($this->valueLossWeight);
         $entropyWeight = $g->Variable($this->entropyWeight);
@@ -469,26 +501,27 @@ class A2C extends AbstractAgent
         );
         $model = $this->model;
         $lossFunc = $this->lossFunc;
+        $ppo = $this;
         $training = $g->Variable(true);
         $loss = 0.0;
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
-                [$statesB, $actionsB, $oldLogProbsB, $advantagesB, $returnsB] = $batch;
+                [$statesB, $actionsB, $oldLogProbsB, $advantagesB, $returnsB] = $batch[0];
                 [$totalLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
                     use ($ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB,
-                        $valueLossWeight,$entropyWeight,$clipEpsilon)
+                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon)
                 {
                     [$newLogits, $newValues] = $model($statesB,$training);
-                    $newValues = $g->squeeze($newVlues);
+                    $newValues = $g->squeeze($newValues,axis:-1);
 
                     // policy loss
                     [$newLogProbs, $entropy] = $ppo->log_prob_entropy($newLogits,$actionsB);
-                    $ratio = $g->exp($g->sub($newLogProbs - $oldLogProbsB));
+                    $ratio = $g->exp($g->sub($newLogProbs,$oldLogProbsB));
                     $clippedRatio = $g->clipByValue($ratio, 1-$clipEpsilon, 1+$clipEpsilon);
                     $policyLoss = $g->scale(-1,
                         $g->minimum(
                             $g->mul($ratio,$advantagesB),
-                            $g->mul($clippedRatio,$advantageB),
+                            $g->mul($clippedRatio,$advantagesB),
                         ),
                     );
 
@@ -512,13 +545,13 @@ class A2C extends AbstractAgent
                 });
                 $grads = $tape->gradient($totalLoss,$this->trainableVariables);
                 $this->optimizer->update($this->trainableVariables,$grads);
-                $totalLoss = $K->scalar($totalLoss);
-                if($this->history->isAttracted('loss')) {
-                    $this->history->update('loss',$totalLoss);
+                $totalLoss = $K->scalar($la->reduceSum($totalLoss));
+                if($this->metrics->isAttracted('loss')) {
+                    $this->metrics->update('loss',$totalLoss);
                 }
-                if($this->history->isAttracted('entropy')) {
+                if($this->metrics->isAttracted('entropy')) {
                     $entropyLoss = $K->scalar($entropyLoss);
-                    $this->history->update('entropy',$entropyLoss);
+                    $this->metrics->update('entropy',$entropyLoss);
                 }
                 $loss += $totalLoss;
             }
