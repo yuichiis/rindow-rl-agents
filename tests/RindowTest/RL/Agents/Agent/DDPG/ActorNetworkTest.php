@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Network\ActorNetworkTest;
+namespace RindowTest\RL\Agents\Agent\DDPG\ActorNetworkTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

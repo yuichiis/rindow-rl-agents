@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DDPGTest;
+namespace RindowTest\RL\Agents\Agent\DDPG\DDPGTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

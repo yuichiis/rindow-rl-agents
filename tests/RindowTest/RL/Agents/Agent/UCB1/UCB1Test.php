@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\UCB1Test;
+namespace RindowTest\RL\Agents\Agent\UCB1\UCB1Test;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

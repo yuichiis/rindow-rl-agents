@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\A2C\A2CTest;
+namespace RindowTest\RL\Agents\Agent\PPOTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

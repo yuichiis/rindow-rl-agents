@@ -66,7 +66,7 @@ if(!$dqnAgent->fileExists($filename)) {
     //$driver->agent()->initialize();
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
-        metrics:['steps','reward','loss','entropy','valSteps','valReward'],
+        metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,verbose:1
     );
@@ -76,12 +76,12 @@ if(!$dqnAgent->fileExists($filename)) {
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
     $arts[] = $plt->plot($ep,$la->scal(200/max($history['loss']),$la->array($history['loss'])))[0];
     //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
-    $arts[] = $plt->plot($ep,$la->array($history['valReward']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
     #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
-    $plt->legend($arts,['reward','loss','valReward']);
+    $plt->legend($arts,['reward','loss','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
     $dqnAgent->saveWeightsToFile($filename);

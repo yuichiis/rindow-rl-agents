@@ -399,9 +399,6 @@ class A2C extends AbstractAgent
         $K  = $nn->backend();
         $stateShape = $this->stateShape;
 
-        $transition = $experience->last();
-        [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;  // done
-
         $states = $la->alloc(array_merge([$batchSize], $stateShape));
         $rewards = $la->zeros($la->alloc([$batchSize]));
         $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
@@ -477,7 +474,7 @@ class A2C extends AbstractAgent
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
                 [$statesB, $actionsB, $oldLogProbsB, $advantagesB, $returnsB] = $batch;
-                $totalLoss = $nn->with($tape=$g->GradientTape(),function() 
+                [$totalLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
                     use ($ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB,
                         $valueLossWeight,$entropyWeight,$clipEpsilon)
                 {
@@ -507,15 +504,23 @@ class A2C extends AbstractAgent
                         $policyLoss,
                         $g->add(
                             $g->scale($valueLossWeight, $valueLoss),
-                            $g->scale($entropyWeight, $entropy)
+                            $g->scale($entropyWeight, $entropyLoss)
                         )
                     );
 
-                    return $totalLoss;
+                    return [$totalLoss,$entropyLoss];
                 });
                 $grads = $tape->gradient($totalLoss,$this->trainableVariables);
                 $this->optimizer->update($this->trainableVariables,$grads);
-                $loss += $K->scalar($totalLoss);
+                $totalLoss = $K->scalar($totalLoss);
+                if($this->history->isAttracted('loss')) {
+                    $this->history->update('loss',$totalLoss);
+                }
+                if($this->history->isAttracted('entropy')) {
+                    $entropyLoss = $K->scalar($entropyLoss);
+                    $this->history->update('entropy',$entropyLoss);
+                }
+                $loss += $totalLoss;
             }
         }
 

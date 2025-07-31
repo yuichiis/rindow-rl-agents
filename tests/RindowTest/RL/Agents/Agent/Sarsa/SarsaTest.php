@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\SarsaTest;
+namespace RindowTest\RL\Agents\Agent\Sarsa\SarsaTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

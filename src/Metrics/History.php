@@ -12,7 +12,7 @@ class History implements HistoryInterface
         'reward' => ['label'=>'rw','format'=>'%1.1f'],
         'loss' => ['label'=>'loss','format'=>'%1.1f'],
         'valSteps' => ['label'=>'vSt','format'=>'%3.1f'],
-        'valReward' => ['label'=>'vRwd','format'=>'%3.1f'],
+        'valRewards' => ['label'=>'vRwd','format'=>'%3.1f'],
     ];
     protected array $metricValue = [];
     protected array $metricCount = [];

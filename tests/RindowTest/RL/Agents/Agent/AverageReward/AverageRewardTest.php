@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\AverageRewardTest;
+namespace RindowTest\RL\Agents\Agent\AverageReward\AverageRewardTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

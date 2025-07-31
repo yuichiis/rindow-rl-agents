@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Network\QNetworkTest;
+namespace RindowTest\RL\Agents\Agent\DQN\QNetworkTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

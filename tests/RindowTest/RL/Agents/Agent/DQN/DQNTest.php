@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DQNTest;
+namespace RindowTest\RL\Agents\Agent\DQN\DQNTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

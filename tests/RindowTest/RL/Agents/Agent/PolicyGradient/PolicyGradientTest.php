@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\PolicyGradientTest;
+namespace RindowTest\RL\Agents\Agent\PolicyGradient\PolicyGradientTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\QLearningTest;
+namespace RindowTest\RL\Agents\Agent\QLearning\QLearningTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;

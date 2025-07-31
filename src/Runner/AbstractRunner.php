@@ -125,9 +125,9 @@ abstract class AbstractRunner implements Runner
         $sumReward = $sumSteps = 0;
         for($episode=0;$episode<$episodes;$episode++) {
             [$states,$info] = $env->reset();
-            $states = $this->customState($env,$states,false,false,$info);
             $done = false;
             $truncated = false;
+            $states = $this->customState($env,$states,$done,$truncated,$info);
             $episodeSteps = 0;
             while(!($done || $truncated)) {
                 $action = $agent->action($states,training:false,info:$info);
@@ -142,7 +142,7 @@ abstract class AbstractRunner implements Runner
         }
         $report = [];
         $report['valSteps'] = $sumSteps/$episodes;
-        $report['valReward'] = $sumReward/$episodes;
+        $report['valRewards'] = $sumReward/$episodes;
         return $report;
     }
 
@@ -154,13 +154,12 @@ abstract class AbstractRunner implements Runner
         int $maxDot,
         ) : void
     {
-        if($iterNumber<0) {
-            $message = "\r{$title} 1/{$numIterations} ";
+        if($iterNumber<1) {
+            $message = "\r{$title} 0/{$numIterations} ";
             $this->console($message);
-            $this->lastConsoleOutputlength = strlen($message);
+            $this->lastConsoleOutput = $message;
             return;
         }
-        $iterNumber++;
         $elapsed = time() - $startTime;
         if($numIterations) {
             $completion = $iterNumber / $numIterations;
