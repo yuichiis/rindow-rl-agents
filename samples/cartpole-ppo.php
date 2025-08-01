@@ -74,7 +74,7 @@ if(!$dqnAgent->fileExists($filename)) {
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:1,
+        logInterval:$logInterval,verbose:2,
     );
     echo "\n";
     $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);

@@ -229,7 +229,7 @@ class PPO extends AbstractAgent
 
     /**
      * Computes Generalized Advantage Estimation (GAE).
-     * GAEとリターンを計算する
+     * GAEとリターンを計算する (変更なし)
      */
     protected function compute_advantages_and_returns(
         NDArray $rewards,
@@ -248,16 +248,157 @@ class PPO extends AbstractAgent
         for($t=$batchSize-1;$t>=0;$t--) {
             if($dones[$t]) {
                 $delta = $rewards[$t] - $values[$t][0];
+                //$delta = $la->axpy($values[$t],$la->copy($rewards[$t]),alpha:-1);
                 $last_advantage = $delta;
             } else {
                 $delta = $rewards[$t] + $gamma * $values[$t+1][0] - $values[$t][0];
+                //$delta =  $la->axpy(
+                //    $la->axpy($values[$t+1],$la->copy($values[$t]),alpha:-$gamma),
+                //    $la->copy($rewards[$t]),
+                //    alpha:-1
+                //);
                 $last_advantage = $delta + $gamma * $gaeLambda * $last_advantage;
+                //$last_advantage = $la->axpy(
+                //    $last_advantage,
+                //    $delta,
+                //    alpha:($gamma * $gaeLambda),
+                //);
             }
             $advantages[$t] = $last_advantage;
         }
         // broadcast add
         $returns = $la->add($advantages, $la->squeeze($values[[0,$batchSize]],axis:-1));
         return [$advantages, $returns];
+    }
+
+    protected function computeGAE(
+        NDArray $rewards, 
+        NDArray $values,
+        NDArray $next_values,
+        NDArray $dones,
+        float $gamma,
+        float $lambda_gae,
+        ) : NDArray
+    {
+        $advantages = $g->zerosLike($rewards);
+        $lastAdvantage = 0.0;
+        $batchSize = count($rewards);
+        for($t=$batchSize-1;$t>=0;$t--) {
+            $mask = 1.0 - $dones[$t];
+            $delta = $rewards[$t] + $gamma * $next_values[$t] * $mask - $values[$t];
+            $advantages[$t] = $delta + $gamma * $lambda_gae * $last_advantage * $mask;
+            $last_advantage = $advantages[$t];
+        }
+        return $advantages;
+    }
+
+    # === 正規分布関数 ===
+    /**
+     * 正規分布からサンプリング
+     */
+    protected function sample(
+        NDArray $logits,
+        ) : NDArray
+    {
+        $samples = $this->categorical($logits, num_samples:1);
+        return tf.squeeze($samples, axis:-1);
+    }
+
+    /**
+     *  正規分布の統計量を計算する。
+     *  Args:
+     *      mu (tf.Tensor): 平均
+     *      log_std (tf.Tensor): Logされた標準偏差
+     *      actions (tf.Tensor): 確率を計算したいアクション
+     *  Returns:
+     *      tuple[tf.Tensor, tf.Tensor]: (log_prob, entropy)
+     */
+    protected function calculate_normal_dist_stats(
+        NDArray $mu,
+        NDArray $log_std,
+        NDArray $actions,
+        ) : NDArray
+    {
+        $log_prob = (
+            -$log_std
+            -0.5 * $g->log(2.0 * $g->pi())
+            -0.5 * $g->square(($actions - $mu) / $g->exp($log_std))
+        );
+        $log_prob = $g->reduce_sum($log_prob, axis:1, keepdims:true);
+        $entropy = 0.5 + 0.5 * $g->log(2 * $g->pi()) + $log_std;
+        #entropy = $g->reduce_sum($entropy, axis:1, keepdims:true);
+
+        return [$log_prob, $entropy];
+    }
+
+    # --- 1. 公式の sparse_softmax_cross_entropy_with_logits を使用 ---
+    protected function sparse_softmax_cross_entropy_with_logits(
+        NDArray $labels,
+        NDArray $logits,
+    ) : NDArray
+    {
+        # --- 2. 基本的な関数で手動で再現 ---
+        
+        # Step 1: Log-Sum-Expの計算 (数値的安定性のための重要なステップ)
+        # tf.reduce_logsumexpは log(sum(exp(logits))) を安定して計算する関数
+        #$log_sum_exp = $g->reduce_logsumexp($logits, axis:-1);
+        
+        # Step 2: 正解ラベルをワンホットベクトルに変換
+        # labels: [0, 2, 3] -> one_hot_labels: [[1,0,0,0], [0,0,1,0], [0,0,0,1]]
+        $one_hot_labels = $g->oneHot($labels, numClass:4);
+        
+        # Step 3: 正解クラスのlogit値を取得
+        # l_i,y_i に相当する部分を計算
+        # one_hot_labelsとlogitsの要素ごとの積を取り、和を計算することで実現
+        $correct_class_logits = $g->reduceSum($g->mul($one_hot_labels,$logits), axis:-1);
+        return $correct_class_logits;
+
+        ## Step 4: 最終的な損失を計算
+        ## L_i = log_sum_exp - l_i,y_i
+        #$loss = $log_sum_exp - $correct_class_logits;
+        #return $loss;
+    }
+
+    /**
+     *   対数確率(log_prob)とエントロピーを計算します。
+     *   tfp.distributions.Categorical の log_prob() と entropy() の代替です。
+     * 
+     *   Args:
+     *     logits: 形状が [batch_size, num_actions] のテンソル。
+     *             分布の正規化されていない対数確率。
+     *     actions: 形状が [batch_size] のテンソル。
+     *              対数確率を計算したいアクション（カテゴリのインデックス）。
+     * 
+     *   Returns:
+     *     log_prob: 形状が [batch_size] のテンソル。各アクションの対数確率。
+     *     entropy: 形状が [batch_size] のテンソル。各分布のエントロピー。
+     */
+    protected function log_prob_entropy_analog(
+        NDArray $logits,
+        NDArray $actions,
+        ) : array
+    {
+        # --- 1. 対数確率 (Log Probability) の計算 ---
+        # tf.nn.sparse_softmax_cross_entropy_with_logits は、指定されたaction (labels)
+        # の「負の」対数確率を効率的かつ数値的に安定して計算します。
+        # log_prob = -cross_entropy
+        $negative_log_prob = $this->sparse_softmax_cross_entropy_with_logits(
+            labels:actions, logits:logits);
+        $log_prob = $g->scale(-1,$negative_log_prob);
+      
+        # --- 2. エントロピー (Entropy) の計算 ---
+        # エントロピーの定義: H(p) = - Σ_i p_i * log(p_i)
+        # 数値的安定性のため、softmaxとlog_softmaxをそれぞれ使用します。
+        $probs = $g->softmax($logits, axis:-1);
+        $log_probs = $g->log($g->softmax($logits, axis:-1));
+        
+        # ゼロ確率の項 (p_i=0) は log(p_i) が-infになりますが、
+        # p_i * log(p_i) は 0 * -inf = NaN となります。
+        # しかし、softmaxの結果が厳密に0になることはまれで、
+        # TFの計算では適切に処理されるため、通常は問題ありません。
+        $entropy = $g->scale(-1,$g->reduceSum($g->mul($probs,$log_probs), axis:-1));
+      
+        return [$log_prob, $entropy];
     }
 
     protected function standardize(NDArray $x, ?bool $ddof=null) : NDArray
@@ -365,10 +506,13 @@ class PPO extends AbstractAgent
 
         if($this->normAdv) {
             // advantages = (advantages - mean(advantages)) / (std(advantages) + 1e-8)
+            //$advantages = $la->multiply($la->add($la->reduceMean($advantages),$la->copy($advantages), alpha:-1), $la->reciprocal($la->std($advantages),1e-8));
             $advantages = $this->standardize($advantages);
         }
 
-        [$oldLogProbs, $oldValues] = $this->log_prob_entropy($oldLogits,$actions);
+        #onehot_actions = tf.one_hot(actions, model.output[0].shape[1])
+
+        [$oldLogProbs, $dmy] = $this->log_prob_entropy($oldLogits,$actions);
 
         $valueLossWeight = $g->Variable($this->valueLossWeight);
         $entropyWeight = $g->Variable($this->entropyWeight);
@@ -376,7 +520,7 @@ class PPO extends AbstractAgent
 
         // gradients
         $dataset = $nn->data->NDArrayDataset(
-            [$states, $actions, $oldLogProbs, $oldValues, $advantages, $returns, ],
+            [$states, $actions, $oldLogProbs, $advantages, $returns],
             batch_size:$batchSize,
             shuffle:true,
         );
@@ -387,9 +531,9 @@ class PPO extends AbstractAgent
         $loss = 0.0;
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
-                [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
+                [$statesB, $actionsB, $oldLogProbsB, $advantagesB, $returnsB] = $batch[0];
                 [$totalLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
-                    use ($ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB,$oldValuesB,
+                    use ($ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB,
                         $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon)
                 {
                     [$newLogits, $newValues] = $model($statesB,$training);
@@ -399,34 +543,16 @@ class PPO extends AbstractAgent
                     [$newLogProbs, $entropy] = $ppo->log_prob_entropy($newLogits,$actionsB);
                     $ratio = $g->exp($g->sub($newLogProbs,$oldLogProbsB));
                     $clippedRatio = $g->clipByValue($ratio, 1-$clipEpsilon, 1+$clipEpsilon);
-                    $policyLoss = $g->reduceMean($g->scale(-1,
+                    $policyLoss = $g->scale(-1,
                         $g->minimum(
                             $g->mul($ratio,$advantagesB),
                             $g->mul($clippedRatio,$advantagesB),
                         ),
-                    ));
+                    );
 
                     // Value loss
                     // SB3ではMSE固定
-                    //$valueLoss = $lossFunc($returnsB,$newValues);
-
-                    // Value loss (Clippingを適用したバージョン)
-                    // 1. まず、元のValue Lossを計算
-                    $valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
-                    // 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
-                    $valuesClipped = $g->add(
-                        $oldValuesB,
-                        $g->clipByValue(
-                            $g->sub($newValues, $oldValuesB),
-                            -$clipEpsilon,
-                            $clipEpsilon
-                        )
-                    );
-                    // 3. Clipされた価値でのLossを計算
-                    $valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
-
-                    // 4. 2つのLossのうち、大きい方を選択し、平均を取る
-                    $valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));                    
+                    $valueLoss = $lossFunc($returnsB,$newValues);
 
                     // policy entropy
                     $entropyLoss = $g->scale(-1,$g->reduceMean($entropy));
@@ -444,7 +570,7 @@ class PPO extends AbstractAgent
                 });
                 $grads = $tape->gradient($totalLoss,$this->trainableVariables);
                 $this->optimizer->update($this->trainableVariables,$grads);
-                $totalLoss = $K->scalar($totalLoss);
+                $totalLoss = $K->scalar($la->reduceSum($totalLoss));
                 if($this->metrics->isAttracted('loss')) {
                     $this->metrics->update('loss',$totalLoss);
                 }
