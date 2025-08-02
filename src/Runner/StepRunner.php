@@ -60,7 +60,6 @@ class StepRunner extends AbstractRunner
         }
         // verbose=2 log
         $logStartTime = microtime(true);
-        $logCountLoss = $logSumLoss = $logEpisodeCount = 0;
 
         // start episode
         $this->onStartEpisode();
@@ -152,6 +151,7 @@ class StepRunner extends AbstractRunner
                         $this->progressBar('Step',$step,$numIterations,$startTime,25);
                     }
                 }
+                $metrics->update('iter',$step);
                 $metrics->record();
                 $metrics->resetAll();
             }

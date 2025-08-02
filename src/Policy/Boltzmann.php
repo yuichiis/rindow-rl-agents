@@ -68,11 +68,14 @@ class Boltzmann extends AbstractPolicy
             $actionPolicies = $la->pow($actionPolicies,$this->tau);
         }
         //echo "tau:".implode(',',$actionValues->toArray()[0])."\n";
-        #echo "Policies:".$la->toString($actionPolicies,format:'%.3f')."\n";
+        //echo "Policies:".$la->toString($actionPolicies,format:'%.3f')."\n";
+
         $actionPolicies = $la->minimum($la->maximum($actionPolicies,$this->min),$this->max);
-        //if(!$this->fromLogits) {
-        //    $actionPolicies = $la->log($actionPolicies);
-        //}
+
+        if(!$this->fromLogits) {
+            $actionPolicies = $la->log($actionPolicies);
+        }
+
         if($masks) {
             //echo "masking\n";
             $la->masking($masks,$actionPolicies,fill:-INF);

@@ -26,9 +26,9 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 500000;#200000;#300;#1000;#
-$logInterval =   1000;  #10; #
-$evalInterval = 20000; #10; #
+$numIterations = 70000;# 100000;#300;#1000;#
+$logInterval =   null; #1000;  #10; #
+$evalInterval =  1000; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
 $rolloutSteps = 2048;
@@ -39,7 +39,7 @@ $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.01;
 $fcLayers = [128,128];
-$learningRate = 7e-4;#1e-3;#1e-5;#
+$learningRate = 3e-4;#1e-3;#1e-5;#
 
 $env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
@@ -74,10 +74,9 @@ if(!$dqnAgent->fileExists($filename)) {
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:2,
+        logInterval:$logInterval,verbose:1,
     );
-    echo "\n";
-    $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
+    $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
     $arts[] = $plt->plot($ep,$la->scal(200/max($history['loss']),$la->array($history['loss'])))[0];

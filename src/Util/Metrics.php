@@ -90,6 +90,7 @@ class Metrics implements MetricsInterface
 
     public function record() : void
     {
+        $this->add('iter',$this->result('iter'));
         foreach($this->attracted as $name => $attr) {
             $this->add($name,$this->result($name));
         }

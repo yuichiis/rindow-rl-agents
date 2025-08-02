@@ -34,11 +34,8 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             $fcLayers = [128, 128];
         }
         if($activation===null) {
-            $activation = 'tanh'; #'relu';
+            $activation = 'relu';
         }
-        //if($actionActivation===null) {
-        //    $actionActivation = 'softmax';
-        //}
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
             convLayers:$convLayers,
