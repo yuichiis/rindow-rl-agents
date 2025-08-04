@@ -79,4 +79,23 @@ abstract class AbstractPolicy implements Policy
         }
         return $actions;
     }
+
+
+    /**
+     * 正規分布からサンプリング
+     */
+    protected function calcNormalDistSampled(
+        NDArray $mean,      // (batchSize,numActions)
+        NDArray $logStd,    // (numActions)
+        ) : NDArray
+    {
+        $la = $this->la;
+        $std = $la->exp($la->copy($logStd));
+        $actionNormalized = $la->axpy(
+            $mean,
+            $la->multiply($std,$la->randomNormal($mean->shape(),0.0, 1.0)),
+        );
+        return $actionNormalized;
+    }
+
 }   

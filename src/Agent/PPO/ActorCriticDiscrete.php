@@ -6,7 +6,6 @@ use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Estimator\AbstractNetwork;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Layer\Layer;
-use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Builder\Builder;
 
 class ActorCriticNetwork extends AbstractNetwork implements Estimator
@@ -14,9 +13,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
     protected int $numActions;
     protected Model $stateLayers;
     protected Layer $actionLayer;
-    protected Variable $logStd;
     protected Layer $criticLayer;
-    protected bool $continuous;
 
     public function __construct(
         object $la,
@@ -26,16 +23,12 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         ?string $activation=null, ?string $kernelInitializer=null,
         ?string $actionActivation=null, ?string $actionKernelInitializer=null,
         ?string $criticKernelInitializer=null,
-        ?bool $continuous=null,
         )
     {
-        $continuous ??= false;
-
         parent::__construct($builder,$stateShape);
         $this->la = $la;
         $nn = $this->builder();
         $this->numActions = $numActions;
-        $this->continuous = $continuous;
 
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [128, 128];
@@ -58,13 +51,6 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             kernel_initializer:$actionKernelInitializer,
             name:'Action'
         );
-        if($continuous) {
-            $this->logStd = $nn->gradient()->Variable(
-                $la->zeros($la->alloc([$numActions])),
-                name:'logStd',
-                trainable:true,
-            );
-        }
         $this->criticLayer = $nn->layers()->Dense(
             1,
             kernel_initializer:$criticKernelInitializer,
@@ -78,19 +64,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         $state_out = $this->stateLayers->forward($state_input,$training);
         $action_out = $this->actionLayer->forward($state_out,$training);
         $critic_out = $this->criticLayer->forward($state_out,$training);
-
-        if(!$this->continuous) {
-            return [            // discrete outputs
-                $action_out,    // mean
-                $critic_out
-            ];
-        } else {
-            return [            // continuous outputs
-                $action_out,    // mu acions (batchsize,numActions)
-                $critic_out,    // values    (batchsize,1)
-                $this->logStd   // log(std)  (numActions)
-            ];
-        }
+        return [$action_out,$critic_out];
     }
 
     /**
@@ -109,19 +83,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             $states = $la->astype($states,NDArray::float32);
         }
 
-        if(!$this->continuous) {
-            [$action_out,$critic_out] = $this->forward($states,false);
-        } else {
-            [$action_out,$critic_out, $logStd] = $this->forward($states,false);
-        }
+        [$action_out,$critic_out] = $this->forward($states,false);
         return $action_out;
-    }
-
-    public function getLogStd() : NDArray
-    {
-        if(!$this->continuous) {
-            throw new LogicException("It can't get LogStd if this model is for discrete actions.");
-        }
-        return $this->logStd;
     }
 }

@@ -13,6 +13,7 @@ use Rindow\RL\Agents\Agent\PPO\PPO;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Util\Metrics;
+use Rindow\RL\Gym\Core\Spaces\Box;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -113,6 +114,62 @@ class PPOTest extends TestCase
             $mem->add([$la->array([0]),$la->array(1,dtype:NDArray::int32),$la->array([1]),1,false,false,[]]);
             $mem->add([$la->array([1]),$la->array(1,dtype:NDArray::int32),$la->array([2]),1,false,false,[]]);
             $mem->add([$la->array([2]),$la->array(0,dtype:NDArray::int32),$la->array([3]),1,false,false,[]]);
+            $losses[] = $agent->update($mem);
+        }
+        $losses = $la->array($losses);
+        $plt->plot($losses);
+        $plt->legend(['losses']);
+        $plt->title('PPO');
+        $plt->show();
+        $this->assertTrue(true);
+    }
+
+    public function testActionContinuous()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        $nn = $this->newBuilder($mo);
+
+        $actionSpace = new Box($la,high:1,low:-1,shape:[2]);
+        $agent = new PPO($la,
+            continuous:true,
+            nn:$nn, stateShape:[1], actionSpace:$actionSpace, fcLayers:[100],
+        );
+        $states = [
+            $la->array([0]),
+            $la->array([1]),
+        ];
+        for($i=0;$i<100;$i++) {
+            $actions = $agent->action($states,training:true);
+            $this->assertEquals([2,2],$actions->shape());
+            $this->assertEquals(NDArray::float32,$actions->dtype());
+        }
+    }
+
+    public function testUpdateContinuous()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        $nn = $this->newBuilder($mo);
+        $plt = new Plot($this->getPlotConfig(),$mo);
+
+        $actionSpace = new Box($la,high:1,low:-1,shape:[2]);
+        $agent = new PPO($la,
+            batchSize:3,epochs:4,rolloutSteps:3,
+            nn:$nn, stateShape:[1], actionSpace:$actionSpace, fcLayers:[100],
+            normAdv:true,
+            continuous:true,
+        );
+        $metrics = new Metrics();
+        $agent->setMetrics($metrics);
+        $metrics->attract(['loss','entropy']);
+        $mem = new ReplayBuffer($la,$maxsize=3);
+        //[$state,$action,$nextState,$reward,$done,$info]
+        $losses = [];
+        for($i=0;$i<100;$i++) {
+            $mem->add([$la->array([0]),$la->array([1,1]),$la->array([1]),1,false,false,[]]);
+            $mem->add([$la->array([1]),$la->array([1,1]),$la->array([2]),1,false,false,[]]);
+            $mem->add([$la->array([2]),$la->array([0,0]),$la->array([3]),1,false,false,[]]);
             $losses[] = $agent->update($mem);
         }
         $losses = $la->array($losses);

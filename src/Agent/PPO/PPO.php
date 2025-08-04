@@ -2,6 +2,8 @@
 namespace Rindow\RL\Agents\Agent\PPO;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Spaces\Box;
+use Interop\Polite\AI\RL\Spaces\Space;
 use InvalidArgumentException;
 use LogicException;
 use Rindow\NeuralNetworks\Builder\Builder;
@@ -15,11 +17,13 @@ use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\RL\Agents\Policy\Boltzmann;
+use Rindow\RL\Agents\Policy\NormalDistribution;
 use function Rindow\Math\Matrix\R;
 
 class PPO extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
+    protected bool $continuous;
     protected float $gamma;
     protected float $gaeLambda;
     protected float $valueLossWeight;
@@ -45,6 +49,7 @@ class PPO extends AbstractAgent
 
     public function __construct(
         object $la,
+        ?bool $continuous=null,
         ?Network $network=null,
         ?Policy $policy=null,
         ?int $batchSize=null,
@@ -63,16 +68,34 @@ class PPO extends AbstractAgent
         ?array $stateShape=null, ?int $numActions=null,
         ?array $fcLayers=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
+        ?Space $actionSpace=null,
         ?EventManager $eventManager=null,
         ?object $mo = null
         )
     {
-        $network ??= $this->buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers);
+        $continuous ??= false;
+        if($continuous) {
+            if($actionSpace===null) {
+                throw new InvalidArgumentException('actionSpace must be specified for continuous actions.');
+            }
+            if(!($actionSpace instanceof Box)) {
+                throw new InvalidArgumentException('type of actionSpace must be Box for continuous actions.');
+            }
+            $shape = $actionSpace->shape();
+            if(count($shape)!==1) {
+                throw new InvalidArgumentException('shape of actionSpace must be rank 1.');
+            }
+            $policyMin ??= $actionSpace->low();
+            $policyMax ??= $actionSpace->high();
+            $numActions ??= $shape[0];
+        }
+
+        $network ??= $this->buildNetwork($la,$nn,$continuous,$stateShape,$numActions,$fcLayers);
         if(!($network instanceof Estimator)) {
             echo get_class($network);
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
-        $policy ??= $this->buildPolicy($la,$policyTau,$policyMin,$policyMax);
+        $policy ??= $this->buildPolicy($la,$continuous,$policyTau,$policyMin,$policyMax);
         parent::__construct($la,$policy,$eventManager);
 
         $stateShape ??= $network->stateShape();
@@ -97,6 +120,7 @@ class PPO extends AbstractAgent
         //$lossFunc ??= $nn->losses()->Huber();
         $lossFunc ??= $nn->losses()->MeanSquaredError();
 
+        $this->continuous = $continuous;
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
@@ -120,7 +144,14 @@ class PPO extends AbstractAgent
         $this->initialize();
     }
 
-    protected function buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers)
+    protected function buildNetwork(
+        object $la,
+        ?Builder $nn,
+        bool $continuous,
+        ?array $stateShape,
+        ?int $numActions,
+        ?array $fcLayers,
+        )
     {
         if($nn===null) {
             throw new InvalidArgumentException('nn must be specifed.');
@@ -132,7 +163,7 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException('numActions must be specifed.');
         }
         $network = new ActorCriticNetwork($la,$nn,
-            $stateShape, $numActions,fcLayers:$fcLayers);
+            $stateShape, $numActions,fcLayers:$fcLayers,continuous:$continuous);
         return $network;
     }
 
@@ -152,21 +183,38 @@ class PPO extends AbstractAgent
 
     protected function buildPolicy(
         object $la,
+        bool $continuous,
         ?float $tau=null,
-        ?float $min=null,
-        ?float $max=null,
+        float|NDArray|null $min=null,
+        float|NDArray|null $max=null,
         )
     {
-        $tau ??= 1.0;
-        $min ??= -INF;
-        $max ??= INF;
-        $policy = new Boltzmann(
-            $la,
-            $tau,
-            $min,
-            $max,
-            fromLogits:true,
-        );
+        if(!$continuous) {
+            // Discrete Actions
+            $tau ??= 1.0;
+            $min ??= -INF;
+            $max ??= INF;
+            $policy = new Boltzmann(
+                $la,
+                $tau,
+                $min,
+                $max,
+                fromLogits:true,
+            );
+        } else {
+            // Continuous Actions
+            if(!($min instanceof NDArray)) {
+                throw new InvalidArgumentException("policyMin must be NDArray for continuous actions.");
+            }
+            if(!($max instanceof NDArray)) {
+                throw new InvalidArgumentException("policyMax must be NDArray for continuous actions.");
+            }
+            $policy = new NormalDistribution(
+                $la,
+                $min,
+                $max,
+            );
+        }
         return $policy;
     }
 
@@ -320,6 +368,40 @@ class PPO extends AbstractAgent
         return [$selected_log_probs, $entropy];
     }
 
+    /**
+     *  Args:
+     *      mean (tf.Tensor):    平均
+     *      logStd (tf.Tensor):  Logされた標準偏差
+     *      value (tf.Tensor):   確率を計算したい値
+     *  Returns:
+     *      tuple[tf.Tensor, tf.Tensor]: (log_prob, entropy)
+     */
+    protected function log_prob_entropy_continuous(
+        NDArray $mean,      // (batchSize,numActions)
+        NDArray $logStd,    // (numActions)
+        NDArray $value,     // (batchSize,numActions)
+    ) : array
+    {
+        $g = $this->g;
+        // log_prob =
+        //      -log_std
+        //      -0.5 * np.log(2.0 * np.pi))
+        //      -0.5 * tf.square((actions - mu) / tf.math.exp(log_std))
+        $logProb = $g->sub(
+            $g->sub(
+                $g->scale(-0.5,$g->square($g->div($g->sub($value,$mean),$g->exp($logStd)))),
+                $logStd
+            ),
+            $g->constant(-0.5 * log(2.0 * pi()))
+        );
+        $logProb = $g->reduceSum($logProb, axis:1, keepdims:true);
+        $entropy = $g->add($g->constant(0.5 + 0.5*log(2*pi())), $logStd);
+        #entropy = tf.reduce_sum(entropy, axis=1, keepdims=True)
+
+        return [$logProb, $entropy];
+    }
+
+
     public function update($experience) : float
     {
         if($experience->size()<$this->rolloutSteps) {
@@ -333,10 +415,15 @@ class PPO extends AbstractAgent
         $stateShape = $this->stateShape;
         $batchSize = $this->batchSize;
         $rolloutSteps = $this->rolloutSteps;
+        $numActions = $this->numActions;
 
         $states = $la->alloc(array_merge([$rolloutSteps], $stateShape));
         $rewards = $la->zeros($la->alloc([$rolloutSteps]));
-        $actions = $la->zeros($la->alloc([$rolloutSteps],NDArray::int32));
+        if(!$this->continuous) {
+            $actions = $la->zeros($la->alloc([$rolloutSteps],NDArray::int32));
+        } else {
+            $actions = $la->zeros($la->alloc([$rolloutSteps,$numActions]));
+        }
         $dones = [];
 
         // Rollout
@@ -359,10 +446,17 @@ class PPO extends AbstractAgent
                 throw new LogicException("action must be NDArray.");
             }
             // actions
-            if($action->ndim()!==0) {
-                throw new LogicException("shape of action must be scalar ndarray.");
+            if(!$this->continuous) {
+                if($action->ndim()!==0) {
+                    throw new LogicException("shape of action must be scalar ndarray.");
+                }
+                $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
+            } else {
+                if($action->ndim()!==1) {
+                    throw new LogicException("shape of action must be rank 1 ndarray.");
+                }
+                $la->copy($action,$actions[$i]);
             }
-            $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
             $dones[$i] = ($done || $truncated);
             $rewards[$i] = $reward;
             $i++;
@@ -370,7 +464,12 @@ class PPO extends AbstractAgent
         $experience->clear();
 
         $model = $this->model;
-        [$oldLogits, $oldValues] = $model($states,false);
+        if(!$this->continuous) {
+            [$oldLogits, $oldValues] = $model($states,false);
+        } else {
+            [$oldMeans, $oldValues, $oldLogStd] = $model($states,false);
+        }
+
         [$dmy, $nextValue] = $model($la->expandDims($nextState,0),false);
 
         $valuesForGAE = $la->concat([$oldValues,$nextValue],axis:0);
@@ -388,17 +487,21 @@ class PPO extends AbstractAgent
             $advantages = $this->standardize($advantages);
         }
 
-        [$oldLogProbs, $dmy] = $this->log_prob_entropy($oldLogits,$actions);
+        if(!$this->continuous) {
+            [$oldLogProbs, $dmy] = $this->log_prob_entropy($oldLogits,$actions);
+        } else {
+            [$oldLogProbs, $dmy] = $this->log_prob_entropy_continuous($oldMeans,$oldLogStd,$actions);
+        }
 
         $valueLossWeight = $g->Variable($this->valueLossWeight);
         $entropyWeight = $g->Variable($this->entropyWeight);
         $clipEpsilon = $this->clipEpsilon;
 
         // gradients
-        $oldValues = $la->squeeze($oldValues,axis:-1);
+        //$oldValues = $la->squeeze($oldValues,axis:-1);
 
         $dataset = $nn->data->NDArrayDataset(
-            [$states, $actions, $oldLogProbs, $oldValues, $advantages, $returns],
+            [$states, $actions, $oldLogProbs, /*$oldValues,*/ $advantages, $returns],
             batch_size:$batchSize,
             shuffle:true,
         );
@@ -409,16 +512,25 @@ class PPO extends AbstractAgent
         $loss = 0.0;
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
-                [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
+                [$statesB, $actionsB, $oldLogProbsB, /*$oldValuesB,*/ $advantagesB, $returnsB] = $batch[0];
                 [$totalLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
-                    use ($la,$ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB,$oldValuesB,
-                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon)
+                    use ($la,$ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB, 
+                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon) // $oldValuesB
                 {
-                    [$newLogits, $newValues] = $model($statesB,$training);
-                    $newValues = $g->squeeze($newValues,axis:-1);
-
+                    if(!$ppo->continuous) {
+                        [$newLogits, $newValues] = $model($statesB,$training);
+                        $newValues = $g->squeeze($newValues,axis:-1);
+                        [$newLogProbs, $entropy] = $ppo->log_prob_entropy($newLogits,$actionsB);
+                    } else {
+                        [$newMeans, $newValues, $newLogStd] = $model($statesB,$training);
+                        $newValues = $g->squeeze($newValues,axis:-1);
+                        [$newLogProbs, $entropy] = $ppo->log_prob_entropy_continuous($newMeans,$newLogStd,$actionsB);
+                        // 多次元行動も考慮し、log_probとentropyをスカラーに変換
+                        $newLogProbs = $g->reduceSum($newLogProbs, axis:-1);
+                        $oldLogProbsB = $g->reduceSum($oldLogProbsB, axis:-1);
+                        $entropy = $g->reduceSum($entropy, axis:-1);
+                    }
                     // policy loss
-                    [$newLogProbs, $entropy] = $ppo->log_prob_entropy($newLogits,$actionsB);
                     $ratio = $g->exp($g->sub($newLogProbs,$oldLogProbsB));
                     $clippedRatio = $g->clipByValue($ratio, 1-$clipEpsilon, 1+$clipEpsilon);
                     $policyLoss = $g->scale(-1,$g->reduceMean(
