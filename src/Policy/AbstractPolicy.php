@@ -90,10 +90,10 @@ abstract class AbstractPolicy implements Policy
         ) : NDArray
     {
         $la = $this->la;
-        $std = $la->exp($la->copy($logStd));
+        $stableStd = $la->increment($la->exp($la->copy($logStd)),beta:1e-8);
         $actionNormalized = $la->axpy(
             $mean,
-            $la->multiply($std,$la->randomNormal($mean->shape(),0.0, 1.0)),
+            $la->multiply($stableStd,$la->randomNormal($mean->shape(),0.0, 1.0)),
         );
         return $actionNormalized;
     }

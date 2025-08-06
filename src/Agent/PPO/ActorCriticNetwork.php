@@ -85,10 +85,12 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
                 $critic_out
             ];
         } else {
+            $g = $this->builder->gradient();
+            $logstd_out = $g->clipByValue($this->logStd,-20,2);
             return [            // continuous outputs
                 $action_out,    // mu acions (batchsize,numActions)
                 $critic_out,    // values    (batchsize,1)
-                $this->logStd   // log(std)  (numActions)
+                $logstd_out, // log(std)  (numActions)
             ];
         }
     }
@@ -122,6 +124,8 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         if(!$this->continuous) {
             throw new LogicException("It can't get LogStd if this model is for discrete actions.");
         }
-        return $this->logStd;
+        $g = $this->builder->gradient();
+        $logstd_out = $g->clipByValue($this->logStd,-20,2);
+        return $logstd_out;
     }
 }

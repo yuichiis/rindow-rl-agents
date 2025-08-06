@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
+use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\PPO\PPO;
 
@@ -26,45 +26,50 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 70000;# 100000;#300;#1000;#
+$numIterations = 150000;# 100000;#300;#1000;#
 $logInterval =   null; #1000;  #10; #
-$evalInterval =  1000; #10; #
+$evalInterval =  1024; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
-$rolloutSteps = 2048;
-$batchSize = 64;#32;#
+$rolloutSteps = 1024; # 2048;
+$batchSize = 64;# 32;#
 $epochs = 10;
-$gamma = 0.99;
+$gamma = 0.9;# 0.9;# 0.99;
 $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.01;
 $fcLayers = [128,128];
-$learningRate = 3e-4;#1e-3;#1e-5;#
+$learningRate = 3e-4;# 1e-3;#1e-5;#
+$clipnorm = 0.5;
+$clipEpsilon = 0.2;
+$normAdv = true;
 
-$env = new CartPoleV1($la);
+$env = new PendulumV1($la);
 $stateShape = $env->observationSpace()->shape();
-$numActions = $env->actionSpace()->n();
+$actionSpace = $env->actionSpace();
 
 //$env->reset();
 //$env->render();
 //$env->show();
 //exit();
 
-$evalEnv = new CartPoleV1($la);
+$evalEnv = new PendulumV1($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $agent = new PPO(
     $la,
-    nn:$nn,stateShape:$stateShape,numActions:$numActions,
+    continuous:true,
+    nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
     rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
     fcLayers:$fcLayers,
     gamma:$gamma,gaeLambda:$gaeLambda,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
-    optimizerOpts:['lr'=>$learningRate],mo:$mo,
+    clipEpsilon:$clipEpsilon,normAdv:$normAdv,
+    optimizerOpts:['lr'=>$learningRate],clipnorm:$clipnorm,mo:$mo,
 );
 $agent->summary();
 
-$filename = __DIR__.'\\cartpole-ppo';
+$filename = __DIR__.'\\pendulum-ppo';
 if(!$agent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
     $driver = new StepRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
@@ -72,7 +77,7 @@ if(!$agent->fileExists($filename)) {
     //$driver->agent()->initialize();
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
-        metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
+        metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,verbose:1,
     );
@@ -114,5 +119,5 @@ for($i=0;$i<1;$i++) {
     echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$filename = $env->show(path:__DIR__.'\\cartpole-ppo-trained.gif');
+$filename = $env->show(path:__DIR__.'\\pendulum-ppo-trained.gif');
 echo "filename: {$filename}\n";

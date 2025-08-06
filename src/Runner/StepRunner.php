@@ -165,6 +165,7 @@ class StepRunner extends AbstractRunner
                 }
             }
         }
+        $this->console("\n");
         return $metrics->history();
     }
 }

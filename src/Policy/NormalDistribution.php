@@ -37,22 +37,19 @@ class NormalDistribution extends AbstractPolicy
     public function actions(Estimator $estimator, NDArray $states, bool $training, ?NDArray $masks) : NDArray
     {
         $la = $this->la;
-        if(!$training) {
-            return $estimator->getActionValues($states);
+
+        $actions = $estimator->getActionValues($states);
+        if($training) {
+            $logStd = $estimator->getLogStd();
+            $actions = $this->calcNormalDistSampled($actions,$logStd);
         }
 
-        // get values
-        $actionMeans = $estimator->getActionValues($states);
-        $logStd = $estimator->getLogStd();
-        $actions = $this->calcNormalDistSampled($actionMeans,$logStd);
-
-        if($this->min) {
-            $actions = $la->maximum($actions,$this->min);
+        if($this->min!==null) {
+            $actions = $la->maximum($la->copy($actions),$this->min);
         }
-        if($this->max) {
-            $actions = $la->minimum($actions,$this->max);
+        if($this->max!==null) {
+            $actions = $la->minimum($la->copy($actions),$this->max);
         }
-
         return $actions;
     }
 }

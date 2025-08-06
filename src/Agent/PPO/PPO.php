@@ -36,6 +36,7 @@ class PPO extends AbstractAgent
     protected Loss $lossFunc;
     protected Optimizer $optimizer;
     protected array $optimizerOpts;
+    protected ?float $clipnorm;
     protected ?object $mo;
     protected Builder $nn;
     protected object $g;
@@ -64,6 +65,7 @@ class PPO extends AbstractAgent
         ?object $nn=null,
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
+        ?float $clipnorm=null,
         ?Loss $lossFunc=null,
         ?array $stateShape=null, ?int $numActions=null,
         ?array $fcLayers=null,
@@ -111,7 +113,7 @@ class PPO extends AbstractAgent
         $normAdv ??= true;
 
         if(($rolloutSteps % $batchSize) != 0) {
-            throw new InvalidArgumentException('rolloutSteps must be divisible by batchSize.');
+            throw new InvalidArgumentException("rolloutSteps must be divisible by batchSize.: rolloutSteps=$rolloutSteps, batchSize=$batchSize");
         }
         $nn ??= $network->builder();
         $optimizerOpts ??= ['lr'=>3e-4];
@@ -134,6 +136,7 @@ class PPO extends AbstractAgent
         $this->normAdv = $normAdv;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
+        $this->clipnorm = $clipnorm;
         $this->lossFunc = $lossFunc;
         $this->mo = $mo;
         $this->nn = $nn;
@@ -365,6 +368,9 @@ class PPO extends AbstractAgent
         $probs = $g->softmax($logits);  // (batchsize,numActions)
         $entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
 
+        echo "log_probs=".$this->la->shapeToString($selected_log_probs->shape())."\n";
+        echo "entropy=".$this->la->shapeToString($entropy->shape())."\n";
+
         return [$selected_log_probs, $entropy];
     }
 
@@ -384,21 +390,42 @@ class PPO extends AbstractAgent
     {
         $g = $this->g;
         // log_prob =
+        //      -0.5 * tf.square((actions - mu) / tf.math.exp(log_std))
         //      -log_std
         //      -0.5 * np.log(2.0 * np.pi))
-        //      -0.5 * tf.square((actions - mu) / tf.math.exp(log_std))
+        $stableStd = $g->add($g->exp($logStd),$g->constant(1e-8));
         $logProb = $g->sub(
             $g->sub(
-                $g->scale(-0.5,$g->square($g->div($g->sub($value,$mean),$g->exp($logStd)))),
-                $logStd
+                $g->scale(-0.5,$g->square($g->div($g->sub($value,$mean),$stableStd))),
+                $g->log($stableStd)
             ),
-            $g->constant(-0.5 * log(2.0 * pi()))
+            $g->constant(0.5 * log(2.0 * pi()))
         );
         $logProb = $g->reduceSum($logProb, axis:1, keepdims:true);
-        $entropy = $g->add($g->constant(0.5 + 0.5*log(2*pi())), $logStd);
-        #entropy = tf.reduce_sum(entropy, axis=1, keepdims=True)
+        $entropy = $g->add($g->constant(0.5 + 0.5*log(2*pi())), $g->log($stableStd));
+        $entropy = $g->expandDims($entropy,axis:0); // 他のテンソルとの互換性のため
 
-        return [$logProb, $entropy];
+        return [$logProb, $entropy]; // logProb=(batchsize,numActions), entropy=(1,numActions)
+    }
+
+    protected function clip_by_global_norm(array $arrayList, float $clipNorm) : array
+    {
+        $la = $this->la;
+
+        // global_norm = sqrt(sum([l2norm(t)**2 for t in t_list]))
+        $globalNorm = 0.0;
+        foreach($arrayList as $array) {
+            $globalNorm += ($la->nrm2($array)**2);
+        }
+        $globalNorm = sqrt($globalNorm);
+
+        //t_list[i] * clip_norm / max(global_norm, clip_norm)
+        $scale = $clipNorm/max($globalNorm,$clipNorm);
+        $newList = [];
+        foreach($arrayList as $array) {
+            $newList[] = $la->scal($scale,$la->copy($array));
+        }
+        return $newList;
     }
 
 
@@ -498,10 +525,10 @@ class PPO extends AbstractAgent
         $clipEpsilon = $this->clipEpsilon;
 
         // gradients
-        //$oldValues = $la->squeeze($oldValues,axis:-1);
+        $oldValues = $la->squeeze($oldValues,axis:-1);
 
         $dataset = $nn->data->NDArrayDataset(
-            [$states, $actions, $oldLogProbs, /*$oldValues,*/ $advantages, $returns],
+            [$states, $actions, $oldLogProbs, $oldValues, $advantages, $returns],
             batch_size:$batchSize,
             shuffle:true,
         );
@@ -512,10 +539,10 @@ class PPO extends AbstractAgent
         $loss = 0.0;
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
-                [$statesB, $actionsB, $oldLogProbsB, /*$oldValuesB,*/ $advantagesB, $returnsB] = $batch[0];
-                [$totalLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
+                [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
+                [$totalLoss,$policyLoss,$valueLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
                     use ($la,$ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB, 
-                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon) // $oldValuesB
+                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon,$oldValuesB) 
                 {
                     if(!$ppo->continuous) {
                         [$newLogits, $newValues] = $model($statesB,$training);
@@ -530,7 +557,7 @@ class PPO extends AbstractAgent
                         $oldLogProbsB = $g->reduceSum($oldLogProbsB, axis:-1);
                         $entropy = $g->reduceSum($entropy, axis:-1);
                     }
-                    // policy loss
+                    // policy loss (Actor Loss)
                     $ratio = $g->exp($g->sub($newLogProbs,$oldLogProbsB));
                     $clippedRatio = $g->clipByValue($ratio, 1-$clipEpsilon, 1+$clipEpsilon);
                     $policyLoss = $g->scale(-1,$g->reduceMean(
@@ -540,31 +567,35 @@ class PPO extends AbstractAgent
                         ),
                     ));
 
-                    // Value loss
-                    // SB3ではMSE固定
-                    $valueLoss = $lossFunc($returnsB,$newValues);
+                    //// Value loss (Critic Loss)
+                    //// SB3ではMSE固定
+                    ////$valueLoss = $lossFunc($returnsB,$newValues);
                     //$valueLoss = $g->reduceMean($g->square($g->sub($returnsB,$newValues)));
 
-                    //// Value loss (Clippingを適用したバージョン)
-                    //// 1. まず、元のValue Lossを計算
-                    //$valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
-                    //// 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
-                    //$valuesClipped = $g->add(
-                    //    $oldValuesB,
-                    //    $g->clipByValue(
-                    //        $g->sub($newValues, $oldValuesB),
-                    //        -$clipEpsilon,
-                    //        $clipEpsilon
-                    //    )
-                    //);
-                    //// 3. Clipされた価値でのLossを計算
-                    //$valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
-                    //// 4. 2つのLossのうち、大きい方を選択し、平均を取る
-                    //$valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));                    
+                    // Value loss (Clippingを適用したバージョン)
+                    // 1. まず、元のValue Lossを計算
+                    $valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
+                    // 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
+                    $valuesClipped = $g->add(
+                        $oldValuesB,
+                        $g->clipByValue(
+                            $g->sub($newValues, $oldValuesB),
+                            -$clipEpsilon,
+                            $clipEpsilon
+                        )
+                    );
+                    // 3. Clipされた価値でのLossを計算
+                    $valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
+                    // 4. 2つのLossのうち、大きい方を選択し、平均を取る
+                    $valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));                    
 
                     // policy entropy
                     $entropyLoss = $g->scale(-1,$g->reduceMean($entropy));
 
+                    #echo "actor=".$la->toString($policyLoss,format:'%+3.3f').
+                    #    ",critic=".$la->toString($valueLoss,format:'%7.1f').
+                    #    ",entropy=".$la->toString($entropyLoss,format:'%+3.3f').
+                    #    "\n";
                     // total loss
                     $totalLoss = $g->add(
                         $policyLoss,
@@ -574,18 +605,69 @@ class PPO extends AbstractAgent
                         )
                     );
                     #echo $policyLoss->toArray().",".$valueLoss->toArray().",".$entropyLoss->toArray()."\n";
+                    if($la->scalar($policyLoss)>10.0) {
+                        echo "actionsB=".$la->toString($actionsB)."\n";
+                        echo "newMeans=".$la->toString($newMeans)."\n";
+                        echo "oldLogProbsB=".$la->toString($oldLogProbsB)."\n";
+                        echo "newLogProbs=".$la->toString($newLogProbs)."\n";
+                        echo "ratio=".$la->toString($ratio)."\n";
+                        echo "clippedRatio=".$la->toString($clippedRatio)."\n";
+                        echo "advantagesB=".$la->toString($advantagesB)."\n";
+                        echo "min(actionsB)=".$la->min($actionsB)."\n";
+                        echo "max(actionsB)=".$la->max($actionsB)."\n";
+                        echo "min(newMeans)=".$la->min($newMeans)."\n";
+                        echo "max(newMeans)=".$la->max($newMeans)."\n";
+                        echo "min(ratio)=".$la->min($ratio)."\n";
+                        echo "max(ratio)=".$la->max($ratio)."\n";
+                        echo "min(clippedRatio)=".$la->min($clippedRatio)."\n";
+                        echo "max(clippedRatio)=".$la->max($clippedRatio)."\n";
+                        $i = $la->imin($ratio);
+                        echo "argMin(ratio)=".$i."\n";
+                        echo "actionsB[$i][0]=".$actionsB[$i][0]."\n";
+                        echo "newMeans[$i][0]=".$newMeans[$i][0]."\n";
+                        echo "oldLogProbsB[$i]=".$oldLogProbsB[$i]."\n";
+                        echo "newLogProbs[$i]=".$newLogProbs[$i]."\n";
+                        echo "advantagesB[$i]=".$advantagesB[$i]."\n";
+                        echo "ratio[$i]=".$ratio[$i]."\n";
+                        echo "clippedRatio[$i]=".$clippedRatio[$i]."\n";
+                        $i = $la->imax($ratio);
+                        echo "argMax(ratio)=".$i."\n";
+                        echo "actionsB[$i][0]=".$actionsB[$i][0]."\n";
+                        echo "newMeans[$i][0]=".$newMeans[$i][0]."\n";
+                        echo "oldLogProbsB[$i]=".$oldLogProbsB[$i]."\n";
+                        echo "newLogProbs[$i]=".$newLogProbs[$i]."\n";
+                        echo "advantagesB[$i]=".$advantagesB[$i]."\n";
+                        echo "ratio[$i]=".$ratio[$i]."\n";
+                        echo "clippedRatio[$i]=".$clippedRatio[$i]."\n";
+                    }
 
-                    return [$totalLoss,$entropyLoss];
+                    return [$totalLoss,$policyLoss,$valueLoss,$entropyLoss];
                 });
                 $grads = $tape->gradient($totalLoss,$this->trainableVariables);
+                if($this->clipnorm!==null) {
+                    $grads = $this->clip_by_global_norm($grads,$this->clipnorm);
+                }
                 $this->optimizer->update($this->trainableVariables,$grads);
                 $totalLoss = $K->scalar($totalLoss);
                 if($this->metrics->isAttracted('loss')) {
                     $this->metrics->update('loss',$totalLoss);
                 }
+                if($this->metrics->isAttracted('Ploss')) {
+                    $policyLoss = $K->scalar($policyLoss);
+                    $this->metrics->update('Ploss',$policyLoss);
+                }
+                if($this->metrics->isAttracted('Vloss')) {
+                    $valueLoss = $K->scalar($valueLoss);
+                    $this->metrics->update('Vloss',$valueLoss);
+                }
                 if($this->metrics->isAttracted('entropy')) {
                     $entropyLoss = $K->scalar($entropyLoss);
                     $this->metrics->update('entropy',$entropyLoss);
+                }
+                if($this->metrics->isAttracted('entropy')) {
+                    $std = $la->reduceMean($la->exp($la->copy($this->model->getLogStd())));
+                    $std = $la->scalar($std);
+                    $this->metrics->update('std',$std);
                 }
                 $loss += $totalLoss;
             }
