@@ -26,7 +26,8 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 150000;# 100000;#300;#1000;#
+$numIterations = 300000;# 100000;#300;#1000;#
+$targetScore = null; #-250;
 $logInterval =   null; #1000;  #10; #
 $evalInterval =  1024; #10; #
 $numEvalEpisodes = 10;
@@ -71,27 +72,32 @@ $agent->summary();
 
 $filename = __DIR__.'\\pendulum-ppo';
 if(!$agent->fileExists($filename)) {
-    //$driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
+    //$driver = new EpisodeRunner($la,$env,$agent,,experienceSize:$maxExperienceSize);
     $driver = new StepRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
+    $driver->metrics()->format('reward','%7.1f');
+    $driver->metrics()->format('Ploss','%+5.2e');
+    $driver->metrics()->format('Vloss','%6.1f');
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:1,
+        logInterval:$logInterval,targetScore:$targetScore,verbose:1,
     );
     $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['loss']),$la->array($history['loss'])))[0];
+    $arts[] = $plt->plot($ep,$la->scal(200/max($history['Ploss']),$la->array($history['Ploss'])))[0];
+    $arts[] = $plt->plot($ep,$la->scal(200/max($history['Vloss']),$la->array($history['Vloss'])))[0];
+    $arts[] = $plt->plot($ep,$la->scal(200/max($history['entropy']),$la->array($history['entropy'])))[0];
     //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
     #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
-    $plt->legend($arts,['reward','loss','valRewards']);
+    $plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
     $agent->saveWeightsToFile($filename);
@@ -101,7 +107,7 @@ if(!$agent->fileExists($filename)) {
 
 
 echo "Creating demo animation.\n";
-for($i=0;$i<1;$i++) {
+for($i=0;$i<5;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
@@ -109,8 +115,9 @@ for($i=0;$i<1;$i++) {
     $testReward = 0;
     $testSteps = 0;
     while(!($done||$truncated)) {
-        $action = $agent->action($state,training:false,info:$info);
-        [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        //$action = $agent->action($state,training:false,info:$info);
+        //[$state,$reward,$done,$truncated,$info] = $env->step($action);
+        [$state,$reward,$done,$truncated,$info] = $agent->step($env,$testSteps,$state,training:false,info:$info);
         $testReward += $reward;
         $testSteps++;
         $env->render();

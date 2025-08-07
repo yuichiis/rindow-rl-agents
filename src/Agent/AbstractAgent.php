@@ -2,11 +2,14 @@
 namespace Rindow\RL\Agents\Agent;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Metrics;
+use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 use InvalidArgumentException;
 use LogicException;
 
@@ -16,13 +19,25 @@ abstract class AbstractAgent implements Agent
 
     protected object $la;
     protected ?Policy $policy;
+    protected int $experienceSize;
+    protected ReplayBufferInterface $experience;
+    protected mixed $customRewardFunction=null;
+    protected mixed $customStateFunction=null;
     protected ?Metrics $metrics;
 
-    public function __construct(object $la,
-        ?Policy $policy=null, ?EventManager $eventManager=null)
+    public function __construct(
+        object $la,
+        ?Policy $policy=null,
+        ?int $experienceSize=null,
+        ?ReplayBufferInterface $replayBuffer=null,
+        )
     {
+        $experienceSize ??= 10000;
         $this->la = $la;
         $this->policy = $policy;
+        $this->experienceSize = $experienceSize;
+        $replayBuffer ??= new ReplayBuffer($this->la,$this->experienceSize);
+        $this->experience = $replayBuffer;
     }
 
     public function register(?EventManager $eventManager=null) : void
@@ -38,6 +53,11 @@ abstract class AbstractAgent implements Agent
         return $this->policy;
     }
 
+    public function experience() : ReplayBufferInterface
+    {
+        return $this->experience;
+    }
+
     public function setMetrics(Metrics $metrics) : void
     {
         $this->metrics = $metrics;
@@ -51,6 +71,50 @@ abstract class AbstractAgent implements Agent
     public function resetData()
     {
         throw new LogicException('unsuported operation');
+    }
+
+    public function setCustomRewardFunction(callable $func) : void
+    {
+        $this->customRewardFunction = $func;
+    }
+
+    public function setCustomStateFunction(callable $func) : void
+    {
+        $this->customStateFunction = $func;
+    }
+
+    protected function customReward(
+        Env $env,
+        int $stepCount,
+        NDArray $states,
+        NDArray $action,
+        NDArray $nextStates,
+        float $reward,
+        bool $done,
+        bool $truncated,
+        ?array $info,
+        ) : float
+    {
+        $func = $this->customRewardFunction;
+        if($func===null) {
+            return $reward;
+        }
+        return $func($env,$stepCount,$states,$action,$nextStates,$reward,$done,$truncated,$info);
+    }
+
+    protected function customState(
+        Env $env,
+        NDArray $states,
+        bool $done,
+        bool $truncated,
+        ?array $info,
+        ) : NDArray
+    {
+        $func = $this->customStateFunction;
+        if($func===null) {
+            return $states;
+        }
+        return $func($env,$states,$done,$truncated,$info);
     }
 
     public function atleast2d(mixed $states) : NDArray

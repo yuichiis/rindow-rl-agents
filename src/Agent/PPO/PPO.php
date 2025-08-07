@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent\PPO;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\AI\RL\Spaces\Box;
 use Interop\Polite\AI\RL\Spaces\Space;
+use Interop\Polite\AI\RL\Environment as Env;
 use InvalidArgumentException;
 use LogicException;
 use Rindow\NeuralNetworks\Builder\Builder;
@@ -15,6 +16,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
+use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Policy\NormalDistribution;
@@ -47,6 +49,8 @@ class PPO extends AbstractAgent
     protected int $batchSize;
     protected int $epochs;
     protected int $rolloutSteps;
+    protected NDArray $actionMin;
+    protected NDArray $actionMax;
 
     public function __construct(
         object $la,
@@ -71,7 +75,9 @@ class PPO extends AbstractAgent
         ?array $fcLayers=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
         ?Space $actionSpace=null,
+        ?int $experienceSize=null,
         ?EventManager $eventManager=null,
+        ?ReplayBuffer $replayBuffer=null,
         ?object $mo = null
         )
     {
@@ -98,7 +104,7 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
         $policy ??= $this->buildPolicy($la,$continuous,$policyTau,$policyMin,$policyMax);
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,policy:$policy,experienceSize:$experienceSize,replayBuffer:$replayBuffer);
 
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
@@ -116,7 +122,9 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException("rolloutSteps must be divisible by batchSize.: rolloutSteps=$rolloutSteps, batchSize=$batchSize");
         }
         $nn ??= $network->builder();
-        $optimizerOpts ??= ['lr'=>3e-4];
+        $optimizerOpts ??= [];
+        $optimizerOpts['lr'] ??= 3e-4;
+        $optimizerOpts['epsilon'] ??= 1e-8;
         $optimizer ??= $nn->optimizers->Adam(...$optimizerOpts);
         //$optimizer ??= $nn->optimizers->RMSprop(...$optimizerOpts);
         //$lossFunc ??= $nn->losses()->Huber();
@@ -166,7 +174,10 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException('numActions must be specifed.');
         }
         $network = new ActorCriticNetwork($la,$nn,
-            $stateShape, $numActions,fcLayers:$fcLayers,continuous:$continuous);
+            $stateShape, $numActions,fcLayers:$fcLayers,continuous:$continuous,
+            actionKernelInitializer:'he_normal',
+            criticKernelInitializer:'he_normal',
+        );
         return $network;
     }
 
@@ -214,9 +225,9 @@ class PPO extends AbstractAgent
             }
             $policy = new NormalDistribution(
                 $la,
-                $min,
-                $max,
             );
+            $this->actionMin = $min;
+            $this->actionMax = $max;
         }
         return $policy;
     }
@@ -282,7 +293,7 @@ class PPO extends AbstractAgent
      * Computes Generalized Advantage Estimation (GAE).
      * GAEとリターンを計算する
      */
-    protected function compute_advantages_and_returns(
+    public function compute_advantages_and_returns(
         NDArray $rewards, // (rolloutSteps)
         NDArray $values,  // (rolloutSteps+1,1)
         array $dones,
@@ -321,7 +332,7 @@ class PPO extends AbstractAgent
             }
             $la->copy($last_advantage,$advantages[$t]);
         }
-        $returns = $la->axpy($values[R(0,$rolloutSteps)], $advantages);
+        $returns = $la->axpy($values[R(0,$rolloutSteps)], $la->copy($advantages));
 
         $advantages = $la->squeeze($advantages,axis:-1);    // (rolloutSteps)
         $returns = $la->squeeze($returns,axis:-1);          // (rolloutSteps)
@@ -329,7 +340,7 @@ class PPO extends AbstractAgent
         return [$advantages, $returns];
     }
 
-    protected function standardize(
+    public function standardize(
         NDArray $x,         // (rolloutSteps)
         ?bool $ddof=null
         ) : NDArray
@@ -368,9 +379,6 @@ class PPO extends AbstractAgent
         $probs = $g->softmax($logits);  // (batchsize,numActions)
         $entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
 
-        echo "log_probs=".$this->la->shapeToString($selected_log_probs->shape())."\n";
-        echo "entropy=".$this->la->shapeToString($entropy->shape())."\n";
-
         return [$selected_log_probs, $entropy];
     }
 
@@ -403,7 +411,7 @@ class PPO extends AbstractAgent
         );
         $logProb = $g->reduceSum($logProb, axis:1, keepdims:true);
         $entropy = $g->add($g->constant(0.5 + 0.5*log(2*pi())), $g->log($stableStd));
-        $entropy = $g->expandDims($entropy,axis:0); // 他のテンソルとの互換性のため
+        $entropy = $g->add($g->zerosLike($mean),$entropy); // 他のテンソルとの互換性のため
 
         return [$logProb, $entropy]; // logProb=(batchsize,numActions), entropy=(1,numActions)
     }
@@ -428,9 +436,45 @@ class PPO extends AbstractAgent
         return $newList;
     }
 
-
-    public function update($experience) : float
+    public function reset(Env $env) : array
     {
+        [$states,$info] = $env->reset();
+        $states = $this->customState($env,$states,false,false,$info);
+        return [$states,$info];
+    }
+
+    public function step(
+        Env $env,
+        int $episodeSteps,
+        NDArray $states,
+        ?bool $training=null,
+        ?array $info=null,
+        ) : array
+    {
+        $la = $this->la;
+        $training ??= false;
+        $actions = $this->action($states,training:$training,info:$info);
+        $orignalActions = $actions;
+        if($this->continuous) {
+            if($this->actionMin!==null) {
+                $actions = $la->maximum($la->copy($actions),$this->actionMin);
+            }
+            if($this->actionMax!==null) {
+                $actions = $la->minimum($la->copy($actions),$this->actionMax);
+            }
+        }
+        [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
+        $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
+        $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$info);
+        if($training) {
+            $this->experience->add([$states,$orignalActions,$nextState,$reward,$done,$truncated,$info]);
+        }
+        return [$nextState,$reward,$done,$truncated,$info];
+    }
+
+    public function update(mixed $experience=null) : float
+    {
+        $experience ??= $this->experience;
         if($experience->size()<$this->rolloutSteps) {
             return 0.0;
         }
@@ -520,8 +564,10 @@ class PPO extends AbstractAgent
             [$oldLogProbs, $dmy] = $this->log_prob_entropy_continuous($oldMeans,$oldLogStd,$actions);
         }
 
-        $valueLossWeight = $g->Variable($this->valueLossWeight);
-        $entropyWeight = $g->Variable($this->entropyWeight);
+        //$valueLossWeight = $g->Variable($this->valueLossWeight);
+        //$entropyWeight = $g->Variable($this->entropyWeight);
+        $valueLossWeight = $this->valueLossWeight;
+        $entropyWeight = $this->entropyWeight;
         $clipEpsilon = $this->clipEpsilon;
 
         // gradients
@@ -567,27 +613,27 @@ class PPO extends AbstractAgent
                         ),
                     ));
 
-                    //// Value loss (Critic Loss)
-                    //// SB3ではMSE固定
-                    ////$valueLoss = $lossFunc($returnsB,$newValues);
-                    //$valueLoss = $g->reduceMean($g->square($g->sub($returnsB,$newValues)));
+                    // Value loss (Critic Loss)
+                    // SB3ではMSE固定
+                    //$valueLoss = $lossFunc($returnsB,$newValues);
+                    $valueLoss = $g->reduceMean($g->square($g->sub($returnsB,$newValues)));
 
-                    // Value loss (Clippingを適用したバージョン)
-                    // 1. まず、元のValue Lossを計算
-                    $valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
-                    // 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
-                    $valuesClipped = $g->add(
-                        $oldValuesB,
-                        $g->clipByValue(
-                            $g->sub($newValues, $oldValuesB),
-                            -$clipEpsilon,
-                            $clipEpsilon
-                        )
-                    );
-                    // 3. Clipされた価値でのLossを計算
-                    $valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
-                    // 4. 2つのLossのうち、大きい方を選択し、平均を取る
-                    $valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));                    
+                    //// Value loss (Clippingを適用したバージョン)
+                    //// 1. まず、元のValue Lossを計算
+                    //$valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
+                    //// 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
+                    //$valuesClipped = $g->add(
+                    //    $oldValuesB,
+                    //    $g->clipByValue(
+                    //        $g->sub($newValues, $oldValuesB),
+                    //        -$clipEpsilon,
+                    //        $clipEpsilon
+                    //    )
+                    //);    
+                    //// 3. Clipされた価値でのLossを計算
+                    //$valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
+                    //// 4. 2つのLossのうち、大きい方を選択し、平均を取る
+                    //$valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));                    
 
                     // policy entropy
                     $entropyLoss = $g->scale(-1,$g->reduceMean($entropy));
@@ -605,42 +651,6 @@ class PPO extends AbstractAgent
                         )
                     );
                     #echo $policyLoss->toArray().",".$valueLoss->toArray().",".$entropyLoss->toArray()."\n";
-                    if($la->scalar($policyLoss)>10.0) {
-                        echo "actionsB=".$la->toString($actionsB)."\n";
-                        echo "newMeans=".$la->toString($newMeans)."\n";
-                        echo "oldLogProbsB=".$la->toString($oldLogProbsB)."\n";
-                        echo "newLogProbs=".$la->toString($newLogProbs)."\n";
-                        echo "ratio=".$la->toString($ratio)."\n";
-                        echo "clippedRatio=".$la->toString($clippedRatio)."\n";
-                        echo "advantagesB=".$la->toString($advantagesB)."\n";
-                        echo "min(actionsB)=".$la->min($actionsB)."\n";
-                        echo "max(actionsB)=".$la->max($actionsB)."\n";
-                        echo "min(newMeans)=".$la->min($newMeans)."\n";
-                        echo "max(newMeans)=".$la->max($newMeans)."\n";
-                        echo "min(ratio)=".$la->min($ratio)."\n";
-                        echo "max(ratio)=".$la->max($ratio)."\n";
-                        echo "min(clippedRatio)=".$la->min($clippedRatio)."\n";
-                        echo "max(clippedRatio)=".$la->max($clippedRatio)."\n";
-                        $i = $la->imin($ratio);
-                        echo "argMin(ratio)=".$i."\n";
-                        echo "actionsB[$i][0]=".$actionsB[$i][0]."\n";
-                        echo "newMeans[$i][0]=".$newMeans[$i][0]."\n";
-                        echo "oldLogProbsB[$i]=".$oldLogProbsB[$i]."\n";
-                        echo "newLogProbs[$i]=".$newLogProbs[$i]."\n";
-                        echo "advantagesB[$i]=".$advantagesB[$i]."\n";
-                        echo "ratio[$i]=".$ratio[$i]."\n";
-                        echo "clippedRatio[$i]=".$clippedRatio[$i]."\n";
-                        $i = $la->imax($ratio);
-                        echo "argMax(ratio)=".$i."\n";
-                        echo "actionsB[$i][0]=".$actionsB[$i][0]."\n";
-                        echo "newMeans[$i][0]=".$newMeans[$i][0]."\n";
-                        echo "oldLogProbsB[$i]=".$oldLogProbsB[$i]."\n";
-                        echo "newLogProbs[$i]=".$newLogProbs[$i]."\n";
-                        echo "advantagesB[$i]=".$advantagesB[$i]."\n";
-                        echo "ratio[$i]=".$ratio[$i]."\n";
-                        echo "clippedRatio[$i]=".$clippedRatio[$i]."\n";
-                    }
-
                     return [$totalLoss,$policyLoss,$valueLoss,$entropyLoss];
                 });
                 $grads = $tape->gradient($totalLoss,$this->trainableVariables);

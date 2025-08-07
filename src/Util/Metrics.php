@@ -67,6 +67,16 @@ class Metrics implements MetricsInterface
         $result = $this->metricValue[$name] / $this->metricCount[$name];
         return $result;
     }
+
+    public function format(string $name, string $format, ?string $label=null) : void
+    {
+        $this->defaults[$name]['format'] = $format;
+        if($label===null) {
+            $this->defaults[$name]['label'] ??= $name;
+        } else {
+            $this->defaults[$name]['label'] = $label;
+        }
+    }
     
     public function reset(string $name) : void
     {

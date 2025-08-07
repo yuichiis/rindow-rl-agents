@@ -17,25 +17,25 @@ abstract class AbstractRunner implements Runner
     protected object $la;
     protected Agent $agent;
     protected MetricsInterface $metrics;
-    protected ReplayBufferInterface $experience;
+    //protected ReplayBufferInterface $experience;
     protected EventManagerInterface $eventManager;
-    protected int $experienceSize;
-    protected mixed $customRewardFunction=null;
-    protected mixed $customStateFunction=null;
+    //protected int $experienceSize;
+    //protected mixed $customRewardFunction=null;
+    //protected mixed $customStateFunction=null;
     protected ?string $lastConsoleOutput = null;
 
     public function __construct(
-        object $la, Agent $agent, int $experienceSize,
+        object $la, Agent $agent, ?int $experienceSize=null,
         ?ReplayBufferInterface $replayBuffer=null,
         ?EventManagerInterface $eventManager=null)
     {
         $this->la = $la;
         $this->agent = $agent;
-        $this->experienceSize = $experienceSize;
-        if($replayBuffer===null) {
-            $replayBuffer = new ReplayBuffer($this->la,$this->experienceSize);
-        }
-        $this->experience = $replayBuffer;
+        //$this->experienceSize = $experienceSize;
+        //if($replayBuffer===null) {
+        //    $replayBuffer = new ReplayBuffer($this->la,$this->experienceSize);
+        //}
+        //$this->experience = $replayBuffer;
         if($eventManager===null) {
             $eventManager = new EventManager();
         }
@@ -55,58 +55,64 @@ abstract class AbstractRunner implements Runner
         $this->eventManager->notify(Runner::EVENT_END_EPISODE);
     }
 
-    public function setCustomRewardFunction(callable $func) : void
-    {
-        $this->customRewardFunction = $func;
-    }
-
-    public function setCustomStateFunction(callable $func) : void
-    {
-        $this->customStateFunction = $func;
-    }
-
-    protected function customReward(
-        Env $env,
-        int $stepCount,
-        NDArray $states,
-        NDArray $action,
-        NDArray $nextStates,
-        float $reward,
-        bool $done,
-        bool $truncated,
-        ?array $info,
-        ) : float
-    {
-        $func = $this->customRewardFunction;
-        if($func===null) {
-            return $reward;
-        }
-        return $func($env,$stepCount,$states,$action,$nextStates,$reward,$done,$truncated,$info);
-    }
-
-    protected function customState(
-        Env $env,
-        NDArray $states,
-        bool $done,
-        bool $truncated,
-        ?array $info,
-        ) : NDArray
-    {
-        $func = $this->customStateFunction;
-        if($func===null) {
-            return $states;
-        }
-        return $func($env,$states,$done,$truncated,$info);
-    }
+    //public function setCustomRewardFunction(callable $func) : void
+    //{
+    //    $this->customRewardFunction = $func;
+    //}
+//
+    //public function setCustomStateFunction(callable $func) : void
+    //{
+    //    $this->customStateFunction = $func;
+    //}
+//
+    //protected function customReward(
+    //    Env $env,
+    //    int $stepCount,
+    //    NDArray $states,
+    //    NDArray $action,
+    //    NDArray $nextStates,
+    //    float $reward,
+    //    bool $done,
+    //    bool $truncated,
+    //    ?array $info,
+    //    ) : float
+    //{
+    //    $func = $this->customRewardFunction;
+    //    if($func===null) {
+    //        return $reward;
+    //    }
+    //    return $func($env,$stepCount,$states,$action,$nextStates,$reward,$done,$truncated,$info);
+    //}
+//
+    //protected function customState(
+    //    Env $env,
+    //    NDArray $states,
+    //    bool $done,
+    //    bool $truncated,
+    //    ?array $info,
+    //    ) : NDArray
+    //{
+    //    $func = $this->customStateFunction;
+    //    if($func===null) {
+    //        return $states;
+    //    }
+    //    return $func($env,$states,$done,$truncated,$info);
+    //}
 
     protected function initialize() : void
     {
-        $this->experience->clear();
+        //$this->experience->clear();
+        $this->agent->experience()->clear();
     }
 
     public function agent() : Agent
     {
         return $this->agent;
+    }
+
+    public function metrics() : MetricsInterface
+    {
+        return $this->metrics;
     }
 
     protected function console(string $message)
@@ -124,16 +130,18 @@ abstract class AbstractRunner implements Runner
         $agent = $this->agent;
         $sumReward = $sumSteps = 0;
         for($episode=0;$episode<$episodes;$episode++) {
-            [$states,$info] = $env->reset();
+            //[$states,$info] = $env->reset();
+            //$states = $this->customState($env,$states,false,false,$info);
+            [$states,$info] = $agent->reset($env);
             $done = false;
             $truncated = false;
-            $states = $this->customState($env,$states,$done,$truncated,$info);
             $episodeSteps = 0;
             while(!($done || $truncated)) {
-                $action = $agent->action($states,training:false,info:$info);
-                [$nextStates,$reward,$done,$truncated,$info] = $env->step($action);
-                $nextStates = $this->customState($env,$nextStates,$done,$truncated,$info);
-                $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextStates,$reward,$done,$truncated,$info);
+                //$action = $agent->action($states,training:false,info:$info);
+                //[$nextStates,$reward,$done,$truncated,$info] = $env->step($action);
+                //$nextStates = $this->customState($env,$nextStates,$done,$truncated,$info);
+                //$reward = $this->customReward($env,$episodeSteps,$states,$action,$nextStates,$reward,$done,$truncated,$info);
+                [$nextStates,$reward,$done,$truncated,$info] = $agent->step($env,$episodeSteps,$states,training:false,info:$info);
                 $sumReward += $reward;
                 $episodeSteps++;
                 $states = $nextStates;

@@ -15,7 +15,7 @@ class StepRunner extends AbstractRunner
         object $la,
         Env $env,
         Agent $agent,
-        int $experienceSize,
+        ?int $experienceSize=null,
         ?ReplayBuffer $replayBuffer=null,
         ?Env $evalEnv=null,
         )
@@ -29,6 +29,7 @@ class StepRunner extends AbstractRunner
     public function train(
         ?int $numIterations=null, ?int $numRolloutSteps=null, ?int $maxSteps=null, ?array $metrics=null,
         ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
+        ?int $targetScore=null,
         ?int $verbose=null) : array
     {
         $numIterations ??= 1000;
@@ -63,9 +64,10 @@ class StepRunner extends AbstractRunner
 
         // start episode
         $this->onStartEpisode();
-        [$states,$info] = $env->reset();
-        $states = $this->customState($env,$states,false,false,$info);
-        $experience = $this->experience;
+        //[$states,$info] = $env->reset();
+        //$states = $this->customState($env,$states,false,false,$info);
+        [$states,$info] = $agent->reset($env);
+        //$experience = $this->experience;
         $episodeReward = $reward = 0.0;
         $episodeSteps = 0;
         $done = false;
@@ -87,11 +89,12 @@ class StepRunner extends AbstractRunner
         while($step<$numIterations) {
             $rollout = 0;
             while($rollout<$numRolloutSteps && $step<$numIterations) {
-                $action = $agent->action($states,training:true,info:$info);
-                [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
-                $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
-                $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextState,$reward,$done,$truncated,$info);
-                $experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
+                //$action = $agent->action($states,training:true,info:$info);
+                //[$nextState,$reward,$done,$truncated,$info] = $env->step($action);
+                //$nextState = $this->customState($env,$nextState,$done,$truncated,$info);
+                //$reward = $this->customReward($env,$episodeSteps,$states,$action,$nextState,$reward,$done,$truncated,$info);
+                //$experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
+                [$nextState,$reward,$done,$truncated,$info] = $agent->step($env,$episodeSteps,$states,training:true,info:$info);
                 $states = $nextState;
                 $episodeReward += $reward;
                 $episodeSteps++;
@@ -110,16 +113,18 @@ class StepRunner extends AbstractRunner
                     // start episode
                     $done = false;
                     $truncated = false;
-                    [$states,$info] = $env->reset();
-                    $states = $this->customState($env,$states,false,false,$info);
-                    $experience = $this->experience;
+                    //[$states,$info] = $env->reset();
+                    //$states = $this->customState($env,$states,false,false,$info);
+                    [$states,$info] = $agent->reset($env);
+                    //$experience = $this->experience;
                 }
 
             }
             if($step<$subStepLen) {
                 continue;
             }
-            $agent->update($experience);
+            //$agent->update($experience);
+            $agent->update();
             // Update Progress bar and Logging metrics for short time.
             if(($step)%$logInterval==0) {
                 if($epsilonMetric) {
@@ -142,17 +147,26 @@ class StepRunner extends AbstractRunner
             if(($step)%$evalInterval==0) {
                 if($numEvalEpisodes!=0) {
                     $evalReport = $this->evaluation($this->evalEnv,$numEvalEpisodes);
-                    if($verbose>0) {
-                        $metrics->update('valSteps',$evalReport['valSteps']);
-                        $metrics->update('valRewards',$evalReport['valRewards']);
-                        $logText = $metrics->render();
-                        $this->clearProgressBar();
-                        $this->console("Step:".($step)." Ep:".($episode)." $logText\n");
-                        $this->progressBar('Step',$step,$numIterations,$startTime,25);
-                    }
+                    $metrics->update('valSteps',$evalReport['valSteps']);
+                    $metrics->update('valRewards',$evalReport['valRewards']);
+                }
+                if($verbose>0) {
+                    $logText = $metrics->render();
+                    $this->clearProgressBar();
+                    $this->console("Step:".($step)." Ep:".($episode)." $logText\n");
+                    $this->progressBar('Step',$step,$numIterations,$startTime,25);
                 }
                 $metrics->update('iter',$step);
                 $metrics->record();
+                if($targetScore!==null) {
+                    if($metrics->result('reward')>$targetScore) {
+                        if($verbose>0) {
+                            $this->console("\n");
+                            $this->console("I have achieved my goal score of {$targetScore}. I will stop training.");
+                        }
+                        break;
+                    }
+                }
                 $metrics->resetAll();
             }
             if(($step)%$logInterval==0) {
