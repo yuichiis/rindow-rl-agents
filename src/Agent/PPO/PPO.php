@@ -75,9 +75,7 @@ class PPO extends AbstractAgent
         ?array $fcLayers=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
         ?Space $actionSpace=null,
-        ?int $experienceSize=null,
         ?EventManager $eventManager=null,
-        ?ReplayBuffer $replayBuffer=null,
         ?object $mo = null
         )
     {
@@ -104,7 +102,7 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
         $policy ??= $this->buildPolicy($la,$continuous,$policyTau,$policyMin,$policyMax);
-        parent::__construct($la,policy:$policy,experienceSize:$experienceSize,replayBuffer:$replayBuffer);
+        parent::__construct($la,policy:$policy);
 
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
@@ -436,24 +434,31 @@ class PPO extends AbstractAgent
         return $newList;
     }
 
-    public function reset(Env $env) : array
+    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray
     {
-        [$states,$info] = $env->reset();
-        $states = $this->customState($env,$states,false,false,$info);
-        return [$states,$info];
+        $la = $this->la;
+        $action = parent::action($states,training:$training,info:$info);
+        if($this->continuous) {
+            if($this->actionMin!==null) {
+                $action = $la->maximum($la->copy($action),$this->actionMin);
+            }
+            if($this->actionMax!==null) {
+                $action = $la->minimum($la->copy($action),$this->actionMax);
+            }
+        }
+        return $action;
     }
 
-    public function step(
+    public function collect(
         Env $env,
+        ReplayBuffer $experience,
         int $episodeSteps,
         NDArray $states,
-        ?bool $training=null,
-        ?array $info=null,
+        ?array $info,
         ) : array
     {
         $la = $this->la;
-        $training ??= false;
-        $actions = $this->action($states,training:$training,info:$info);
+        $actions = parent::action($states,training:true,info:$info);
         $orignalActions = $actions;
         if($this->continuous) {
             if($this->actionMin!==null) {
@@ -466,15 +471,12 @@ class PPO extends AbstractAgent
         [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
         $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
         $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$info);
-        if($training) {
-            $this->experience->add([$states,$orignalActions,$nextState,$reward,$done,$truncated,$info]);
-        }
+        $experience->add([$states,$orignalActions,$nextState,$reward,$done,$truncated,$info]);
         return [$nextState,$reward,$done,$truncated,$info];
     }
 
-    public function update(mixed $experience=null) : float
+    public function update(ReplayBuffer $experience) : float
     {
-        $experience ??= $this->experience;
         if($experience->size()<$this->rolloutSteps) {
             return 0.0;
         }

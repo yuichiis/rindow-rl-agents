@@ -27,7 +27,8 @@ $plt = new Plot(null,$mo);
 
 
 $numIterations = 300000;# 100000;#300;#1000;#
-$targetScore = null; #-250;
+$targetScore = null; # -250; #
+$numAchievements = null; # 10; #
 $logInterval =   null; #1000;  #10; #
 $evalInterval =  1024; #10; #
 $numEvalEpisodes = 10;
@@ -73,7 +74,7 @@ $agent->summary();
 $filename = __DIR__.'\\pendulum-ppo';
 if(!$agent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$agent,,experienceSize:$maxExperienceSize);
-    $driver = new StepRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
+    $driver = new StepRunner($la,$env,$agent,experienceSize:$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
     $driver->metrics()->format('reward','%7.1f');
@@ -83,7 +84,7 @@ if(!$agent->fileExists($filename)) {
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,targetScore:$targetScore,verbose:1,
+        logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
     $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
@@ -117,7 +118,7 @@ for($i=0;$i<5;$i++) {
     while(!($done||$truncated)) {
         //$action = $agent->action($state,training:false,info:$info);
         //[$state,$reward,$done,$truncated,$info] = $env->step($action);
-        [$state,$reward,$done,$truncated,$info] = $agent->step($env,$testSteps,$state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $agent->step($env,$testSteps,$state,info:$info);
         $testReward += $reward;
         $testSteps++;
         $env->render();

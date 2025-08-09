@@ -19,8 +19,6 @@ abstract class AbstractAgent implements Agent
 
     protected object $la;
     protected ?Policy $policy;
-    protected int $experienceSize;
-    protected ReplayBufferInterface $experience;
     protected mixed $customRewardFunction=null;
     protected mixed $customStateFunction=null;
     protected ?Metrics $metrics;
@@ -28,16 +26,10 @@ abstract class AbstractAgent implements Agent
     public function __construct(
         object $la,
         ?Policy $policy=null,
-        ?int $experienceSize=null,
-        ?ReplayBufferInterface $replayBuffer=null,
         )
     {
-        $experienceSize ??= 10000;
         $this->la = $la;
         $this->policy = $policy;
-        $this->experienceSize = $experienceSize;
-        $replayBuffer ??= new ReplayBuffer($this->la,$this->experienceSize);
-        $this->experience = $replayBuffer;
     }
 
     public function register(?EventManager $eventManager=null) : void
@@ -51,11 +43,6 @@ abstract class AbstractAgent implements Agent
     public function policy() : ?Policy
     {
         return $this->policy;
-    }
-
-    public function experience() : ReplayBufferInterface
-    {
-        return $this->experience;
     }
 
     public function setMetrics(Metrics $metrics) : void
@@ -160,6 +147,23 @@ abstract class AbstractAgent implements Agent
             }
         }
         return $masks;
+    }
+
+    public function reset(Env $env) : array
+    {
+        [$states,$info] = $env->reset();
+        $states = $this->customState($env,$states,false,false,$info);
+        return [$states,$info];
+    }
+
+    public function step(Env $env, int $episodeSteps, NDArray $states, ?array $info=null) : array
+    {
+        $la = $this->la;
+        $action = $this->action($states,training:false,info:$info);
+        [$nextStates,$reward,$done,$truncated,$info] = $env->step($action);
+        $nextStates = $this->customState($env,$nextStates,$done,$truncated,$info);
+        $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextStates,$reward,$done,$truncated,$info);
+        return [$nextStates,$reward,$done,$truncated,$info];
     }
 
     /**

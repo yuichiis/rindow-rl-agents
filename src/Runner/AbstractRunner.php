@@ -17,28 +17,29 @@ abstract class AbstractRunner implements Runner
     protected object $la;
     protected Agent $agent;
     protected MetricsInterface $metrics;
-    //protected ReplayBufferInterface $experience;
+    protected ReplayBufferInterface $experience;
     protected EventManagerInterface $eventManager;
-    //protected int $experienceSize;
+    protected int $experienceSize;
     //protected mixed $customRewardFunction=null;
     //protected mixed $customStateFunction=null;
     protected ?string $lastConsoleOutput = null;
 
     public function __construct(
-        object $la, Agent $agent, ?int $experienceSize=null,
+        object $la,
+        Agent $agent,
+        ?int $experienceSize=null,
         ?ReplayBufferInterface $replayBuffer=null,
-        ?EventManagerInterface $eventManager=null)
+        ?EventManagerInterface $eventManager=null,
+        )
     {
+        $experienceSize ??= 10000;
+        $replayBuffer ??= new ReplayBuffer($la,$experienceSize);
+        $eventManager ??= new EventManager();
+
         $this->la = $la;
         $this->agent = $agent;
-        //$this->experienceSize = $experienceSize;
-        //if($replayBuffer===null) {
-        //    $replayBuffer = new ReplayBuffer($this->la,$this->experienceSize);
-        //}
-        //$this->experience = $replayBuffer;
-        if($eventManager===null) {
-            $eventManager = new EventManager();
-        }
+        $this->experienceSize = $experienceSize;
+        $this->experience = $replayBuffer;
         $this->eventManager = $eventManager;
         $agent->register($eventManager);
         $this->metrics = new Metrics();
@@ -101,8 +102,7 @@ abstract class AbstractRunner implements Runner
 
     protected function initialize() : void
     {
-        //$this->experience->clear();
-        $this->agent->experience()->clear();
+        $this->experience->clear();
     }
 
     public function agent() : Agent
@@ -124,6 +124,7 @@ abstract class AbstractRunner implements Runner
 
     public function evaluation(
         Env $env,
+        ReplayBufferInterface $experience,
         int $episodes
         ) : array
     {
@@ -141,7 +142,7 @@ abstract class AbstractRunner implements Runner
                 //[$nextStates,$reward,$done,$truncated,$info] = $env->step($action);
                 //$nextStates = $this->customState($env,$nextStates,$done,$truncated,$info);
                 //$reward = $this->customReward($env,$episodeSteps,$states,$action,$nextStates,$reward,$done,$truncated,$info);
-                [$nextStates,$reward,$done,$truncated,$info] = $agent->step($env,$episodeSteps,$states,training:false,info:$info);
+                [$nextStates,$reward,$done,$truncated,$info] = $agent->step($env,$episodeSteps,$states,info:$info);
                 $sumReward += $reward;
                 $episodeSteps++;
                 $states = $nextStates;

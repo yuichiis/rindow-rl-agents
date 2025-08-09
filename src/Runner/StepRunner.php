@@ -29,7 +29,7 @@ class StepRunner extends AbstractRunner
     public function train(
         ?int $numIterations=null, ?int $numRolloutSteps=null, ?int $maxSteps=null, ?array $metrics=null,
         ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
-        ?int $targetScore=null,
+        ?int $targetScore=null, ?int $numAchievements=null,
         ?int $verbose=null) : array
     {
         $numIterations ??= 1000;
@@ -40,6 +40,8 @@ class StepRunner extends AbstractRunner
         $env = $this->env;
         $agent = $this->agent;
         $metrics ??= [];
+        $numAchievements ??= 5;
+        
 
         $numRolloutSteps = $this->agent->numRolloutSteps();
         $numIterations = max($numIterations,$numRolloutSteps);
@@ -54,6 +56,7 @@ class StepRunner extends AbstractRunner
         $isStepUpdate = $agent->isStepUpdate();
         $subStepLen = $agent->subStepLength();
         $startTime = time();
+        $countAchievements = 0;
         $episode = 0;
         $episodeCount = $sumReward = $sumSteps = $sumLoss = $countLoss = 0;
         if($verbose>0) {
@@ -67,7 +70,7 @@ class StepRunner extends AbstractRunner
         //[$states,$info] = $env->reset();
         //$states = $this->customState($env,$states,false,false,$info);
         [$states,$info] = $agent->reset($env);
-        //$experience = $this->experience;
+        $experience = $this->experience;
         $episodeReward = $reward = 0.0;
         $episodeSteps = 0;
         $done = false;
@@ -94,7 +97,7 @@ class StepRunner extends AbstractRunner
                 //$nextState = $this->customState($env,$nextState,$done,$truncated,$info);
                 //$reward = $this->customReward($env,$episodeSteps,$states,$action,$nextState,$reward,$done,$truncated,$info);
                 //$experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
-                [$nextState,$reward,$done,$truncated,$info] = $agent->step($env,$episodeSteps,$states,training:true,info:$info);
+                [$nextState,$reward,$done,$truncated,$info] = $agent->collect($env,$experience,$episodeSteps,$states,info:$info);
                 $states = $nextState;
                 $episodeReward += $reward;
                 $episodeSteps++;
@@ -123,8 +126,7 @@ class StepRunner extends AbstractRunner
             if($step<$subStepLen) {
                 continue;
             }
-            //$agent->update($experience);
-            $agent->update();
+            $agent->update($experience);
             // Update Progress bar and Logging metrics for short time.
             if(($step)%$logInterval==0) {
                 if($epsilonMetric) {
@@ -146,7 +148,7 @@ class StepRunner extends AbstractRunner
             // Evaluation and Logging Metrics
             if(($step)%$evalInterval==0) {
                 if($numEvalEpisodes!=0) {
-                    $evalReport = $this->evaluation($this->evalEnv,$numEvalEpisodes);
+                    $evalReport = $this->evaluation($this->evalEnv,$experience,$numEvalEpisodes);
                     $metrics->update('valSteps',$evalReport['valSteps']);
                     $metrics->update('valRewards',$evalReport['valRewards']);
                 }
@@ -160,11 +162,16 @@ class StepRunner extends AbstractRunner
                 $metrics->record();
                 if($targetScore!==null) {
                     if($metrics->result('reward')>$targetScore) {
-                        if($verbose>0) {
-                            $this->console("\n");
-                            $this->console("I have achieved my goal score of {$targetScore}. I will stop training.");
+                        $countAchievements += 1;
+                        if($countAchievements>=$numAchievements) {
+                            if($verbose>0) {
+                                $this->console("\n");
+                                $this->console("I have achieved my goal score of {$targetScore}. I will stop training.");
+                            }
+                            break;
                         }
-                        break;
+                    } else {
+                        $countAchievements = 0;
                     }
                 }
                 $metrics->resetAll();

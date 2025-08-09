@@ -8,6 +8,8 @@ use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Layer\Layer;
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Builder\Builder;
+use InvalidArgumentException;
+use LogicException;
 
 class ActorCriticNetwork extends AbstractNetwork implements Estimator
 {
