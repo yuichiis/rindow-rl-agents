@@ -19,6 +19,10 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
     protected Variable $logStd;
     protected Layer $criticLayer;
     protected bool $continuous;
+    //protected ?NDArray $actionMin=null;
+    //protected ?NDArray $actionMax=null;
+    protected ?NDArray $actionScale = null;
+    protected ?NDArray $actionShift = null;
 
     public function __construct(
         object $la,
@@ -26,25 +30,32 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         array $stateShape, int $numActions,
         ?array $convLayers=null,?string $convType=null,?array $fcLayers=null,
         ?string $activation=null, ?string $kernelInitializer=null,
-        ?string $actionActivation=null, ?string $actionKernelInitializer=null,
-        ?string $criticKernelInitializer=null,
+        ?string $actionActivation=null,
+        mixed $actionKernelInitializer=null,
+        mixed $criticKernelInitializer=null,
+        ?NDArray $actionMin=null, ?NDArray $actionMax=null,
         ?bool $continuous=null,
         )
     {
         $continuous ??= false;
+        //if(!$continuous) {
+            $activation ??= 'relu';
+        //} else {
+        //    $kernelInitializer ??= 'he_uniform';
+        //    $activation ??= 'tanh';
+        //    $actionActivation ??= 'tanh';
+        //}
+        if($convLayers===null && $fcLayers===null) {
+            $fcLayers = [128, 128];
+        }
 
         parent::__construct($builder,$stateShape);
         $this->la = $la;
         $nn = $this->builder();
+
         $this->numActions = $numActions;
         $this->continuous = $continuous;
 
-        if($convLayers===null && $fcLayers===null) {
-            $fcLayers = [128, 128];
-        }
-        if($activation===null) {
-            $activation = 'relu';
-        }
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
             convLayers:$convLayers,
@@ -54,6 +65,9 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             kernelInitializer:$kernelInitializer,
             name:'State'
         );
+        if($continuous) {
+            $actionActivation ??= 'tanh';
+        }
         $this->actionLayer = $nn->layers()->Dense(
             $numActions,
             activation:$actionActivation,
@@ -61,6 +75,17 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
             name:'Action'
         );
         if($continuous) {
+            // actionMin と actionMax から scale と shift を計算
+            if($actionMin!==null && $actionMax!==null) {
+                // scale = (max - min) / 2.0
+                $scale = $la->scal(0.5, $la->axpy($actionMin, $la->copy($actionMax), -1.0));
+                // shift = (max + min) / 2.0
+                $shift = $la->scal(0.5, $la->axpy($actionMin, $la->copy($actionMax), 1.0));
+                
+                // 計算グラフ内で使えるように定数として保持
+                $this->actionScale = $nn->gradient()->constant($scale);
+                $this->actionShift = $nn->gradient()->constant($shift);
+            }
             $this->logStd = $nn->gradient()->Variable(
                 $la->zeros($la->alloc([$numActions])),
                 name:'logStd',
@@ -87,7 +112,14 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
                 $critic_out
             ];
         } else {
-            //$g = $this->builder->gradient();
+            $g = $this->builder->gradient();
+            if($this->actionScale && $this->actionShift) {
+                // action_out = action_out * scale + shift
+                $action_out = $g->add(
+                    $g->mul($action_out, $this->actionScale),
+                    $this->actionShift
+                );
+            }
             //$logstd_out = $g->clipByValue($this->logStd,-20,2);
             $logstd_out = $this->logStd;
             return [            // continuous outputs

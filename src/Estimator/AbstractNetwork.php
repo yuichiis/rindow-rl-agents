@@ -85,7 +85,7 @@ abstract class AbstractNetwork extends AbstractModel implements Network
             $activation='relu';
         }
         if($kernelInitializer===null) {
-            $kernelInitializer = 'random_uniform';
+            $kernelInitializer = 'he_uniform';
         }
         $enableFlatten = false;
         $model = $nn->models->Sequential();

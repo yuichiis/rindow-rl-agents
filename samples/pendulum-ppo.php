@@ -41,10 +41,16 @@ $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.01;
 $fcLayers = [128,128];
+$normAdv = true;
+$clipEpsilon = 0.2;
+$clipValueLoss = true; # false; # 
 $learningRate = 3e-4;# 1e-3;#1e-5;#
 $clipnorm = 0.5;
-$clipEpsilon = 0.2;
-$normAdv = true;
+// Initializing the action layer kernel for Pendulum
+$minval = -0.003;
+$maxval = 0.003;
+$actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+
 
 $env = new PendulumV1($la);
 $stateShape = $env->observationSpace()->shape();
@@ -64,10 +70,13 @@ $agent = new PPO(
     nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
     rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
     fcLayers:$fcLayers,
+    actionKernelInitializer:$actionKernelInitializer,
     gamma:$gamma,gaeLambda:$gaeLambda,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
-    clipEpsilon:$clipEpsilon,normAdv:$normAdv,
-    optimizerOpts:['lr'=>$learningRate],clipnorm:$clipnorm,mo:$mo,
+    normAdv:$normAdv,
+    clipEpsilon:$clipEpsilon,clipValueLoss:$clipValueLoss,
+    clipnorm:$clipnorm,
+    optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
 $agent->summary();
 
@@ -79,10 +88,13 @@ if(!$agent->fileExists($filename)) {
     //$driver->agent()->initialize();
     $driver->metrics()->format('reward','%7.1f');
     $driver->metrics()->format('Ploss','%+5.2e');
-    $driver->metrics()->format('Vloss','%6.1f');
+    $driver->metrics()->format('Vloss','%+5.2e');
+    $driver->metrics()->format('actmin','%+6.3f');
+    $driver->metrics()->format('actmax','%+6.3f');
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
-        metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
+        //metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
+        metrics:['reward','Ploss','Vloss','std','actmin','actmax','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
@@ -91,14 +103,16 @@ if(!$agent->fileExists($filename)) {
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
     $arts[] = $plt->plot($ep,$la->scal(200/max($history['Ploss']),$la->array($history['Ploss'])))[0];
     $arts[] = $plt->plot($ep,$la->scal(200/max($history['Vloss']),$la->array($history['Vloss'])))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['entropy']),$la->array($history['entropy'])))[0];
+    //$arts[] = $plt->plot($ep,$la->scal(200/max($history['entropy']),$la->array($history['entropy'])))[0];
+    $arts[] = $plt->plot($ep,$la->scal(200/max($history['std']),$la->array($history['std'])))[0];
     //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
     #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
-    $plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
+    //$plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
+    $plt->legend($arts,['reward','Ploss','Vloss','std','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
     $agent->saveWeightsToFile($filename);
@@ -109,7 +123,7 @@ if(!$agent->fileExists($filename)) {
 
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
-    [$state,$info] = $env->reset();
+    [$state,$info] = $agent->reset($env);
     $env->render();
     $done=false;
     $truncated=false;

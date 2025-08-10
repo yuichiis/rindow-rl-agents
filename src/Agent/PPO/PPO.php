@@ -39,6 +39,7 @@ class PPO extends AbstractAgent
     protected Optimizer $optimizer;
     protected array $optimizerOpts;
     protected ?float $clipnorm;
+    protected bool $clipValueLoss;
     protected ?object $mo;
     protected Builder $nn;
     protected object $g;
@@ -70,9 +71,12 @@ class PPO extends AbstractAgent
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
         ?float $clipnorm=null,
+        ?bool $clipValueLoss=null,
         ?Loss $lossFunc=null,
         ?array $stateShape=null, ?int $numActions=null,
         ?array $fcLayers=null,
+        mixed $actionKernelInitializer=null,
+        mixed $criticKernelInitializer=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
         ?Space $actionSpace=null,
         ?EventManager $eventManager=null,
@@ -96,7 +100,13 @@ class PPO extends AbstractAgent
             $numActions ??= $shape[0];
         }
 
-        $network ??= $this->buildNetwork($la,$nn,$continuous,$stateShape,$numActions,$fcLayers);
+        $network ??= $this->buildNetwork(
+            $la,$nn,$continuous,$stateShape,$numActions,
+            $fcLayers,
+            $actionKernelInitializer,
+            $criticKernelInitializer,
+            $policyMin,$policyMax,
+        );
         if(!($network instanceof Estimator)) {
             echo get_class($network);
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
@@ -115,6 +125,7 @@ class PPO extends AbstractAgent
         $entropyWeight ??= 0.0;
         $clipEpsilon ??= 0.2;
         $normAdv ??= true;
+        $clipValueLoss ??= true;
 
         if(($rolloutSteps % $batchSize) != 0) {
             throw new InvalidArgumentException("rolloutSteps must be divisible by batchSize.: rolloutSteps=$rolloutSteps, batchSize=$batchSize");
@@ -139,6 +150,7 @@ class PPO extends AbstractAgent
         $this->valueLossWeight = $valueLossWeight;
         $this->entropyWeight = $entropyWeight;
         $this->clipEpsilon = $clipEpsilon;
+        $this->clipValueLoss = $clipValueLoss;
         $this->normAdv = $normAdv;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
@@ -160,6 +172,10 @@ class PPO extends AbstractAgent
         ?array $stateShape,
         ?int $numActions,
         ?array $fcLayers,
+        mixed $actionKernelInitializer,
+        mixed $criticKernelInitializer,
+        float|NDArray|null $min,
+        float|NDArray|null $max,
         )
     {
         if($nn===null) {
@@ -171,10 +187,14 @@ class PPO extends AbstractAgent
         if($numActions===null) {
             throw new InvalidArgumentException('numActions must be specifed.');
         }
-        $network = new ActorCriticNetwork($la,$nn,
-            $stateShape, $numActions,fcLayers:$fcLayers,continuous:$continuous,
-            actionKernelInitializer:'he_normal',
-            criticKernelInitializer:'he_normal',
+        $network = new ActorCriticNetwork(
+            $la,$nn,
+            $stateShape, $numActions,
+            fcLayers:$fcLayers,
+            continuous:$continuous,
+            actionMin:$min,actionMax:$max,
+            actionKernelInitializer:$actionKernelInitializer,
+            criticKernelInitializer:$criticKernelInitializer,
         );
         return $network;
     }
@@ -278,7 +298,7 @@ class PPO extends AbstractAgent
         return $this->rolloutSteps;
     }
 
-    protected function estimator() : Estimator
+    public function estimator() : Estimator
     {
         return $this->model;
     }
@@ -541,6 +561,14 @@ class PPO extends AbstractAgent
             [$oldLogits, $oldValues] = $model($states,false);
         } else {
             [$oldMeans, $oldValues, $oldLogStd] = $model($states,false);
+            if($this->metrics->isAttracted('actmin')) {
+                $actmin = $la->min($oldMeans);
+                $this->metrics->update('actmin',$actmin);
+            }
+            if($this->metrics->isAttracted('actmax')) {
+                $actmax = $la->max($oldMeans);
+                $this->metrics->update('actmax',$actmax);
+            }
         }
 
         [$dmy, $nextValue] = $model($la->expandDims($nextState,0),false);
@@ -580,6 +608,7 @@ class PPO extends AbstractAgent
             batch_size:$batchSize,
             shuffle:true,
         );
+        $clipValueLoss = $this->clipValueLoss;
         $model = $this->model;
         $lossFunc = $this->lossFunc;
         $ppo = $this;
@@ -590,7 +619,8 @@ class PPO extends AbstractAgent
                 [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
                 [$totalLoss,$policyLoss,$valueLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
                     use ($la,$ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB, 
-                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon,$oldValuesB) 
+                        $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon,$oldValuesB,
+                        $clipValueLoss)
                 {
                     if(!$ppo->continuous) {
                         [$newLogits, $newValues] = $model($statesB,$training);
@@ -616,26 +646,28 @@ class PPO extends AbstractAgent
                     ));
 
                     // Value loss (Critic Loss)
-                    // SB3ではMSE固定
-                    //$valueLoss = $lossFunc($returnsB,$newValues);
-                    $valueLoss = $g->reduceMean($g->square($g->sub($returnsB,$newValues)));
-
-                    //// Value loss (Clippingを適用したバージョン)
-                    //// 1. まず、元のValue Lossを計算
-                    //$valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
-                    //// 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
-                    //$valuesClipped = $g->add(
-                    //    $oldValuesB,
-                    //    $g->clipByValue(
-                    //        $g->sub($newValues, $oldValuesB),
-                    //        -$clipEpsilon,
-                    //        $clipEpsilon
-                    //    )
-                    //);    
-                    //// 3. Clipされた価値でのLossを計算
-                    //$valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
-                    //// 4. 2つのLossのうち、大きい方を選択し、平均を取る
-                    //$valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));                    
+                    if($clipValueLoss) {
+                        // Value loss (Clippingを適用したバージョン)
+                        // 1. まず、元のValue Lossを計算
+                        $valueLossUnclipped = $g->square($g->sub($newValues, $returnsB));
+                        // 2. 更新前の価値(oldValues)を基準に、新しい価値(newValues)の変動を制限(clip)する
+                        $valuesClipped = $g->add(
+                            $oldValuesB,
+                            $g->clipByValue(
+                                $g->sub($newValues, $oldValuesB),
+                                -$clipEpsilon,
+                                $clipEpsilon
+                            )
+                        );
+                        // 3. Clipされた価値でのLossを計算
+                        $valueLossClipped = $g->square($g->sub($valuesClipped, $returnsB));
+                        // 4. 2つのLossのうち、大きい方を選択し、平均を取る
+                        $valueLoss = $g->scale(0.5, $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped)));
+                    } else {
+                        // SB3ではMSE固定
+                        //$valueLoss = $lossFunc($returnsB,$newValues);
+                        $valueLoss = $g->reduceMean($g->square($g->sub($returnsB,$newValues)));
+                    }
 
                     // policy entropy
                     $entropyLoss = $g->scale(-1,$g->reduceMean($entropy));
@@ -676,7 +708,7 @@ class PPO extends AbstractAgent
                     $entropyLoss = $K->scalar($entropyLoss);
                     $this->metrics->update('entropy',$entropyLoss);
                 }
-                if($this->metrics->isAttracted('entropy')) {
+                if($this->metrics->isAttracted('std')) {
                     $std = $la->reduceMean($la->exp($la->copy($this->model->getLogStd())));
                     $std = $la->scalar($std);
                     $this->metrics->update('std',$std);
