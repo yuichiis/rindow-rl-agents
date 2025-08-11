@@ -328,28 +328,28 @@ class PPO extends AbstractAgent
         $rolloutSteps = count($rewards);
         for($t=$rolloutSteps-1;$t>=0;$t--) {
             if($dones[$t]) {
-                //$delta = $rewards[$t] - $values[$t];
-                $delta = $la->axpy($values[$t],$la->copy($rewards[$t]), alpha:-1);
+                // 終端状態の場合、next_valueは0
+                $delta = $la->axpy($values[$t], $la->copy($rewards[$t]), alpha:-1);
                 $last_advantage = $delta;
             } else {
-                //$delta = $rewards[$t] + $gamma * $values[$t+1] - $values[$t];
-                //$delta = $rewards[$t] - (-$gamma * $values[$t+1] + $values[$t]);
-                //$delta = -(-$gamma * $values[$t+1] + $values[$t]) + $rewards[$t];
-                $delta = $la->axpy(
-                    $la->axpy(
-                        $values[$t+1],
-                        $la->copy($values[$t]),
-                        alpha:-$gamma
-                    ),
-                    $la->copy($rewards[$t]),
-                    alpha:-1
-                );
-                //$last_advantage = $delta + $gamma * $gaeLambda * $last_advantage;
-                //$last_advantage = $gamma * $gaeLambda * $last_advantage + $delta;
-                $last_advantage = $la->axpy($last_advantage, $delta,alpha:$gamma*$gaeLambda);
+                // GAEのデルタ: delta_t = r_t + gamma * V(s_{t+1}) - V(s_t)
+                // Rindow-math-matrixの演算は少し複雑なので、要素ごとの演算で分かりやすく書く
+                $next_value = $values[$t+1];
+                $current_value = $values[$t];
+                $reward_t = $rewards[$t];
+                
+                // $delta = $reward_t + $gamma * $next_value - $current_value;
+                $delta = $la->copy($reward_t);
+                $delta = $la->axpy($next_value, $delta, $gamma);
+                $delta = $la->axpy($current_value, $delta, -1.0);
+            
+                // GAE: A_t = delta_t + gamma * lambda * A_{t+1}
+                // $last_advantage = $delta + $gamma * $gaeLambda * $last_advantage;
+                $last_advantage = $la->axpy($last_advantage, $la->copy($delta), $gamma * $gaeLambda);
             }
-            $la->copy($last_advantage,$advantages[$t]);
+            $la->copy($last_advantage, $advantages[$t]);
         }
+
         $returns = $la->axpy($values[R(0,$rolloutSteps)], $la->copy($advantages));
 
         $advantages = $la->squeeze($advantages,axis:-1);    // (rolloutSteps)
@@ -387,7 +387,7 @@ class PPO extends AbstractAgent
 
     protected function log_prob_entropy(
         NDArray $logits,    // (batchsize,numActions) : float32
-        NDArray $actions,   // (numActions) : int32
+        NDArray $actions,   // (batchSize) : int32
     ) : array
     {
         $g = $this->g;
@@ -623,7 +623,7 @@ class PPO extends AbstractAgent
                         $clipValueLoss)
                 {
                     if(!$ppo->continuous) {
-                        [$newLogits, $newValues] = $model($statesB,$training);
+                        [$newLogits, $newValues] = $model($statesB,$training); // (batchSize,numActions),(batchSize,1)
                         $newValues = $g->squeeze($newValues,axis:-1);
                         [$newLogProbs, $entropy] = $ppo->log_prob_entropy($newLogits,$actionsB);
                     } else {

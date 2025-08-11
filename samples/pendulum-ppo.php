@@ -36,10 +36,10 @@ $maxExperienceSize = 10000;#100000;
 $rolloutSteps = 1024; # 2048;
 $batchSize = 64;# 32;#
 $epochs = 10;
-$gamma = 0.9;# 0.9;# 0.99;
+$gamma = 0.9;#  # <= Pendulum 0.9;# 0.99;
 $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
-$entropyWeight = 0.01;
+$entropyWeight = 0.01; # <= Pendulum 0.01; # 0.001
 $fcLayers = [128,128];
 $normAdv = true;
 $clipEpsilon = 0.2;
@@ -80,6 +80,13 @@ $agent = new PPO(
 );
 $agent->summary();
 
+function fitplot($la,array $x,float $window,float $bottom) : NDArray
+{
+    $scale = $window/(max($x)-min($x));
+    $bias = -min($x)*$scale+$bottom;
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
 $filename = __DIR__.'\\pendulum-ppo';
 if(!$agent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$agent,,experienceSize:$maxExperienceSize);
@@ -89,22 +96,20 @@ if(!$agent->fileExists($filename)) {
     $driver->metrics()->format('reward','%7.1f');
     $driver->metrics()->format('Ploss','%+5.2e');
     $driver->metrics()->format('Vloss','%+5.2e');
-    $driver->metrics()->format('actmin','%+6.3f');
-    $driver->metrics()->format('actmax','%+6.3f');
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
         //metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
-        metrics:['reward','Ploss','Vloss','std','actmin','actmax','valRewards'],
+        metrics:['reward','Ploss','Vloss','entropy','std','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
     $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['Ploss']),$la->array($history['Ploss'])))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['Vloss']),$la->array($history['Vloss'])))[0];
-    //$arts[] = $plt->plot($ep,$la->scal(200/max($history['entropy']),$la->array($history['entropy'])))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['std']),$la->array($history['std'])))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['Ploss'],200,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['Vloss'],200,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['entropy'],200,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['std'],200,0))[0];
     //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
@@ -112,7 +117,7 @@ if(!$agent->fileExists($filename)) {
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
     #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
     //$plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
-    $plt->legend($arts,['reward','Ploss','Vloss','std','valRewards']);
+    $plt->legend($arts,['reward','Ploss','Vloss','entropy','std','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
     $agent->saveWeightsToFile($filename);

@@ -26,20 +26,25 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 70000;# 100000;#300;#1000;#
-$logInterval =   null; #1000;  #10; #
-$evalInterval =  1000; #10; #
+$numIterations = 300000;# 30000;# 300;# 1000;#
+$targetScore = null; # 475;
+$numAchievements = null; # 5;
+$logInterval =   null; # 1000;  # 10; #
+$evalInterval =  2048; # 10; #
 $numEvalEpisodes = 10;
-$maxExperienceSize = 10000;#100000;
+$maxExperienceSize = 10000;# 100000;
 $rolloutSteps = 2048;
 $batchSize = 64;#32;#
 $epochs = 10;
 $gamma = 0.99;
 $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
-$entropyWeight = 0.01;
-$fcLayers = [128,128];
-$learningRate = 3e-4;#1e-3;#1e-5;#
+$entropyWeight = 0.001;
+$fcLayers = [128,128]; # [64,64];  # 
+$learningRate = 3e-4; #1e-3;#1e-5;#
+$normAdv = true;
+$clipValueLoss = true;
+$clipnorm = 0.5;
 
 $env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
@@ -60,9 +65,17 @@ $agent = new PPO(
     fcLayers:$fcLayers,
     gamma:$gamma,gaeLambda:$gaeLambda,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
-    optimizerOpts:['lr'=>$learningRate],mo:$mo,
+    clipValueLoss:$clipValueLoss,normAdv:$normAdv,
+    optimizerOpts:['lr'=>$learningRate],clipnorm:$clipnorm,mo:$mo,
 );
 $agent->summary();
+
+function fitplot($la,array $x,float $window,float $bottom) : NDArray
+{
+    $scale = $window/(max($x)-min($x));
+    $bias = -min($x)*$scale+$bottom;
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
 
 $filename = __DIR__.'\\cartpole-ppo';
 if(!$agent->fileExists($filename)) {
@@ -70,23 +83,28 @@ if(!$agent->fileExists($filename)) {
     $driver = new StepRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
+    $driver->metrics()->format('reward','%5.1f');
+    $driver->metrics()->format('Ploss','%+5.2e');
+    $driver->metrics()->format('Vloss','%+5.2e');
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
-        metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
+        metrics:['reward','Ploss','Vloss','entropy','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,verbose:1,
     );
     $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['loss']),$la->array($history['loss'])))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['Ploss'],100,500))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['Vloss'],100,500))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['entropy'],100,500))[0];
     //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
     #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
-    $plt->legend($arts,['reward','loss','valRewards']);
+    $plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
     $agent->saveWeightsToFile($filename);
@@ -96,7 +114,7 @@ if(!$agent->fileExists($filename)) {
 
 
 echo "Creating demo animation.\n";
-for($i=0;$i<1;$i++) {
+for($i=0;$i<5;$i++) {
     [$state,$info] = $env->reset();
     $env->render();
     $done=false;
