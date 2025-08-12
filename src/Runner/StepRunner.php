@@ -51,7 +51,6 @@ class StepRunner extends AbstractRunner
         $evalInterval = $evalInterval - ($evalInterval % $numRolloutSteps);
         $logInterval = $logInterval - ($logInterval % $numRolloutSteps);
 
-
         if($numEvalEpisodes!=0) {
             if($this->evalEnv===null) {
                 throw new InvalidArgumentException("You cannot specify `numEvalEpisodes` without an `evalEnv` being specified.");
@@ -157,7 +156,7 @@ class StepRunner extends AbstractRunner
                 }
             }
             // Evaluation and Logging Metrics
-            if(($step)%$evalInterval==0) {
+            if($step%$evalInterval==0) {
                 if($numEvalEpisodes!=0) {
                     $evalReport = $this->evaluation($this->evalEnv,$experience,$numEvalEpisodes);
                     $metrics->update('valSteps',$evalReport['valSteps']);

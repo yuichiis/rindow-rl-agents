@@ -8,6 +8,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
+use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\NeuralNetworks\Builder\Builder;
@@ -185,6 +186,11 @@ class Reinforce extends AbstractAgent
         return 1;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
     protected function estimator() : Estimator
     {
         return $this->model;
@@ -193,7 +199,7 @@ class Reinforce extends AbstractAgent
     /**
     * @param Any $params
     */
-    public function update($experience) : float
+    public function update(ReplayBuffer $experience) : float
     {
         $la = $this->la;
         $nn = $this->nn;
@@ -281,6 +287,9 @@ class Reinforce extends AbstractAgent
         $this->optimizer->update($this->trainableVariables,$grads);
 
         $loss = $K->scalar($loss);
+        if($this->metrics->isAttracted('loss')) {
+            $this->metrics->update('loss',$loss);
+        }
         //echo "loss=".$loss."\n";
         return $loss;
     }

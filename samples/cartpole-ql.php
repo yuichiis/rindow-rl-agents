@@ -52,10 +52,17 @@ $customRewardFunc = function($env,$stepCount,$state,$action,$nextState,$reward,$
     return $reward;
 };
 
+// == StepRunner ==
 $numIterations = 100000;
 $evalInterval = 1000;
 $logInterval = null;
 $numEvalEpisodes = 10;
+//// == EpisodeRunner ==
+//$numIterations = 1500;
+//$evalInterval = 10;
+//$logInterval = 1;
+//$numEvalEpisodes = 5;
+
 $espstart=1.0;
 $espstop=0.05;
 $decayRate=5e-5;
@@ -86,7 +93,7 @@ function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
 $filename = __DIR__.'\\cartpole-ql';
 if(!$agent->fileExists($filename)) {
     $driver = new StepRunner($la,$env,$agent,experienceSize:1,evalEnv:$evalEnv);
-    //$driver = new EpisodeRunner($la,$env,$agent,$experienceSize=1);
+    //$driver = new EpisodeRunner($la,$env,$agent,experienceSize:1,evalEnv:$evalEnv);
     $driver->metrics()->format('reward','%5.1f');
     $driver->metrics()->format('valRewards','%5.1f');
     $arts = [];
@@ -101,7 +108,7 @@ if(!$agent->fileExists($filename)) {
     $arts[] = $plt->plot($iter,$la->array($history['valRewards']))[0];
     $arts[] = $plt->plot($iter,fitplot($la,$history['error'],200,0))[0];
     $arts[] = $plt->plot($iter,fitplot($la,$history['epsilon'],200,0))[0];
-    $plt->xlabel('Episode');
+    $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     $plt->legend($arts,['reward','valRewards','error','epsilon']);
     $plt->show();

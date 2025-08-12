@@ -41,6 +41,7 @@ $useBaseline = true;#false;
 $env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
+$evalEnv = new CartPoleV1($la);
 
 $agent = new Reinforce(
     $la,
@@ -56,20 +57,37 @@ $agent = new Reinforce(
 );
 $agent->summary();
 
+function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
+{
+    $width = max($x)-min($x);
+    if($width==0) {
+        $scale = 1.0;
+        $bias = $bottom;
+    } else {
+        $scale = $window/(max($x)-min($x));
+        $bias = -min($x)*$scale+$bottom;
+    }
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
 $filename = __DIR__.'\\cartpole-reinforce';
 if(!$agent->fileExists($filename)) {
-    $driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
+    $driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
+    $driver->metrics()->format('reward','%5.1f');
+    $driver->metrics()->format('valRewards','%5.1f');
     $history = $driver->train(
         numIterations:$numIterations,
-        metrics:['reward','valReward'],
-        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1);
-    $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
-    $plt->plot($ep,$la->array($history['reward']));
-    $plt->plot($ep,$la->array($history['val_reward']));
+        metrics:['reward','loss','valRewards'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:2,
+    );
+    $iter = $la->array($history['iter']);
+    $arts[] = $plt->plot($iter,$la->array($history['reward']))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['loss'],200,500))[0];
+    $arts[] = $plt->plot($iter,$la->array($history['valRewards']))[0];
     //$plt->plot($ep,$la->scal(200,$la->array($history['epsilon'])));
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
-    $plt->legend(['reward','val_reward']);
+    $plt->legend($arts,['reward','loss','valRewards']);
     $plt->show();
     $agent->saveWeightsToFile($filename);
 } else {

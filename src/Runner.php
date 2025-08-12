@@ -15,7 +15,9 @@ interface Runner
     public function agent() : Agent;
 
     public function train(
-        ?int $numIterations=null,?int $numRolloutSteps=null,?int $maxSteps=null,?array $metrics=null,
+        ?int $numIterations=null, ?int $numRolloutSteps=null, ?int $maxSteps=null, ?array $metrics=null,
         ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
-        ?int $verbose=null) : array;
+        ?int $targetScore=null, ?int $numAchievements=null,
+        ?int $verbose=null
+    ) : array;
 }

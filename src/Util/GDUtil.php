@@ -7,7 +7,9 @@ use Rindow\Math\Matrix\NDArrayPhp;
 
 class GDUtil
 {
-    public function __construct($la)
+    protected object $la;
+
+    public function __construct(object $la)
     {
         $this->la = $la;
     }

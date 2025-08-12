@@ -64,6 +64,7 @@ $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps
 //$stateShape = $env->observationSpace()->shape();
 $stateShape = [1];
 $numActions = $env->actionSpace()->n();
+$evalEnv = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps);
 
 //$network = new QNetwork(
 //    $la,$nn,$stateShape,$numActions,
@@ -73,7 +74,7 @@ $numActions = $env->actionSpace()->n();
 //    estimator:$network,
 //    start:$epsStart,stop:$epsStop,decayRate:$decayRate,
 //    episodeAnnealing:$episodeAnnealing);
-$dqn = new DQN(
+$agent = new DQN(
     $la,
     batchSize:$batchSize,
     gamma:$gamma,
@@ -92,56 +93,70 @@ $dqn = new DQN(
     episodeAnnealing:$episodeAnnealing,
     mo:$mo
 );
-$dqn->summary();
+$agent->setCustomStateFunction($customStateFunction);
+$agent->summary();
 
-$driver4 = new EpisodeRunner($la,$env,$dqn,$experienceSize);
-$driver4->setCustomStateFunction($customStateFunction);
-$drivers = [$driver4];
-
-$filenamePattern = __DIR__.'\\maze-dqn-%d';
-$arts = [];
-foreach ($drivers as $i => $driver) {
-    $agent = $driver->agent();
-    $filename = sprintf($filenamePattern,$i);
-    if(!$agent->fileExists($filename)) {
-        // $agent->initialize();
-        $history = $driver->train(
-            $episodes,null,$metrics=['steps','reward','val_steps','val_reward','epsilon'],
-            $evalInterval,$numEvalEpisodes,null,$verbose=1);
-        $ep = $mo->arange((int)floor($episodes/$evalInterval),$evalInterval,$evalInterval);
-        $arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
-        $arts[] = $plt->plot($ep,$la->increment($la->array($history['reward']),100))[0];
-        $arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
-        $arts[] = $plt->plot($ep,$la->increment($la->array($history['val_reward']),100))[0];
-        $arts[] = $plt->plot($ep,$la->scal($maxEpisodeSteps,$la->array($history['epsilon'])))[0];
-
-        $plt->legend($arts,['steps','reward','val_steps','val_reward','epsilon']);
-        $plt->xlabel('episodes');
-        $plt->ylabel('avg steps');
-        $plt->show();
-        $agent->saveWeightsToFile($filename);
+function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
+{
+    $width = max($x)-min($x);
+    if($width==0) {
+        $scale = 1.0;
+        $bias = $bottom;
     } else {
-        $agent->loadWeightsFromFile($filename);
+        $scale = $window/(max($x)-min($x));
+        $bias = -min($x)*$scale+$bottom;
     }
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
+$filename = __DIR__.'\\maze-dqn';
+if(!$agent->fileExists($filename)) {
+    $driver = new EpisodeRunner($la,$env,$agent,experienceSize:$experienceSize,evalEnv:$evalEnv);
+    $arts = [];
+    // $agent->initialize();
+    $history = $driver->train(
+        numIterations:$episodes,
+        metrics:['steps','reward','valSteps','valRewards','epsilon','loss'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1
+    );
+    echo "\n";
+    $ep = $la->array($history['iter']);
+    $arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['epsilon'],200,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['loss'],200,0))[0];
+    $plt->legend($arts,['steps','reward','valSteps','valRewards','epsilon','loss']);
+    $plt->xlabel('episodes');
+    $plt->ylabel('avg steps');
+    $plt->show();
+    $agent->saveWeightsToFile($filename);
+} else {
+    $agent->loadWeightsFromFile($filename);
 }
 
 echo "Creating demo animation.\n";
-foreach($drivers as $i => $driver) {
-    $agent = $driver->agent();
-    for($i=0;$i<1;$i++) {
-        echo ".";
-        [$state,$info] = $env->reset();
-        $state = $customStateFunction($env,$state,false);
+for($i=0;$i<1;$i++) {
+    echo ".";
+    [$state,$info] = $env->reset();
+    $state = $customStateFunction($env,$state,false);
+    $env->render();
+    $done=false;
+    $truncated=false;
+    $testReward = 0;
+    $testSteps = 0;
+    while(!($done||$truncated)) {
+        $action = $agent->action($state,training:false,info:$info);
+        [$state,$reward,$done,$truncated,$info] = $env->step($action);
+        $state = $customStateFunction($env,$state,$done);
+        $testReward += $reward;
+        $testSteps++;
         $env->render();
-        $done=false;
-        $truncated=false;
-        while(!($done||$truncated)) {
-            $action = $agent->action($state,training:false,info:$info);
-            [$state,$reward,$done,$truncated,$info] = $env->step($action);
-            $state = $customStateFunction($env,$state,$done);
-            $env->render();
-        }
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$env->show(delay:100);
+$filename = $env->show(path:__DIR__.'\\maze-dqn-trained.gif',delay:100);
+echo "filename: {$filename}\n";

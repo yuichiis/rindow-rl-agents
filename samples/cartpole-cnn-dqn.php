@@ -8,9 +8,9 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV0;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\DQN;
-use Rindow\RL\Agents\Network\QNetwork;
-use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
+use Rindow\RL\Agents\Agent\DQN\DQN;
+use Rindow\RL\Agents\Agent\DQN\QNetwork;
+//use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use Rindow\RL\Agents\Util\GDUtil;
 
 $mo = new MatrixOperator();
@@ -99,9 +99,9 @@ $customStateFunction = function($env,$state,$done) use ($la,$last_screen_contain
 ##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
-$numIterations = 2000;#50;#20000;#300;  #1000;#
-$logInterval =   1;  #1; #200;  #10; #
-$evalInterval =  100;#5; #1000; #10; #
+$numIterations = 2000;#50;#20000;#300;  # 1000;#
+$logInterval =   1;  #1; # 200;  #10; #
+$evalInterval =  100;#5; # 1000; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
 $batchSize = 128;#32;#64;#
@@ -119,7 +119,7 @@ $convLayers = [
 ];
 $convType = '2d';
 $fcLayers = [];# [256];# [32,32];#
-$targetUpdatePeriod = 10; #5;  #5;    #5;   #5;   #200;#
+$targetUpdatePeriod = 10; #5;  #5;    #5;   #5;   # 200;#
 $targetUpdateTau =    1.0;#1.0;#0.025;#0.01;#0.05;#1.0;#
 $learningRate = 1e-3;#1e-5;#
 $epsStart = 1.0; #1.0; #0.9;#1.0; #
@@ -127,7 +127,7 @@ $epsStop =  0.05;#0.01;#0.1;#0.05;#
 $decayRate = 0.01;#0.001;#0.0005;#
 $ddqn = false;#true;#
 $lossFn = null;#$nn->losses->MeanSquaredError();
-$optimizer = $nn->optimizers->RMSprop(lr:$learningRate);
+//$optimizer = $nn->optimizers->RMSprop(lr:$learningRate);
 
 $env = new CartPoleV0($la);
 [$state,$info] = $env->reset();
@@ -161,42 +161,61 @@ $numActions = $env->actionSpace()->n();
 
 $evalEnv = new CartPoleV0($la);
 $network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
-$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
-$dqnAgent = new DQN(
-    $la,network:$network,policy:$policy,batchSize:$batchSize,gamma:$gamma,
+//$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$decayRate);
+$agent = new DQN(
+    $la,
+    network:$network,
+    numActions:$numActions,
+    //convLayers:$convLayers,convType:$convType,fcLayers:$fcLayers,
+    epsStart:$epsStart,epsStop:$epsStop,epsDecayRate:$epsDecayRate,
+    batchSize:$batchSize,gamma:$gamma,
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
-    ddqn:$ddqn,lossFn:$lossFn,optimizer:$optimizer,mo:$mo,
+    ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
-$dqnAgent->summary();
+$agent->setCustomStateFunction($customStateFunction);
+$agent->summary();
+
+function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
+{
+    $width = max($x)-min($x);
+    if($width==0) {
+        $scale = 1.0;
+        $bias = $bottom;
+    } else {
+        $scale = $window/(max($x)-min($x));
+        $bias = -min($x)*$scale+$bottom;
+    }
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
 $filename = __DIR__.'\\cartpole-cnn-dqn.model';
 if(!file_exists($filename)) {
-    //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
-    $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,null,null,$evalEnv);
-    $driver->setCustomStateFunction($customStateFunction);
+    //$driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
+    $driver = new StepRunner($la,$env,$agent,experienceSize:$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
-    $history = $driver->train($numIterations,$maxSteps=null,
-        $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
-        $evalInterval,$numEvalEpisodes,$logInterval,$verbose=1);
+    $history = $driver->train(numIterations:$numIterations,
+        metrics:['reward','epsilon','loss','valRewards'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,logInterval:$logInterval,verbose:1
+    );
     echo "\n";
-    $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
+    $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['loss']),$la->array($history['loss'])))[0];
-    //$arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
-    $arts[] = $plt->plot($ep,$la->array($history['val_reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200,$la->array($history['epsilon'])))[0];
-
+    $arts[] = $plt->plot($ep,fitplot($la,$history['loss'],200,0))[0];
+    //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['epsilon'],200,0))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
-    #$plt->legend($arts,['steps','reward','epsilon','loss','val_steps','val_reward']);
-    $plt->legend($arts,['reward','loss','val_reward','epsilon']);
+    #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valRewards']);
+    $plt->legend($arts,['reward','loss','valRewards','epsilon']);
     //$plt->legend($arts,['steps','val_steps']);
     $plt->show();
-    $dqnAgent->saveWeightsToFile($filename);
+    $agent->saveWeightsToFile($filename);
 } else {
-    $dqnAgent->loadWeightsFromFile($filename);
+    $agent->loadWeightsFromFile($filename);
 }
 
 echo "Creating demo animation.\n";
@@ -207,12 +226,19 @@ for($i=0;$i<5;$i++) {
     $env->render();
     $done=false;
     $truncated=false;
+    $testReward = 0;
+    $testSteps = 0;
     while(!($done||$truncated)) {
-        $action = $dqnAgent->action($state,training:false,info:$info);
+        $action = $agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $state = $customStateFunction($env,$state,$done);
+        $testReward += $reward;
+        $testSteps++;
         $env->render();
     }
+    $ep = $i+1;
+    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$env->show();
+$filename = $env->show(path:__DIR__.'\\cartpole-cnn-dqn-trained.gif');
+echo "filename: {$filename}\n";

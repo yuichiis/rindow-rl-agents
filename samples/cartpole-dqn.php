@@ -92,7 +92,8 @@ if(!$agent->fileExists($filename)) {
     $history = $driver->train(numIterations:$numIterations,
         metrics:['steps','reward','epsilon','loss','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:1);
+        logInterval:$logInterval,verbose:1
+    );
     echo "\n";
     $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
