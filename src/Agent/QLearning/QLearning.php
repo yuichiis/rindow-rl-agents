@@ -76,6 +76,11 @@ class QLearning extends AbstractAgent
         return 2;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
     protected function estimator() : Estimator
     {
         return $this->valueTable;
@@ -149,6 +154,9 @@ class QLearning extends AbstractAgent
             $tdError = $this->tdError($qLocation,$nextValues,$reward,$info,$history);
             $la->axpy($tdError,$qLocation,$this->eta);
             $error = $la->nrm2($tdError);
+        }
+        if($this->metrics->isAttracted('error')) {
+            $this->metrics->update('error',$error);
         }
         return $error;
     }

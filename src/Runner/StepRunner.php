@@ -5,6 +5,7 @@ use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\ReplayBuffer;
+use InvalidArgumentException;
 
 class StepRunner extends AbstractRunner
 {
@@ -51,6 +52,11 @@ class StepRunner extends AbstractRunner
         $logInterval = $logInterval - ($logInterval % $numRolloutSteps);
 
 
+        if($numEvalEpisodes!=0) {
+            if($this->evalEnv===null) {
+                throw new InvalidArgumentException("You cannot specify `numEvalEpisodes` without an `evalEnv` being specified.");
+            }
+        }
         $this->metrics->attract($metrics);
         $metrics = $this->metrics;
         $isStepUpdate = $agent->isStepUpdate();
@@ -60,7 +66,10 @@ class StepRunner extends AbstractRunner
         $episode = 0;
         $episodeCount = $sumReward = $sumSteps = $sumLoss = $countLoss = 0;
         if($verbose>0) {
-            $this->console("Train on {$numIterations} steps with {$numEvalEpisodes} evaluation each aggregation.\n");
+            $message = "Train on {$numIterations} steps with {$numEvalEpisodes} evaluation each aggregation.\n";
+            $this->console($message);
+            $message = "Rollout:$numRolloutSteps Eval-Interval:$evalInterval Refresh:$logInterval\n";
+            $this->console($message);
         }
         // verbose=2 log
         $logStartTime = microtime(true);
@@ -128,11 +137,13 @@ class StepRunner extends AbstractRunner
             }
             $agent->update($experience);
             // Update Progress bar and Logging metrics for short time.
-            if(($step)%$logInterval==0) {
+            if(($step)%$logInterval==0 || ($step)%$evalInterval==0) {
                 if($epsilonMetric) {
                     $epsilon = $policy->getEpsilon();
                     $metrics->update('epsilon',$epsilon);
                 }
+            }
+            if(($step)%$logInterval==0) {
                 if($verbose>1) {
                     $logText = $metrics->render(exclude:['valSteps','valRewards']);
                     //$qLog = sprintf('%1.1f',$agent->getQValue($states));

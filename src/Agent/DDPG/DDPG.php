@@ -80,7 +80,7 @@ class DDPG extends AbstractAgent
         ?object $mo = null,
         )
     {
-        $batchSize = $batchSize ?? 32;
+        $batchSize ??= 32;
         $stdDev ??= 0.2;
         $gamma ??= 0.99;
         $targetUpdatePeriod  ??= 1;
@@ -337,6 +337,11 @@ class DDPG extends AbstractAgent
 
     public function subStepLength() : int
     {
+        return $this->batchSize;
+    }
+
+    public function numRolloutSteps() : int
+    {
         return 1;
     }
 
@@ -549,6 +554,9 @@ class DDPG extends AbstractAgent
         $this->updateTarget($endEpisode);
 
         $loss = $K->scalar($actor_loss->value());
+        if($this->metrics->isAttracted('loss')) {
+            $this->metrics->update('loss',$loss);
+        }
         return $loss;
     }
 }

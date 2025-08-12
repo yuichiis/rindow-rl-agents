@@ -8,8 +8,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Metrics;
-use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer;
 use InvalidArgumentException;
 use LogicException;
 
@@ -55,7 +54,7 @@ abstract class AbstractAgent implements Agent
         return $this->metrics;
     }
 
-    public function resetData()
+    public function resetData() : void
     {
         throw new LogicException('unsuported operation');
     }
@@ -164,6 +163,23 @@ abstract class AbstractAgent implements Agent
         $nextStates = $this->customState($env,$nextStates,$done,$truncated,$info);
         $reward = $this->customReward($env,$episodeSteps,$states,$action,$nextStates,$reward,$done,$truncated,$info);
         return [$nextStates,$reward,$done,$truncated,$info];
+    }
+
+    public function collect(
+        Env $env,
+        ReplayBuffer $experience,
+        int $episodeSteps,
+        NDArray $states,
+        ?array $info,
+        ) : array
+    {
+        $la = $this->la;
+        $actions = $this->action($states,training:true,info:$info);
+        [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
+        $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
+        $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$info);
+        $experience->add([$states,$actions,$nextState,$reward,$done,$truncated,$info]);
+        return [$nextState,$reward,$done,$truncated,$info];
     }
 
     /**

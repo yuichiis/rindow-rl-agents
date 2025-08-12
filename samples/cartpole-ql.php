@@ -6,6 +6,7 @@ use Rindow\Math\Plot\Plot;
 //use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
+use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Agent\QLearning\QLearning;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
@@ -19,6 +20,7 @@ $plt = new Plot(null,$mo);
 $env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
 $numActions = $env->actionSpace()->n();
+$evalEnv = new CartPoleV1($la);
 
 $numDizitized = 6;
 $numStates = $numDizitized**$stateShape[0];
@@ -37,7 +39,7 @@ $digitizeStateFunc = function($env,$state,$done) use ($la,$digitize,$numDizitize
     }
     return $la->array([$dizitizedState],dtype:NDArray::int32);
 };
-$customRewardFunc = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) use ($work) {
+$customRewardFunc = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) {
     if($done) {
         if($stepCount < 195) {
             $reward = -200.0;  // Episode failure
@@ -50,7 +52,10 @@ $customRewardFunc = function($env,$stepCount,$state,$action,$nextState,$reward,$
     return $reward;
 };
 
-$episodes = 2000;
+$numIterations = 100000;
+$evalInterval = 1000;
+$logInterval = null;
+$numEvalEpisodes = 10;
 $espstart=1.0;
 $espstop=0.05;
 $decayRate=5e-5;
@@ -60,27 +65,50 @@ $gamma=0.9;
 //$poleRules = $la->ones($la->alloc([$numStates,$numActions]));
 
 $policy = new AnnealingEpsGreedy($la,start:$espstart,stop:$espstop,decayRate:$decayRate);
-$qlearning = new QLearning($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
-//$qlearning->setCustomStateFunction($digitizeState);
-$driver3 = new EpisodeRunner($la,$env,$qlearning,$experienceSize=1);
-//$driver3->setCustomRewardFunction($customRewardFunc);
-$driver3->setCustomStateFunction($digitizeStateFunc);
-#$agents = [$agent1,$agent2];
-$drivers = [$driver3];
+$agent = new QLearning($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
+//$agent->setCustomStateFunction($digitizeState);
+//$driver->setCustomRewardFunction($customRewardFunc);
+$agent->setCustomStateFunction($digitizeStateFunc);
 
-$arts = [];
-foreach ($drivers as $driver) {
+function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
+{
+    $width = max($x)-min($x);
+    if($width==0) {
+        $scale = 1.0;
+        $bias = $bottom;
+    } else {
+        $scale = $window/(max($x)-min($x));
+        $bias = -min($x)*$scale+$bottom;
+    }
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
+$filename = __DIR__.'\\cartpole-ql';
+if(!$agent->fileExists($filename)) {
+    $driver = new StepRunner($la,$env,$agent,experienceSize:1,evalEnv:$evalEnv);
+    //$driver = new EpisodeRunner($la,$env,$agent,$experienceSize=1);
+    $driver->metrics()->format('reward','%5.1f');
+    $driver->metrics()->format('valRewards','%5.1f');
+    $arts = [];
     $driver->agent()->initialize();
     $history = $driver->train(
-        numIterations:$episodes,metrics:['steps','val_steps','epsilon'],
-        evalInterval:50,numEvalEpisodes:10,verbose:1);
-    $arts[] = $plt->plot($la->array($history['steps']))[0];
-    $arts[] = $plt->plot($la->array($history['val_steps']))[0];
+        numIterations:$numIterations,metrics:['reward','error','valRewards','epsilon'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
+        logInterval:$logInterval,verbose:1,
+    );
+    $iter = $la->array($history['iter']);
+    $arts[] = $plt->plot($iter,$la->array($history['reward']))[0];
+    $arts[] = $plt->plot($iter,$la->array($history['valRewards']))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['error'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['epsilon'],200,0))[0];
+    $plt->xlabel('Episode');
+    $plt->ylabel('Reward');
+    $plt->legend($arts,['reward','valRewards','error','epsilon']);
+    $plt->show();
+    //$agent->saveWeightsToFile($filename);
+} else {
+    $agent->loadWeightsFromFile($filename);
 }
-$plt->xlabel('Episode');
-$plt->ylabel('Reward');
-$plt->legend($arts,['steps','var_steps']);
-$plt->show();
 
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
@@ -92,7 +120,7 @@ for($i=0;$i<5;$i++) {
     $testReward = 0;
     $testSteps = 0;
     while(!($done||$truncated)) {
-        $action = $qlearning->action($state,training:false,info:$info);
+        $action = $agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $state = $digitizeStateFunc($env,$state,$done);
         $testReward += $reward;

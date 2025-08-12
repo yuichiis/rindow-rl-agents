@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Environment as Env;
 
 /**
  *
@@ -14,13 +15,29 @@ interface Agent
 
     public function register(?EventManager $eventManager=null) : void;
 
+    public function setMetrics(Metrics $metrics) : void;
+
+    public function metrics() : Metrics;
+
+    public function resetData() : void;
+
     /**
     * @param  NDArray $states : N x StatesDims typeof NDArray
     * @return NDArray $actions : N x ActionDims typeof NDArray
     */
     public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray;
 
-    //public function maxQValue(NDArray $state) : float;
+    public function reset(Env $env) : array;
+
+    public function step(Env $env, int $episodeSteps, NDArray $states, ?array $info=null) : array;
+
+    public function collect(
+        Env $env,
+        ReplayBuffer $experience,
+        int $episodeSteps,
+        NDArray $states,
+        ?array $info,
+        ) : array;
 
     /**
     * @param iterable $experience

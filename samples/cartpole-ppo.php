@@ -87,7 +87,7 @@ if(!$agent->fileExists($filename)) {
     $driver->metrics()->format('Ploss','%+5.2e');
     $driver->metrics()->format('Vloss','%+5.2e');
     $history = $driver->train(
-        numIterations:$numIterations,maxSteps:null,
+        numIterations:$numIterations,
         metrics:['reward','Ploss','Vloss','entropy','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,verbose:1,

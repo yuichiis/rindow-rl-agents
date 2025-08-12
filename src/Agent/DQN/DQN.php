@@ -212,6 +212,11 @@ class DQN extends AbstractAgent
 
     public function subStepLength() : int
     {
+        return $this->batchSize;
+    }
+
+    public function numRolloutSteps() : int
+    {
         return 1;
     }
 
@@ -350,6 +355,10 @@ class DQN extends AbstractAgent
         //
         $this->updateTarget($endEpisode);
 
-        return $nn->backend()->scalar($loss->value());
+        $loss = $nn->backend()->scalar($loss->value());
+        if($this->metrics->isAttracted('loss')) {
+            $this->metrics->update('loss',$loss);
+        }
+        return $loss;
     }
 }

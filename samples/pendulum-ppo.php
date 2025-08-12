@@ -80,10 +80,16 @@ $agent = new PPO(
 );
 $agent->summary();
 
-function fitplot($la,array $x,float $window,float $bottom) : NDArray
+function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
 {
-    $scale = $window/(max($x)-min($x));
-    $bias = -min($x)*$scale+$bottom;
+    $width = max($x)-min($x);
+    if($width==0) {
+        $scale = 1.0;
+        $bias = $bottom;
+    } else {
+        $scale = $window/(max($x)-min($x));
+        $bias = -min($x)*$scale+$bottom;
+    }
     return $la->increment($la->scal($scale,$la->array($x)),$bias);
 }
 
@@ -103,15 +109,15 @@ if(!$agent->fileExists($filename)) {
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
-    $ep = $la->array($history['iter']);
-    //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
-    $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['Ploss'],200,0))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['Vloss'],200,0))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['entropy'],200,0))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['std'],200,0))[0];
-    //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
-    $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
+    $iter = $la->array($history['iter']);
+    //$arts[] = $plt->plot($iter,$la->array($history['steps']))[0];
+    $arts[] = $plt->plot($iter,$la->array($history['reward']))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Ploss'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Vloss'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['entropy'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['std'],200,0))[0];
+    //$arts[] = $plt->plot($iter,$la->array($history['valSteps']))[0];
+    $arts[] = $plt->plot($iter,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);

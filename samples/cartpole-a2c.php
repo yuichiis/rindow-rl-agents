@@ -49,26 +49,26 @@ $numActions = $env->actionSpace()->n();
 $evalEnv = new CartPoleV1($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
-$dqnAgent = new A2C(
+$$agent = new A2C(
     $la,
     nn:$nn,stateShape:$stateShape,numActions:$numActions,fcLayers:$fcLayers,
     batchSize:$batchSize,gamma:$gamma,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
     optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
-$dqnAgent->summary();
+$$agent->summary();
 
 $filename = __DIR__.'\\cartpole-a2c';
-if(!$dqnAgent->fileExists($filename)) {
-    //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
-    $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
+if(!$$agent->fileExists($filename)) {
+    //$driver = new EpisodeRunner($la,$env,$$agent,$maxExperienceSize);
+    $driver = new StepRunner($la,$env,$$agent,$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
         metrics:['steps','reward','loss','entropy','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:2,
+        logInterval:$logInterval,verbose:1,
     );
     echo "\n";
     $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
@@ -84,9 +84,9 @@ if(!$dqnAgent->fileExists($filename)) {
     $plt->legend($arts,['reward','loss','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
-    $dqnAgent->saveWeightsToFile($filename);
+    $$agent->saveWeightsToFile($filename);
 } else {
-    $dqnAgent->loadWeightsFromFile($filename);
+    $$agent->loadWeightsFromFile($filename);
 }
 
 
@@ -99,7 +99,7 @@ for($i=0;$i<1;$i++) {
     $testReward = 0;
     $testSteps = 0;
     while(!($done||$truncated)) {
-        $action = $dqnAgent->action($state,training:false,info:$info);
+        $action = $$agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $testReward += $reward;
         $testSteps++;

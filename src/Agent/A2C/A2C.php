@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Agent\A2C;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Environment as Env;
 use InvalidArgumentException;
 use LogicException;
 use Rindow\NeuralNetworks\Builder\Builder;
@@ -12,6 +13,7 @@ use Rindow\NeuralNetworks\Gradient\GraphFunction;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
+use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\RL\Agents\Policy\Boltzmann;
@@ -20,6 +22,7 @@ use function Rindow\Math\Matrix\R;
 class A2C extends AbstractAgent
 {
     const MODEL_FILENAME = '%s.model';
+    protected bool $continuous;
     protected float $gamma;
     protected float $valueLossWeight;
     protected float $entropyWeight;
@@ -78,6 +81,7 @@ class A2C extends AbstractAgent
         //$lossFunc ??= $nn->losses()->Huber();
         $lossFunc ??= $nn->losses()->MeanSquaredError();
 
+        $this->continuous = false;
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
@@ -203,7 +207,7 @@ class A2C extends AbstractAgent
     {
     }
 
-    public function update($experience) : float
+    public function update(ReplayBuffer  $experience) : float
     {
         $la = $this->la;
         $nn = $this->nn;

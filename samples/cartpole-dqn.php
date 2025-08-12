@@ -38,7 +38,7 @@ $gamma = 1.0;#0.99;#
 $convLayers = null;
 $convType = null;
 $fcLayers = [100];# [32,32];#
-$targetUpdatePeriod = 5;  #5;    #5;   #5;   #200;#
+$targetUpdatePeriod = 5;  #5;    #5;   #5;   # 200;#
 $targetUpdateTau =    1.0;#0.025;#0.01;#0.05;#1.0;#
 $learningRate = 1e-3;#1e-5;#
 $epsStart = 1.0; #1.0; #0.9;#1.0; #
@@ -59,7 +59,7 @@ $numActions = $env->actionSpace()->n();
 $evalEnv = new CartPoleV1($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
-$dqnAgent = new DQN(
+$agent = new DQN(
     $la,
     nn:$nn,stateShape:$stateShape,numActions:$numActions,fcLayers:$fcLayers,
     epsStart:$epsStart,epsStop:$epsStop,epsDecayRate:$epsDecayRate,
@@ -67,35 +67,50 @@ $dqnAgent = new DQN(
     targetUpdatePeriod:$targetUpdatePeriod,targetUpdateTau:$targetUpdateTau,
     ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
-$dqnAgent->summary();
+$agent->summary();
+
+function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
+{
+    $width = max($x)-min($x);
+    if($width==0) {
+        $scale = 1.0;
+        $bias = $bottom;
+    } else {
+        $scale = $window/(max($x)-min($x));
+        $bias = -min($x)*$scale+$bottom;
+    }
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
 
 $filename = __DIR__.'\\cartpole-dqn';
-if(!$dqnAgent->fileExists($filename)) {
-    //$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
-    $driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
+if(!$agent->fileExists($filename)) {
+    //$driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
+    $driver = new StepRunner($la,env:$env,agent:$agent,
+        experienceSize:$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
-    $history = $driver->train($numIterations,$maxSteps=null,
-        $metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
-        $evalInterval,$numEvalEpisodes,$logInterval,$verbose=1);
+    $history = $driver->train(numIterations:$numIterations,
+        metrics:['steps','reward','epsilon','loss','valSteps','valRewards'],
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
+        logInterval:$logInterval,verbose:1);
     echo "\n";
-    $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
+    $ep = $la->array($history['iter']);
     //$arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200/max($history['loss']),$la->array($history['loss'])))[0];
-    //$arts[] = $plt->plot($ep,$la->array($history['val_steps']))[0];
-    $arts[] = $plt->plot($ep,$la->array($history['val_reward']))[0];
-    $arts[] = $plt->plot($ep,$la->scal(200,$la->array($history['epsilon'])))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['loss'],200,0))[0];
+    //$arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['epsilon'],200,0))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
-    #$plt->legend($arts,['steps','reward','epsilon','loss','val_steps','val_reward']);
-    $plt->legend($arts,['reward','loss','val_reward','epsilon']);
+    #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valRewards']);
+    $plt->legend($arts,['reward','loss','valRewards','epsilon']);
     //$plt->legend($arts,['steps','val_steps']);
     $plt->show();
-    $dqnAgent->saveWeightsToFile($filename);
+    $agent->saveWeightsToFile($filename);
 } else {
-    $dqnAgent->loadWeightsFromFile($filename);
+    $agent->loadWeightsFromFile($filename);
 }
 
 
@@ -108,7 +123,7 @@ for($i=0;$i<1;$i++) {
     $testReward = 0;
     $testSteps = 0;
     while(!($done||$truncated)) {
-        $action = $dqnAgent->action($state,training:false,info:$info);
+        $action = $agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
         $testReward += $reward;
         $testSteps++;

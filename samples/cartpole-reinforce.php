@@ -59,8 +59,9 @@ $agent->summary();
 $filename = __DIR__.'\\cartpole-reinforce';
 if(!$agent->fileExists($filename)) {
     $driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
-    $history = $driver->train(numIterations:$numIterations,
-        metrics:['reward','val_reward'],
+    $history = $driver->train(
+        numIterations:$numIterations,
+        metrics:['reward','valReward'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1);
     $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
     $plt->plot($ep,$la->array($history['reward']));
