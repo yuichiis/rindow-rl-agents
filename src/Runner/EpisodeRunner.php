@@ -118,6 +118,8 @@ class EpisodeRunner extends AbstractRunner
             }
             $metrics->update('reward',$episodeReward);
             $metrics->update('steps',$episodeSteps);
+            $metrics->update('logreward',$episodeReward);
+            $metrics->update('logsteps',$episodeSteps);
             $this->onEndEpisode();
             $episode++;
             $episodeReward = 0.0;
@@ -131,12 +133,16 @@ class EpisodeRunner extends AbstractRunner
             }
             if(($episode)%$logInterval==0) {
                 if($verbose>=2) {
-                    $logText = $metrics->render(exclude:['valSteps','valRewards']);
+                    $logText = $metrics->render(exclude:['steps','reward','valSteps','valRewards']);
                     //$qLog = sprintf('%1.1f',$agent->getQValue($states));
                     $msPerStep = sprintf('%1.1f',($logInterval>0)?((microtime(true) - $logStartTime)/$logStepCount*1000):0);
+                    $logsteps = $metrics->printable('logsteps');
+                    $logreward = $metrics->printable('logreward');
+                    $metrics->reset('logsteps');
+                    $metrics->reset('logreward');
                     //$this->console("Step:".($step)." Ep:".($episode)." rw={$rewardLog}, st={$stepsLog} loss={$lossLog}{$epsilonLog}, q={$qLog}, {$msPerStep}ms/st\n");
                     $this->clearProgressBar();
-                    $this->console("Episode:{$episode} St:{$totalStep} {$logText} {$msPerStep}ms/st\n");
+                    $this->console("Episode:{$episode} St:{$totalStep} {$logsteps} {$logreward} {$logText} {$msPerStep}ms/st\n");
                 }
                 if($verbose>=1) {
                     $this->progressBar('Episode',$episode,$numIterations,$startTime,25);

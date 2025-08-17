@@ -13,6 +13,8 @@ class Metrics implements MetricsInterface
         'loss' => ['label'=>'loss','format'=>'%1.1f'],
         'valSteps' => ['label'=>'vSt','format'=>'%3.1f'],
         'valRewards' => ['label'=>'vRw','format'=>'%3.1f'],
+        'logsteps' => ['label'=>'st','format'=>'%1.1f'],
+        'logreward' => ['label'=>'rw','format'=>'%1.1f'],
     ];
     protected array $metricValue = [];
     protected array $metricCount = [];
@@ -68,6 +70,15 @@ class Metrics implements MetricsInterface
         return $result;
     }
 
+    public function printable(string $name) : string
+    {
+        $attr = $this->defaults[$name] ?? [];
+        $label = $attr['label'] ?? $name;
+        $value = isset($attr['format']) ? sprintf($attr['format'],$this->result($name)) : $this->result($name);
+        $string = "$label=$value";
+        return $string;
+    }
+
     public function format(string $name, string $format, ?string $label=null) : void
     {
         $this->defaults[$name]['format'] = $format;
@@ -75,6 +86,9 @@ class Metrics implements MetricsInterface
             $this->defaults[$name]['label'] ??= $name;
         } else {
             $this->defaults[$name]['label'] = $label;
+        }
+        if(in_array($name,['steps','reward'])) {
+            $this->format('log'.$name, $format, $label);
         }
     }
     

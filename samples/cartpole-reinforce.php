@@ -35,8 +35,10 @@ $convLayers = null;
 $convType = null;
 $fcLayers = [32,32];# [10,10];#
 $activation = null;
-$learningRate = 1e-2;#1e-5;#
-$useBaseline = true;#false;
+$learningRate = 2e-3; # 1e-2;#
+$useBaseline = null; # true;#false;
+$useNormalize = true;#false;
+
 
 $env = new CartPoleV1($la);
 $stateShape = $env->observationSpace()->shape();
@@ -47,6 +49,7 @@ $agent = new Reinforce(
     $la,
     gamma:$gamma,
     useBaseline:$useBaseline,
+    useNormalize:$useNormalize,
     nn:$nn,
     stateShape:$stateShape,
     numActions:$numActions,
@@ -78,7 +81,7 @@ if(!$agent->fileExists($filename)) {
     $history = $driver->train(
         numIterations:$numIterations,
         metrics:['reward','loss','valRewards'],
-        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:2,
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1,
     );
     $iter = $la->array($history['iter']);
     $arts[] = $plt->plot($iter,$la->array($history['reward']))[0];

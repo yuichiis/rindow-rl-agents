@@ -35,6 +35,7 @@ $customStateFunction = function($env,$x,$done) use ($la) {
 };
 [$width,$height,$exit] = [3,3,8];
 $maxEpisodeSteps = 100;
+$logInterval = null; # 1;
 $episodes = 300;
 $evalInterval = 10;
 $numEvalEpisodes = 1;
@@ -112,12 +113,14 @@ function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
 $filename = __DIR__.'\\maze-dqn';
 if(!$agent->fileExists($filename)) {
     $driver = new EpisodeRunner($la,$env,$agent,experienceSize:$experienceSize,evalEnv:$evalEnv);
+    $driver->metrics()->format('steps','%5.1f');
+    $driver->metrics()->format('reward','%5.1f');
     $arts = [];
     // $agent->initialize();
     $history = $driver->train(
-        numIterations:$episodes,
+        numIterations:$episodes,logInterval:$logInterval,
         metrics:['steps','reward','valSteps','valRewards','epsilon','loss'],
-        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1,
     );
     echo "\n";
     $ep = $la->array($history['iter']);

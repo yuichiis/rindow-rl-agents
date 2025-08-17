@@ -36,7 +36,7 @@ abstract class AbstractPolicy implements Policy
 
         //$actionValues = $la->nan2num($la->copy($actionValues),alpha:-INF);
         if($masks) {
-            $actionValues = $la->masking($masks,$actionValues,fill:-INF);
+            $actionValues = $la->masking($masks,$la->copy($actionValues),fill:-INF);
         }
         $actions = $la->reduceArgMax($actionValues,axis:-1); // (batches)
         return $actions;

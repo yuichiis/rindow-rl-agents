@@ -80,7 +80,6 @@ class Reinforce extends AbstractAgent
         $this->numActions = $numActions;
         $this->gamma = $gamma;
         $this->useBaseline = $useBaseline;
-        $this->useNormalize = $useNormalize;
         $this->mo = $mo;
 
         $this->nn = $nn;
@@ -228,23 +227,7 @@ class Reinforce extends AbstractAgent
         return $result; // (rolloutSteps)
     }
 
-    protected function log_prob_categorical(
-        NDArray $logits,    // (batchsize,numActions) : float32
-        NDArray $actions,   // (batchSize) : int32
-    ) : NDArray
-    {
-        $g = $this->g;
-        //$log_probs_all = $g->log($g->softmax($logits)); // (batchsize,numActions) : float32
-        $log_probs_all = $g->logSoftmax($logits);
-        $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1); // (batchsize) : float32
-
-        //$probs = $g->softmax($logits);  // (batchsize,numActions)
-        //$entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
-
-        return $selected_log_probs; //, $entropy;
-    }
-
-   /**
+    /**
     * @param Any $params
     */
     public function update(ReplayBuffer $experience) : float
@@ -305,19 +288,15 @@ class Reinforce extends AbstractAgent
         $discountedRewards = $g->Variable($discountedRewards);
 
         $trainModel = $this->model;
-        $agent = $this;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-                use ($agent,$g,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
+                use ($g,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
             $policyLogits = $trainModel($states,$training);
             $policyLogits = $g->masking($masks,$policyLogits,-1e9);
-
-            //$policyProbs = $g->softmax($policyLogits);
-            //$policyProbs = $g->gather($policyProbs,$actions,batchDims:-1);
-            //$policyProbs = $g->clipByValue($policyProbs, 1e-10, 1.0);
-            //$logProbs = $g->log($policyProbs);
-            $logProbs = $agent->log_prob_categorical($policyLogits,$actions);
-            
+            $policyProbs = $g->softmax($policyLogits);
+            $policyProbs = $g->gather($policyProbs,$actions,batchDims:-1);
+            $policyProbs = $g->clipByValue($policyProbs, 1e-10, 1.0);
+            $logProbs = $g->log($policyProbs);
             $lossPolicy = $g->mul($logProbs,$discountedRewards);
             $loss = $g->mul($g->Variable(-1),$g->reduceSum($lossPolicy));
             return $loss;

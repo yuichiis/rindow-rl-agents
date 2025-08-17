@@ -30,21 +30,18 @@ $mazeRules = $la->array([
     [false, false, false,  true], // 7
     [ true, false, false, false], // 8
 ],dtype:NDArray::bool);
-$customStateFunction = function($env,$x,$done) use ($la) {
-    return $la->expandDims($x,axis:-1);
-};
 
 [$width,$height,$exit] = [3,3,8];
 $maxEpisodeSteps = 100;
-$logInterval = 1;
-$episodes = 300;
+$logInterval = 1; # null; # 
+$episodes = 1000;
 $evalInterval = 10;
 $numEvalEpisodes = 1;
 $maxExperienceSize = 10000;#100000;
 #######################
 //$batchSize = 32;
 $gamma = 0.99;#0.9;#1.0;#
-$fcLayers = [100];# [128,128];# [10,10];#
+$fcLayers = [64];# [32,32];# [128,128];# [10,10];#
 $activation = 'relu';#'tanh';#
 #$targetUpdatePeriod = 5;   #5;  #5;    #5;   # 200;#
 #$targetUpdateTau =    0.05;#0.1;#0.025;#0.01;#1.0;#
@@ -55,7 +52,10 @@ $learningRate = 1e-3;#1e-1;#
 #$episodeAnnealing = true;
 $experienceSize = 10000;#100;#
 //$lossFn = $nn->losses->MeanSquaredError();
-$useBaseline = true;
+$useBaseline = null; # true;
+$useNormalize = true;
+
+
 
 $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps);
 //$env->reset();
@@ -63,9 +63,17 @@ $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps
 //$env->show();
 //exit();
 
-//$stateShape = $env->observationSpace()->shape();
-$stateShape = [1];
+$stateShape = $env->observationSpace()->shape();
+//$numStates = $env->observationSpace()->n();
 $numActions = $env->actionSpace()->n();
+//$stateShape = [$numStates];
+//$customStateFunction = function($env,$x,$done) use ($la,$numStates) {
+//    $x = $la->expandDims($x,0);
+//    $state = $la->onehot($x,$numStates);
+//    $state = $la->squeeze($state,0);
+//    return $state;
+//};
+
 $evalEnv = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps);
 
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers=null,$convType=null,$fcLayers,$activation,null,$mazeRules);
@@ -76,6 +84,7 @@ $agent = new Reinforce(
     $la,
     gamma:$gamma,
     useBaseline:$useBaseline,
+    useNormalize:$useNormalize,
     nn:$nn,
     stateShape:$stateShape,
     numActions:$numActions,
@@ -84,7 +93,7 @@ $agent = new Reinforce(
     //lossFn:$lossFn,
     optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
-$agent->setCustomStateFunction($customStateFunction);
+//$agent->setCustomStateFunction($customStateFunction);
 $agent->summary();
 
 function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
@@ -103,12 +112,14 @@ function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
 $filename = __DIR__.'\\maze-reinforce';
 if(!$agent->fileExists($filename)) {
     $driver = new EpisodeRunner($la,$env,$agent,experienceSize:$experienceSize,evalEnv:$evalEnv);
+    $driver->metrics()->format('steps','%5.1f');
+    $driver->metrics()->format('reward','%5.1f');
     $arts = [];
     // $agent->initialize();
     $history = $driver->train(
         numIterations:$episodes,logInterval:$logInterval,
         metrics:['steps','reward','valSteps','valRewards','loss'],
-        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:2,
+        evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:1,
     );
     echo "\n";
     $ep = $la->array($history['iter']);
@@ -121,7 +132,7 @@ if(!$agent->fileExists($filename)) {
     $plt->xlabel('episodes');
     $plt->ylabel('avg steps');
     $plt->show();
-    $agent->saveWeightsToFile($filename);
+    //$agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }
