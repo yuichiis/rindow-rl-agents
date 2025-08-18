@@ -292,7 +292,7 @@ class Reinforce extends AbstractAgent
         $loss = $nn->with($tape=$g->GradientTape(),function() 
                 use ($g,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
             $policyLogits = $trainModel($states,$training);
-            $policyLogits = $g->masking($masks,$policyLogits,-1e9);
+            $policyLogits = $g->masking($masks,$policyLogits,fill:-1e9);
             $policyProbs = $g->softmax($policyLogits);
             $policyProbs = $g->gather($policyProbs,$actions,batchDims:-1);
             $policyProbs = $g->clipByValue($policyProbs, 1e-10, 1.0);

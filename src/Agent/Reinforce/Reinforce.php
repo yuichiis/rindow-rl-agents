@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Agent\Reinforce;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Environment as Env;
 use InvalidArgumentException;
 use LogicException;
 use Rindow\RL\Agents\Policy;
@@ -234,9 +235,16 @@ class Reinforce extends AbstractAgent
     ) : NDArray
     {
         $g = $this->g;
+        $la = $this->la;
         //$log_probs_all = $g->log($g->softmax($logits)); // (batchsize,numActions) : float32
         $log_probs_all = $g->logSoftmax($logits);
+        //echo "log_probs_all\n";
+        //echo $la->toString($log_probs_all,format:'%8.6f',indent:true)."\n";
+        //echo "actions\n";
+        //echo $la->toString($actions,format:'%8.6f',indent:true)."\n";
         $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1); // (batchsize) : float32
+        //echo "selected_log_probs\n";
+        //echo $la->toString($selected_log_probs,format:'%8.6f',indent:true)."\n";
 
         //$probs = $g->softmax($logits);  // (batchsize,numActions)
         //$entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
@@ -244,7 +252,24 @@ class Reinforce extends AbstractAgent
         return $selected_log_probs; //, $entropy;
     }
 
-   /**
+    public function collect(
+        Env $env,
+        ReplayBuffer $experience,
+        int $episodeSteps,
+        NDArray $states,
+        ?array $info,
+        ) : array
+    {
+        $la = $this->la;
+        $actions = $this->action($states,training:true,info:$info);
+        [$nextState,$reward,$done,$truncated,$nextInfo] = $env->step($actions);
+        $nextState = $this->customState($env,$nextState,$done,$truncated,$nextInfo);
+        $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$nextInfo);
+        $experience->add([$states,$actions,$nextState,$reward,$done,$truncated,$info]);
+        return [$nextState,$reward,$done,$truncated,$nextInfo];
+    }
+
+    /**
     * @param Any $params
     */
     public function update(ReplayBuffer $experience) : float
@@ -308,15 +333,16 @@ class Reinforce extends AbstractAgent
         $agent = $this;
         $training = $g->Variable(true);
         $loss = $nn->with($tape=$g->GradientTape(),function() 
-                use ($agent,$g,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
+                use ($la,$agent,$g,$trainModel,$states,$training,$masks,$actions,$discountedRewards) {
             $policyLogits = $trainModel($states,$training);
-            $policyLogits = $g->masking($masks,$policyLogits,-1e9);
+            $policyLogits = $g->masking($masks,$policyLogits,fill:-INF);
 
             //$policyProbs = $g->softmax($policyLogits);
             //$policyProbs = $g->gather($policyProbs,$actions,batchDims:-1);
             //$policyProbs = $g->clipByValue($policyProbs, 1e-10, 1.0);
             //$logProbs = $g->log($policyProbs);
             $logProbs = $agent->log_prob_categorical($policyLogits,$actions);
+            //echo $la->toString($logProbs,format:'%8.6f',indent:true)."\n";
             
             $lossPolicy = $g->mul($logProbs,$discountedRewards);
             $loss = $g->mul($g->Variable(-1),$g->reduceSum($lossPolicy));

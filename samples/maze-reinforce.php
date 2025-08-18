@@ -35,7 +35,7 @@ $mazeRules = $la->array([
 $maxEpisodeSteps = 100;
 $logInterval = 1; # null; # 
 $episodes = 1000;
-$evalInterval = 10;
+$evalInterval = 50;
 $numEvalEpisodes = 1;
 $maxExperienceSize = 10000;#100000;
 #######################
@@ -141,7 +141,7 @@ echo "Creating demo animation.\n";
 for($i=0;$i<1;$i++) {
     echo ".";
     [$state,$info] = $env->reset();
-    $state = $customStateFunction($env,$state,false);
+    //$state = $customStateFunction($env,$state,false);
     $env->render();
     $done=false;
     $truncated=false;
@@ -150,7 +150,7 @@ for($i=0;$i<1;$i++) {
     while(!($done || $truncated)) {
         $action = $agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
-        $state = $customStateFunction($env,$state,$done);
+        //$state = $customStateFunction($env,$state,$done);
         $env->render();
     }
     $ep = $i+1;
