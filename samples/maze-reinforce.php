@@ -63,7 +63,7 @@ $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps
 //$env->show();
 //exit();
 
-$stateShape = $env->observationSpace()->shape();
+$stateShape = $env->observationSpace()['location']->shape();
 //$numStates = $env->observationSpace()->n();
 $numActions = $env->actionSpace()->n();
 //$stateShape = [$numStates];
@@ -91,7 +91,8 @@ $agent = new Reinforce(
     fcLayers:$fcLayers,
     activation:$activation,
     //lossFn:$lossFn,
-    optimizerOpts:['lr'=>$learningRate],mo:$mo,
+    optimizerOpts:['lr'=>$learningRate],
+    stateField:'location',mo:$mo,
 );
 //$agent->setCustomStateFunction($customStateFunction);
 $agent->summary();

@@ -18,6 +18,7 @@ abstract class AbstractAgent implements Agent
 
     protected object $la;
     protected ?Policy $policy;
+    protected ?string $stateField;
     protected mixed $customRewardFunction=null;
     protected mixed $customStateFunction=null;
     protected ?Metrics $metrics;
@@ -25,10 +26,12 @@ abstract class AbstractAgent implements Agent
     public function __construct(
         object $la,
         ?Policy $policy=null,
+        ?string $stateField=null,
         )
     {
         $this->la = $la;
         $this->policy = $policy;
+        $this->stateField = $stateField;
     }
 
     public function register(?EventManager $eventManager=null) : void
@@ -72,9 +75,9 @@ abstract class AbstractAgent implements Agent
     protected function customReward(
         Env $env,
         int $stepCount,
-        NDArray $states,
+        NDArray|array $states,
         NDArray $action,
-        NDArray $nextStates,
+        NDArray|array $nextStates,
         float $reward,
         bool $done,
         bool $truncated,
@@ -90,11 +93,11 @@ abstract class AbstractAgent implements Agent
 
     protected function customState(
         Env $env,
-        NDArray $states,
+        NDArray|array $states,
         bool $done,
         bool $truncated,
         ?array $info,
-        ) : NDArray
+        ) : NDArray|array
     {
         $func = $this->customStateFunction;
         if($func===null) {
@@ -124,28 +127,40 @@ abstract class AbstractAgent implements Agent
         return $states;
     }
 
-    protected function extractMasks(?array $infos) : ?NDArray
+    protected function extractMask(NDArray|array $obs) : ?NDArray
     {
         $la = $this->la;
-        $masks = null;
-        if($infos!=null) {
-            $masks = [];
-            foreach($infos as $inf) {
-                if(!isset($inf['validActions'])) {
-                    $masks = null;
-                    break;
-                    }
-                $masks[] = $inf['validActions'] ?? null;
-            }
-            if($masks!==null) {
-                if(count($masks)>0) {
-                    $masks = $la->stack($masks);
-                } else {
-                    $masks = null;
-                }
-            }
+        if($obs instanceof NDArray) {
+            return null;
         }
-        return $masks;
+        if(!isset($obs['actionMask'])) {
+            return null;
+        }
+        $mask = $obs['actionMask'];
+        if(!($mask instanceof NDArray)) {
+            throw new InvalidArgumentException("actionMask must NDArray");
+        }
+        return $mask;
+    }
+
+    protected function extractState(NDArray|array $obs) : NDArray
+    {
+        $la = $this->la;
+        if($obs instanceof NDArray) {
+            return $obs;
+        }
+        if($this->stateField===null) {
+            throw new InvalidArgumentException("No valid state field name was specified.");
+        }
+        $stateField = $this->stateField;
+        if(!isset($obs[$stateField])) {
+            throw new InvalidArgumentException("The $stateField field is missing in observation.");
+        }
+        $state = $obs[$stateField];
+        if(!($state instanceof NDArray)) {
+            throw new InvalidArgumentException("The $stateField field must be NDArray.");
+        }
+        return $state;
     }
 
     public function reset(Env $env) : array
@@ -155,7 +170,7 @@ abstract class AbstractAgent implements Agent
         return [$states,$info];
     }
 
-    public function step(Env $env, int $episodeSteps, NDArray $states, ?array $info=null) : array
+    public function step(Env $env, int $episodeSteps, NDArray|array $states, ?array $info=null) : array
     {
         $la = $this->la;
         $action = $this->action($states,training:false,info:$info);
@@ -169,7 +184,7 @@ abstract class AbstractAgent implements Agent
         Env $env,
         ReplayBuffer $experience,
         int $episodeSteps,
-        NDArray $states,
+        NDArray|array $states,
         ?array $info,
         ) : array
     {
@@ -183,32 +198,56 @@ abstract class AbstractAgent implements Agent
     }
 
     /**
-     * states  : (batches, ...statesDims)
+     * obs  : (batches, ...statesDims)
      * actions : (batches, ...ActionsDims)
      */
-    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray
+    public function action(NDArray|array $obs, ?bool $training=null, ?array $info=null, ?bool $parallel=null) : NDArray
     {
         $la = $this->la;
         $training ??= false;
         $info ??= [];
-        //[$states,$isParallel,$isScalar] = $this->atleast2d($states);
+        $parallel ??= false;
+        //[$states,$parallel,$isScalar] = $this->atleast2d($states);
         
         $masks = null;
-        $isParallel = is_array($states);
-        if($isParallel) {
-            $states = $la->stack($states);
-            $masks = $this->extractMasks($info);
+        if($parallel) {
+            //$states = $la->stack($states);
+            if(!is_array($obs)) {
+                throw new InvalidArgumentException("obs must be array when parallel=true.");
+            }
+            $states = [];
+            $masks = [];
+            $hasMask = false;
+            $noMask = false;
+            foreach($obs as $idx => $oneobs) {
+                $states[] = $this->extractState($oneobs);
+                $mask = $this->extractMask($oneobs);
+                if($mask!==null) {
+                    $hasMask = true;
+                } else {
+                    $noMask = true;
+                }
+                $masks[] = $mask;
+            }
+            if($hasMask && $noMask) {
+                throw new InvalidArgumentException("Masks must be worn or not worn uniformly.");
+            }
+            $states = $la->stack($states,axis:0);
+            if($hasMask) {
+                $masks = $la->stack($masks,axis:0);
+            } else {
+                $masks = null;
+            }
         } else {
+            $states = $this->extractState($obs);
+            $masks = $this->extractMask($obs);
             if($states->ndim()<1) {
                 $shape = $la->shapeToString($states->shape());
                 throw new InvalidArgumentException("shape of states must be greater than 1D. $shape given.");
             }
             $states = $la->expandDims($states,axis:0);
-            if($info!=null) {
-                $masks = $info['validActions'] ?? null;
-                if($masks!==null) {
-                    $masks = $la->expandDims($masks,axis:0);
-                }
+            if($masks!==null) {
+                $masks = $la->expandDims($masks,axis:0);
             }
         }
         if($states->ndim()<2) {
@@ -219,7 +258,7 @@ abstract class AbstractAgent implements Agent
         // NDArray $states  : (batches,stateDims ) typeof int32 or float32
         // NDArray $actions : (batches) typeof int32 or (batches,numActions) typeof float32
         $actions = $this->policy->actions($this->estimator(),$states,training:$training,masks:$masks);
-        if(!$isParallel) {
+        if(!$parallel) {
             $actions = $la->squeeze($actions,axis:0);
         }
         //echo "states(".implode(',',$states->shape()).")\n";

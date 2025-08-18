@@ -56,7 +56,7 @@ class Reinforce extends AbstractAgent
         ?string $activation=null,
         ?string $kernelInitializer=null,
         ?float $boltzTau=null,
-        ?EventManager $eventManager=null,
+        ?string $stateField=null,
         ?object $mo = null
         )
     {
@@ -75,7 +75,7 @@ class Reinforce extends AbstractAgent
         $useBaseline ??= false;
         $useNormalize ??= false;
 
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,policy:$policy,stateField:$stateField);
 
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
@@ -252,23 +252,6 @@ class Reinforce extends AbstractAgent
         return $selected_log_probs; //, $entropy;
     }
 
-    public function collect(
-        Env $env,
-        ReplayBuffer $experience,
-        int $episodeSteps,
-        NDArray $states,
-        ?array $info,
-        ) : array
-    {
-        $la = $this->la;
-        $actions = $this->action($states,training:true,info:$info);
-        [$nextState,$reward,$done,$truncated,$nextInfo] = $env->step($actions);
-        $nextState = $this->customState($env,$nextState,$done,$truncated,$nextInfo);
-        $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$nextInfo);
-        $experience->add([$states,$actions,$nextState,$reward,$done,$truncated,$info]);
-        return [$nextState,$reward,$done,$truncated,$nextInfo];
-    }
-
     /**
     * @param Any $params
     */
@@ -295,7 +278,8 @@ class Reinforce extends AbstractAgent
         $discounted = 0;
         $history = array_reverse($history);
         foreach ($history as $transition) {
-            [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+            [$obs,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+            $state = $this->extractState($obs);
             $discounted = $reward + $discounted*$this->gamma;
             $discountedRewards[$i] = $discounted;
             $rewards[$i] = $reward;
@@ -310,10 +294,9 @@ class Reinforce extends AbstractAgent
                 throw new LogicException("shape of action must be scalar ndarray.");
             }
             $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-            if($info!=null) {
-                if(isset($info['validActions'])) {
-                    $la->copy($info['validActions'],$masks[$i]);
-                }
+            $mask = $this->extractMask($obs);
+            if($mask!=null) {
+                $la->copy($mask,$masks[$i]);
             }
             $i--;
         }
