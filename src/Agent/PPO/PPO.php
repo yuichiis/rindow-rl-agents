@@ -358,33 +358,6 @@ class PPO extends AbstractAgent
         return [$advantages, $returns];
     }
 
-    public function standardize(
-        NDArray $x,         // (rolloutSteps)
-        ?bool $ddof=null
-        ) : NDArray
-    {
-        $ddof ??= false;
-
-        $la = $this->la;
-
-        // baseline
-        $mean = $la->reduceMean($x,axis:0);     // ()
-        $baseX = $la->add($mean,$la->copy($x),alpha:-1.0);  // (rolloutSteps)
-
-        // std
-        if($ddof) {
-            $n = $x->size()-1;
-        } else {
-            $n = $x->size();
-        }
-        $variance = $la->scal(1/$n, $la->reduceSum($la->square($la->copy($baseX)),axis:0)); // ()
-        $stdDev = $la->sqrt($variance); // ()
-
-        // standardize
-        $result = $la->multiply($la->reciprocal($stdDev,beta:1e-8),$baseX); // (rolloutSteps)
-        return $result; // (rolloutSteps)
-    }
-
     protected function log_prob_entropy(
         NDArray $logits,    // (batchsize,numActions) : float32
         NDArray $actions,   // (batchSize) : int32

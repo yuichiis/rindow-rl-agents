@@ -22,55 +22,69 @@ $plt = new Plot(null,$mo);
 
 $mazeRules = $la->array([
 //   UP    DOWN  RIGHT LEFT
-    [NAN,    1,    1,  NAN], // 0  +-+-+-+
-    [NAN,    1,    1,    1], // 1  |0 1 2|
-    [NAN,  NAN,  NAN,    1], // 2  + + +-+
-    [  1,    1,  NAN,  NAN], // 3  |3|4 5|
-    [  1,  NAN,    1,  NAN], // 4  + +-+ +
-    [NAN,    1,  NAN,    1], // 5  |6 7|8|
-    [  1,  NAN,    1,  NAN], // 6  +-+-+-+
-    [NAN,  NAN,  NAN,    1], // 7
-    [  1,  NAN,  NAN,  NAN], // 8
-]);
+    [false, true, true,false], // 0  +-+-+-+
+    [false, true, true, true], // 1  |0 1 2|
+    [false,false,false, true], // 2  + + +-+
+    [true,  true,false,false], // 3  |3|4 5|
+    [true, false, true,false], // 4  + +-+ +
+    [false, true,false, true], // 5  |6 7|8|
+    [true, false, true,false], // 6  +-+-+-+
+    [false,false,false, true], // 7
+    [true, false,false,false], // 8
+],dtype:NDArray::bool);
 [$width,$height,$exit] = [3,3,8];
-$stateFunc = function($env,$x,$done) use ($la) {
-    return $la->expandDims($x,axis:-1);
+$stateFunc = function($env,$obs,$done) use ($la,$width) {
+    $location = $obs['location'];
+    $y = $location[0];
+    $x = $location[1];
+    $pos = $y*$width + $x;
+    $pos = $la->array([$pos],dtype:NDArray::int32);
+    $mask = $obs['actionMask'];
+    return ['location'=>$pos,'actionMask'=>$mask];
 };
-$env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
-
-$policy = new AnnealingEpsGreedy($la,start:1.0,stop:0.01,decayRate:0.05,episodeAnnealing:true);
-//$policy = new AnnealingEpsGreedy($la,$valueTable,$espstart=0.1,$stop=0.1,$decayRate=0.01);
-$pg = new PolicyGradient($la,$mazeRules,$eta=0.1,mo:$mo);
-$sarsa = new Sarsa($la,$mazeRules,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
-$qlearning = new QLearning($la,$mazeRules,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
-
-$driver1 = new EpisodeRunner($la,$env,$pg,$experienceSize=10000);
-$driver2 = new EpisodeRunner($la,$env,$sarsa,$experienceSize=2);
-$driver3 = new EpisodeRunner($la,$env,$qlearning,$experienceSize=2);
-$driver1->setCustomStateFunction($stateFunc);
-$driver2->setCustomStateFunction($stateFunc);
-$driver3->setCustomStateFunction($stateFunc);
-$drivers = [$driver1,$driver2,$driver3];
-//$drivers = [$driver2];
-
+$stateField = 'location';
+$maxEpisodeSteps = 100;
 $episodes = 100;#250;#15;#
-$epochs = 50;#500;#
+$epochs = 50; # 500; #
 $evalInterval=1;
 $numEvalEpisodes=10;
 $dot = (int)($epochs/10);
+
+$env = new Maze($la,$mazeRules,$width,$height,$exit,maxEpisodeSteps:$maxEpisodeSteps);
+$evalEnv = new Maze($la,$mazeRules,$width,$height,$exit,maxEpisodeSteps:$maxEpisodeSteps);
+$numStates = $width*$height;
+$numActions = $env->actionSpace()->n();
+
+$policy = new AnnealingEpsGreedy($la,start:1.0,stop:0.01,decayRate:0.05,episodeAnnealing:true);
+//$policy = new AnnealingEpsGreedy($la,$valueTable,$espstart=0.1,$stop=0.1,$decayRate=0.01);
+$pg = new PolicyGradient($la,$numStates,$numActions,eta:0.1,stateField:$stateField,mo:$mo);
+$sarsa = new Sarsa($la,$numStates,$numActions,$policy,eta:0.1,gamma:0.9,stateField:$stateField,mo:$mo);
+$qlearning = new QLearning($la,$numStates,$numActions,$policy,eta:0.1,gamma:0.9,stateField:$stateField,mo:$mo);
+$pg->setCustomStateFunction($stateFunc);
+$sarsa->setCustomStateFunction($stateFunc);
+$qlearning->setCustomStateFunction($stateFunc);
+
+$driver1 = new EpisodeRunner($la,$env,$pg,experienceSize:10000,evalEnv:$evalEnv);
+$driver2 = new EpisodeRunner($la,$env,$sarsa,experienceSize:2,evalEnv:$evalEnv);
+$driver3 = new EpisodeRunner($la,$env,$qlearning,experienceSize:2,evalEnv:$evalEnv);
+$drivers = [$driver1,$driver2,$driver3];
+//$drivers = [$driver2];
+
 $arts = [];
 foreach ($drivers as $driver) {
+    echo get_class($driver->agent())."\n";
     $avgsteps = $la->zeros($la->alloc([(int)floor($episodes/$evalInterval)]));
     $avgvalsteps = $la->zeros($la->alloc([(int)floor($episodes/$evalInterval)]));
     for($i=0;$i<$epochs;$i++) {
+        $driver->initialize();
         $driver->agent()->initialize();
         $driver->agent()->resetData();
         $history = $driver->train(
-            $episodes,null,$metrics=['steps','val_steps','epsilon'],
-            $evalInterval,$numEvalEpisodes,null,$verbose=0);
+            numIterations:$episodes,metrics:['steps','valSteps','epsilon'],
+            evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,verbose:0);
         $stepslog = $la->array($history['steps'],NDArray::float32);
         $la->axpy($stepslog,$avgsteps);
-        $stepslog = $la->array($history['val_steps'],NDArray::float32);
+        $stepslog = $la->array($history['valSteps'],NDArray::float32);
         $la->axpy($stepslog,$avgvalsteps);
 
         echo "\rEpoch ".sprintf('%2d',$i+1)." [".

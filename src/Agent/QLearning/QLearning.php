@@ -26,7 +26,7 @@ class QLearning extends AbstractAgent
         ?Policy $policy=null,
         ?float $eta=null,
         ?float $gamma=null,
-        ?EventManager $eventManager=null,
+        ?string $stateField=null,
         ?object $mo=null,
         )
     {
@@ -35,7 +35,7 @@ class QLearning extends AbstractAgent
         $eta ??=0.1;
         $gamma ??=0.9;
 
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,policy:$policy,stateField:$stateField);
         $this->valueTable = $table;
         $this->eta = $eta;
         $this->gamma = $gamma;
@@ -100,16 +100,15 @@ class QLearning extends AbstractAgent
         NDArray $q,
         NDArray $nextValues,
         float $reward,
-        ?array $info,
+        ?NDArray $nextMask,
         iterable $history
         ) : NDArray
     {
         $la = $this->la;
         //  TD = R(t+1)+gamma*max(Q(s(t+1),?))-Q(s(t),a(t))
-        if($info!=null) {
-            $masks = $this->extractMasks([$info]);
-            //$nextValues = $la->nan2num($la->copy($nextValues),alpha:-INF);
-            $nextValues = $la->masking($masks,$la->copy($nextValues),fill:-INF);
+        if($nextMask!=null) {
+            $nextMask = $la->expandDims($nextMask,axis:0);
+            $nextValues = $la->masking($nextMask,$la->copy($nextValues),fill:-INF);
         }
         $maxQ = $la->reduceMax($nextValues,axis:-1);
         $td = $la->axpy($q,$la->increment(
@@ -128,7 +127,8 @@ class QLearning extends AbstractAgent
         $la = $this->la;
 
         $history = $this->getHistory($experience);
-        [$state,$action,$nextState,$reward,$done,$truncated,$info] = $history[0];
+        [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $history[0];
+        $state = $this->extractState($obs);
         if($state->shape()!==[1]) {
             throw new LogicException("Shape of State in replay buffer must be (1).".$la->shapeToString($state->shape()));
         }
@@ -150,8 +150,10 @@ class QLearning extends AbstractAgent
             //    Q(s(t),a(t))+eta*TDERROR
             // TDERROR = R(t+1) + gamma*Q(s(t+1),a(t+1)) - Q(s(t),a(t))
             //$nextValues = $table[$nextState];
+            $nextState = $this->extractState($nextObs);
+            $nextMask = $this->extractMask($nextObs);
             $nextValues = $la->gatherb($table,$nextState);
-            $tdError = $this->tdError($qLocation,$nextValues,$reward,$info,$history);
+            $tdError = $this->tdError($qLocation,$nextValues,$reward,$nextMask,$history);
             $la->axpy($tdError,$qLocation,$this->eta);
             $error = $la->nrm2($tdError);
         }

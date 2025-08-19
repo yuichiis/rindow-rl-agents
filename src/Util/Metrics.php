@@ -40,6 +40,12 @@ class Metrics implements MetricsInterface
         $this->attracted = $metrics;
     }
 
+    public function clear() : void
+    {
+        $this->resetAll();
+        $this->history = [];
+    }
+
     public function isAttracted(string $name) : bool
     {
         return isset($this->attracted[$name]);

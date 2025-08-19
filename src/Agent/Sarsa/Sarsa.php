@@ -17,23 +17,14 @@ class Sarsa extends QLearning
         NDArray $q,
         NDArray $nextValues,
         float $reward,
-        ?array $info,
+        ?NDArray $nextMask,
         iterable $history,
         ) : NDArray
     {
         $la = $this->la;
         [$dmy0,$nextAction,$dmy1,$dmy2,$dmy3,$dmy4] = $history[1];
-        // R(t+1)+gamma*Q(s(t+1),a(t+1))-Q(s(t),a(t))
-        //$nextAction = $la->scalar($nextAction);
-        //$nextQ = $nextValues[R($nextAction,$nextAction+1)];
-        //$nextQ = $la->gatherb($nextValues,$nextAction);
-        //$nextValues = $la->nan2num($la->copy($nextValues),alpha:-INF);
-        if($info!=null) {
-            $masks = $this->extractMasks([$info]);
-            //$nextValues = $la->nan2num($la->copy($nextValues),alpha:-INF);
-            $nextValues = $la->masking($masks,$la->copy($nextValues),fill:-INF);
-        }
-        $nextQ = $la->reduceMax($nextValues,axis:-1);
+        // No masking is required as it uses the actual selected action.
+        $nextQ = $la->gatherb($nextValues,$nextAction,axis:-1);
         $td = $la->axpy($q,$la->increment(
             $la->scal($this->gamma,$la->copy($nextQ)),$reward),
             -1.0);

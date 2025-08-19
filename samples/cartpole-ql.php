@@ -3,18 +3,17 @@ require __DIR__.'/../vendor/autoload.php';
 
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
-//use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Agents\Agent\QLearning\QLearning;
+use Rindow\RL\Agents\Agent\Sarsa\Sarsa;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
 use function Rindow\Math\Matrix\R;
 
 $mo = new MatrixOperator();
 $la = $mo->la();
-//$nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 
 $env = new CartPoleV1($la);
@@ -39,18 +38,6 @@ $digitizeStateFunc = function($env,$state,$done) use ($la,$digitize,$numDizitize
     }
     return $la->array([$dizitizedState],dtype:NDArray::int32);
 };
-$customRewardFunc = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) {
-    if($done) {
-        if($stepCount < 195) {
-            $reward = -200.0;  // Episode failure
-        } else {
-            $reward = 1.0;     // Episode success
-        }
-    } else {
-        $reward = 1.0; // reward each step
-    }
-    return $reward;
-};
 
 // == StepRunner ==
 $numIterations = 100000;
@@ -69,12 +56,9 @@ $decayRate=5e-5;
 $eta=0.1;
 $gamma=0.9;
 
-//$poleRules = $la->ones($la->alloc([$numStates,$numActions]));
-
 $policy = new AnnealingEpsGreedy($la,start:$espstart,stop:$espstop,decayRate:$decayRate);
 $agent = new QLearning($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
-//$agent->setCustomStateFunction($digitizeState);
-//$driver->setCustomRewardFunction($customRewardFunc);
+//$agent = new Sarsa($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
 $agent->setCustomStateFunction($digitizeStateFunc);
 
 function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
@@ -92,8 +76,8 @@ function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
 
 $filename = __DIR__.'\\cartpole-ql';
 if(!$agent->fileExists($filename)) {
-    $driver = new StepRunner($la,$env,$agent,experienceSize:1,evalEnv:$evalEnv);
-    //$driver = new EpisodeRunner($la,$env,$agent,experienceSize:1,evalEnv:$evalEnv);
+    $driver = new StepRunner($la,$env,$agent,experienceSize:10,evalEnv:$evalEnv);
+    //$driver = new EpisodeRunner($la,$env,$agent,experienceSize:10,evalEnv:$evalEnv);
     $driver->metrics()->format('reward','%5.1f');
     $driver->metrics()->format('valRewards','%5.1f');
     $arts = [];

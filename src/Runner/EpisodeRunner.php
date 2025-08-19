@@ -183,7 +183,9 @@ class EpisodeRunner extends AbstractRunner
                 $logStepCount = 0;
             }
         }
-        $this->console("\n");
+        if($verbose>=1) {
+            $this->console("\n");
+        }
         return $metrics->history();
     }
 }

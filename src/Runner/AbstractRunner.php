@@ -1,6 +1,7 @@
 <?php
 namespace Rindow\RL\Agents\Runner;
 
+use InvalidArgumentException;
 use Interop\Polite\AI\RL\Environment as Env;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Agent;
@@ -35,6 +36,12 @@ abstract class AbstractRunner implements Runner
         $experienceSize ??= 10000;
         $replayBuffer ??= new ReplayBuffer($la,$experienceSize);
         $eventManager ??= new EventManager();
+
+        if($replayBuffer->maxSize()<$agent->subStepLength()) {
+            $experienceSize = $replayBuffer->maxSize();
+            $subStepLength = $agent->subStepLength();
+            throw new InvalidArgumentException("experienceSize must be greater than or equal to the agent's subStepLength.: experienceSize=$experienceSize,subStepLength=$subStepLength");
+        }
 
         $this->la = $la;
         $this->agent = $agent;
@@ -100,9 +107,10 @@ abstract class AbstractRunner implements Runner
     //    return $func($env,$states,$done,$truncated,$info);
     //}
 
-    protected function initialize() : void
+    public function initialize() : void
     {
         $this->experience->clear();
+        $this->metrics->clear();
     }
 
     public function agent() : Agent

@@ -59,7 +59,7 @@ class DQN extends AbstractAgent
         ?string $kernelInitializer=null,
         ?float $epsStart=null, ?float $epsStop=null, ?float $epsDecayRate=null,
         ?bool $episodeAnnealing=null,
-        ?EventManager $eventManager=null,
+        ?string $stateField=null,
         ?object $mo = null
         )
     {
@@ -68,7 +68,7 @@ class DQN extends AbstractAgent
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
         $policy ??= $this->buildPolicy($la,$epsStart,$epsStop,$epsDecayRate,$episodeAnnealing);
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,policy:$policy,stateField:$stateField);
 
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
@@ -265,7 +265,8 @@ class DQN extends AbstractAgent
         $batch = $experience->sample($batchSize);
         $i = 0;
         foreach($batch as $transition) {
-            [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+            [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $transition;
+            $state = $this->extractState($obs);
             if(!($state instanceof NDArray)) {
                 throw new LogicException("state must be NDArray.");
             }
@@ -273,6 +274,7 @@ class DQN extends AbstractAgent
                 $state = $la->astype($state,dtype:NDArray::float32);
             }
             $la->copy($state,$states[$i]);
+            $nextState = $this->extractState($nextObs);
             if(!($nextState instanceof NDArray)) {
                 throw new LogicException("nextState must be NDArray.");
             }
@@ -289,10 +291,9 @@ class DQN extends AbstractAgent
                 throw new LogicException("shape of action must be scalar ndarray.");
             }
             $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-            if($info!=null) {
-                if(isset($info['validActions'])) {
-                    $la->copy($info['validActions'],$masks[$i]);
-                }
+            $mask = $this->extractMask($nextObs);
+            if($mask!==null) {
+                $la->copy($mask,$masks[$i]);
             }
             $i++;
         }

@@ -30,9 +30,9 @@ $mazeRules = $la->array([
     [false, false, false,  true], // 7
     [ true, false, false, false], // 8
 ],dtype:NDArray::bool);
-$customStateFunction = function($env,$x,$done) use ($la) {
-    return $la->expandDims($x,axis:-1);
-};
+//$customStateFunction = function($env,$x,$done) use ($la) {
+//    return $la->expandDims($x,axis:-1);
+//};
 [$width,$height,$exit] = [3,3,8];
 $maxEpisodeSteps = 100;
 $logInterval = null; # 1;
@@ -63,7 +63,7 @@ $env = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps
 //exit();
 
 //$stateShape = $env->observationSpace()->shape();
-$stateShape = [1];
+$stateShape = $env->observationSpace()['location']->shape();
 $numActions = $env->actionSpace()->n();
 $evalEnv = new Maze($la,$mazeRules,$width,$height,$exit,$throw=true,$maxEpisodeSteps);
 
@@ -92,9 +92,9 @@ $agent = new DQN(
     epsStop:$epsStop,
     epsDecayRate:$decayRate,
     episodeAnnealing:$episodeAnnealing,
-    mo:$mo
+    stateField:'location',mo:$mo
 );
-$agent->setCustomStateFunction($customStateFunction);
+//$agent->setCustomStateFunction($customStateFunction);
 $agent->summary();
 
 function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
@@ -143,7 +143,7 @@ echo "Creating demo animation.\n";
 for($i=0;$i<1;$i++) {
     echo ".";
     [$state,$info] = $env->reset();
-    $state = $customStateFunction($env,$state,false);
+    //$state = $customStateFunction($env,$state,false);
     $env->render();
     $done=false;
     $truncated=false;
@@ -152,7 +152,7 @@ for($i=0;$i<1;$i++) {
     while(!($done||$truncated)) {
         $action = $agent->action($state,training:false,info:$info);
         [$state,$reward,$done,$truncated,$info] = $env->step($action);
-        $state = $customStateFunction($env,$state,$done);
+        //$state = $customStateFunction($env,$state,$done);
         $testReward += $reward;
         $testSteps++;
         $env->render();

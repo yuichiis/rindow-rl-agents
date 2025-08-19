@@ -27,13 +27,13 @@ class PolicyGradient extends AbstractAgent
         float $eta,
         ?PolicyTable $table=null,
         ?Policy $policy=null,
-        ?EventManager $eventManager=null,
+        ?string $stateField=null,
         ?object $mo=null,
         )
     {
         $table ??= $this->buildTable($la,$numStates, $numActions);
         $policy ??= $this->buildPolicy($la);
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,policy:$policy,stateField:$stateField);
         $this->eta = $eta;
         $this->mo = $mo; // for debug
         $this->pTable = $table;
@@ -70,12 +70,17 @@ class PolicyGradient extends AbstractAgent
         return 1;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
     public function initialize() : void // : Operation
     {
         $this->policy->initialize();
     }
 
-    public function resetData()
+    public function resetData() : void
     {
         $la = $this->la;
         $this->pTable->initialize();
@@ -128,7 +133,8 @@ class PolicyGradient extends AbstractAgent
 
         $totalReward = 0;
         foreach ($history as $transition) {
-            [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+            [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $transition;
+            $state = $this->extractState($obs);
             if($state->shape()!==[1]) {
                 throw new LogicException("Shape of State in replay buffer must be (1).".$la->shapeToString($state->shape()));
             }
