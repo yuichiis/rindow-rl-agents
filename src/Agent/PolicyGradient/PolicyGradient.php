@@ -129,11 +129,10 @@ class PolicyGradient extends AbstractAgent
         $shape = $table->shape();
         $ns =  $la->zeros($la->alloc($shape));
         $nsa = $la->zeros($la->alloc($shape));
-        $history = $experience->recently($experience->size());
+        [$obsAll,$actionAll,$nextObsAll,$rewardAll,$doneAll,$truncatedAll,$infoAll] = $experience->recently($experience->size());
 
         $totalReward = 0;
-        foreach ($history as $transition) {
-            [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $transition;
+        foreach (array_map(null,$obsAll,$actionAll) as [$obs,$action]) {
             $state = $this->extractState($obs);
             if($state->shape()!==[1]) {
                 throw new LogicException("Shape of State in replay buffer must be (1).".$la->shapeToString($state->shape()));
@@ -145,7 +144,7 @@ class PolicyGradient extends AbstractAgent
         }
 
         // th(s,a) = th(s,a) + eta * (N(s,a)+P(s,a)*N(s))/T
-        $totalStep = count($history); // T
+        $totalStep = count($obsAll); // T
 
         $th = $table;                       // th
         $p = $this->prevProbs;              // P    // probabilities

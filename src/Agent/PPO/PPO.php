@@ -358,55 +358,6 @@ class PPO extends AbstractAgent
         return [$advantages, $returns];
     }
 
-    protected function log_prob_entropy(
-        NDArray $logits,    // (batchsize,numActions) : float32
-        NDArray $actions,   // (batchSize) : int32
-    ) : array
-    {
-        $g = $this->g;
-        $log_probs_all = $g->log($g->softmax($logits)); // (batchsize,numActions) : float32
-        $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1); // (batchsize) : float32
-
-        $probs = $g->softmax($logits);  // (batchsize,numActions)
-        $entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
-
-        return [$selected_log_probs, $entropy];
-    }
-
-    /**
-     *  Args:
-     *      mean (tf.Tensor):    平均
-     *      logStd (tf.Tensor):  Logされた標準偏差
-     *      value (tf.Tensor):   確率を計算したい値
-     *  Returns:
-     *      tuple[tf.Tensor, tf.Tensor]: (log_prob, entropy)
-     */
-    protected function log_prob_entropy_continuous(
-        NDArray $mean,      // (batchSize,numActions)
-        NDArray $logStd,    // (numActions)
-        NDArray $value,     // (batchSize,numActions)
-    ) : array
-    {
-        $g = $this->g;
-        // log_prob =
-        //      -0.5 * tf.square((actions - mu) / tf.math.exp(log_std))
-        //      -log_std
-        //      -0.5 * np.log(2.0 * np.pi))
-        $stableStd = $g->add($g->exp($logStd),$g->constant(1e-8));
-        $logProb = $g->sub(
-            $g->sub(
-                $g->scale(-0.5,$g->square($g->div($g->sub($value,$mean),$stableStd))),
-                $g->log($stableStd)
-            ),
-            $g->constant(0.5 * log(2.0 * pi()))
-        );
-        $logProb = $g->reduceSum($logProb, axis:1, keepdims:true);
-        $entropy = $g->add($g->constant(0.5 + 0.5*log(2*pi())), $g->log($stableStd));
-        $entropy = $g->add($g->zerosLike($mean),$entropy); // 他のテンソルとの互換性のため
-
-        return [$logProb, $entropy]; // logProb=(batchsize,numActions), entropy=(1,numActions)
-    }
-
     protected function clip_by_global_norm(array $arrayList, float $clipNorm) : array
     {
         $la = $this->la;
@@ -427,10 +378,10 @@ class PPO extends AbstractAgent
         return $newList;
     }
 
-    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray
+    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null, ?bool $parallel = null) : NDArray
     {
         $la = $this->la;
-        $action = parent::action($states,training:$training,info:$info);
+        $action = parent::action($states,training:$training,info:$info,parallel:$parallel);
         if($this->continuous) {
             if($this->actionMin!==null) {
                 $action = $la->maximum($la->copy($action),$this->actionMin);
@@ -446,7 +397,7 @@ class PPO extends AbstractAgent
         Env $env,
         ReplayBuffer $experience,
         int $episodeSteps,
-        NDArray $states,
+        array|NDArray $states,
         ?array $info,
         ) : array
     {
@@ -562,7 +513,7 @@ class PPO extends AbstractAgent
         }
 
         if(!$this->continuous) {
-            [$oldLogProbs, $dmy] = $this->log_prob_entropy($oldLogits,$actions);
+            [$oldLogProbs, $dmy] = $this->log_prob_entropy_categorical($oldLogits,$actions);
         } else {
             [$oldLogProbs, $dmy] = $this->log_prob_entropy_continuous($oldMeans,$oldLogStd,$actions);
         }
@@ -584,25 +535,25 @@ class PPO extends AbstractAgent
         $clipValueLoss = $this->clipValueLoss;
         $model = $this->model;
         $lossFunc = $this->lossFunc;
-        $ppo = $this;
+        $agent = $this;
         $training = $g->Variable(true);
         $loss = 0.0;
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
                 [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
                 [$totalLoss,$policyLoss,$valueLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
-                    use ($la,$ppo,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB, 
+                    use ($la,$agent,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB, 
                         $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon,$oldValuesB,
                         $clipValueLoss)
                 {
-                    if(!$ppo->continuous) {
+                    if(!$agent->continuous) {
                         [$newLogits, $newValues] = $model($statesB,$training); // (batchSize,numActions),(batchSize,1)
                         $newValues = $g->squeeze($newValues,axis:-1);
-                        [$newLogProbs, $entropy] = $ppo->log_prob_entropy($newLogits,$actionsB);
+                        [$newLogProbs, $entropy] = $agent->log_prob_entropy_categorical($newLogits,$actionsB);
                     } else {
                         [$newMeans, $newValues, $newLogStd] = $model($statesB,$training);
                         $newValues = $g->squeeze($newValues,axis:-1);
-                        [$newLogProbs, $entropy] = $ppo->log_prob_entropy_continuous($newMeans,$newLogStd,$actionsB);
+                        [$newLogProbs, $entropy] = $agent->log_prob_entropy_continuous($newMeans,$newLogStd,$actionsB);
                         // 多次元行動も考慮し、log_probとentropyをスカラーに変換
                         $newLogProbs = $g->reduceSum($newLogProbs, axis:-1);
                         $oldLogProbsB = $g->reduceSum($oldLogProbsB, axis:-1);

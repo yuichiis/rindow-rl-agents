@@ -26,6 +26,8 @@ class A2C extends AbstractAgent
     protected float $gamma;
     protected float $valueLossWeight;
     protected float $entropyWeight;
+    protected bool $useBaseline;
+    protected bool $useNormalize;
     //protected $rewardScaleFactor;
     protected array $stateShape;
     protected int $numActions;
@@ -49,6 +51,8 @@ class A2C extends AbstractAgent
         ?float $gamma=null,
         ?float $valueLossWeight=null,
         ?float $entropyWeight=null,
+        ?bool $useBaseline=null,
+        ?bool $useNormalize=null,
         ?object $nn=null,
         ?object $optimizer=null,
         ?array $optimizerOpts=null,
@@ -56,7 +60,7 @@ class A2C extends AbstractAgent
         ?array $stateShape=null, ?int $numActions=null,
         ?array $fcLayers=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
-        ?EventManager $eventManager=null,
+        ?string $stateField=null,
         ?object $mo = null
         )
     {
@@ -66,7 +70,7 @@ class A2C extends AbstractAgent
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
         $policy ??= $this->buildPolicy($la,$policyTau,$policyMin,$policyMax);
-        parent::__construct($la,$policy,$eventManager);
+        parent::__construct($la,policy:$policy,stateField:$stateField);
 
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
@@ -74,6 +78,8 @@ class A2C extends AbstractAgent
         $gamma ??= 0.99;
         $valueLossWeight ??= 0.5;
         $entropyWeight ??= 0.0;
+        $useBaseline ??= false;
+        $useNormalize ??= true;
         $nn ??= $network->builder();
         $optimizerOpts ??= ['lr'=>7e-4];
         $optimizer ??= $nn->optimizers->Adam(...$optimizerOpts);
@@ -88,6 +94,8 @@ class A2C extends AbstractAgent
         $this->gamma = $gamma;
         $this->valueLossWeight = $valueLossWeight;
         $this->entropyWeight = $entropyWeight;
+        $this->useBaseline = $useBaseline;
+        $this->useNormalize = $useNormalize;
         $this->optimizer = $optimizer;
         $this->optimizerOpts = $optimizerOpts;
         $this->lossFunc = $lossFunc;
@@ -137,9 +145,6 @@ class A2C extends AbstractAgent
         ?float $max=null,
         )
     {
-        $tau ??= 1.0;
-        $min ??= -INF;
-        $max ??= INF;
         $policy = new Boltzmann(
             $la,
             $tau,
@@ -195,7 +200,7 @@ class A2C extends AbstractAgent
 
     public function numRolloutSteps() : int
     {
-        return 1;
+        return $this->batchSize;
     }
 
     protected function estimator() : Estimator
@@ -207,6 +212,29 @@ class A2C extends AbstractAgent
     {
     }
 
+    protected function compute_discounted_rewards(
+        array $rewards,
+        float $nextValue,
+        array $dones,
+        array $truncated,
+        float $gamma,
+        ) : NDArray
+    {
+        $discountedRewards = [];
+        $discounted = $nextValue;
+        for($i=count($rewards)-1; $i>=0; $i--) {
+            if($dones[$i]||$truncated[$i]) {
+                $discounted = 0;
+            }
+            $discounted = $rewards[$i] + $discounted*$gamma;
+            $discountedRewards[] = $discounted;
+        }
+        $discountedRewards = array_reverse($discountedRewards);
+        $discountedRewards = $this->la->array($discountedRewards);
+        return $discountedRewards;
+    }
+
+
     public function update(ReplayBuffer  $experience) : float
     {
         $la = $this->la;
@@ -215,28 +243,25 @@ class A2C extends AbstractAgent
         $K  = $nn->backend();
         $batchSize = $this->batchSize;
         $stateShape = $this->stateShape;
-
-        $transition = $experience->last();
-        [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;  // done
+        $numActions = $this->numActions;
 
         if($experience->size()<$batchSize) {
             return 0.0;
         }
 
-        $states = $la->alloc(array_merge([$batchSize], $stateShape));
-        $nextStates = $la->alloc(array_merge([$batchSize], $stateShape));
-        $rewards = $la->zeros($la->alloc([$batchSize]));
-        $discounts = $la->zeros($la->alloc([$batchSize]));
-        $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
-        $discountedRewards = $la->zeros($la->alloc([$batchSize,1]));;
+        [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $experience->last();  // done
+
+        //$states = $la->alloc(array_merge([$batchSize], $stateShape));
+        //$nextStates = $la->alloc(array_merge([$batchSize], $stateShape));
+        //$rewards = $la->zeros($la->alloc([$batchSize]));
+        //$actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
+        //$discountedRewards = $la->zeros($la->alloc([$batchSize,1]));;
 
 
-        if($done) {
-            $discounted = 0;
+        if($done||$truncated) {
+            $nextValue = 0;
         } else {
-            if(!($nextState instanceof NDArray)) {
-                throw new LogicException("nextState must be NDArray");
-            }
+            $nextState = $this->extractState($nextObs);
             if($la->isInt($nextState)) {
                 $nextState = $la->astype($nextState,dtype:NDArray::float32);
             }
@@ -244,95 +269,115 @@ class A2C extends AbstractAgent
                 $nextState = $la->expandDims($nextState,axis:0);
             }
             [$tmp,$v] = $this->model->forward($nextState,false);
-            $discounted = $la->scalar(($la->squeeze($v)));
-            unset($tmp);
-            unset($v);
+            $nextValue = $la->scalar(($la->squeeze($v)));
         }
-        $history = $experience->recently($experience->size());
-        $totalReward = 0;
-        $i = $batchSize-1;
-        $history = array_reverse($history);
-        foreach ($history as $transition) {
-            [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
-            if($done) {
-                $discounted = 0;
-            }
-            $discounted = $reward + $discounted*$this->gamma;
-            $discountedRewards[$i][0] = $discounted;
-            $rewards[$i] = $reward;
-            if(!($state instanceof NDArray)) {
-                throw new LogicException("state must be NDArray.");
-            }
-            if($la->isInt($state)) {
-                $state = $la->astype($state,dtype:NDArray::float32);
-            }
-            $la->copy($state,$states[$i]);
-            if(!($action instanceof NDArray)) {
-                throw new LogicException("action must be NDArray.");
-            }
-            if($action->ndim()!==0) {
-                throw new LogicException("shape of action must be scalar ndarray.");
-            }
-            $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-            if(!$done) {
-                $discounts[$i] = 1.0;
-            }
-            $i--;
+        //$history = $experience->recently($experience->size());
+        //$totalReward = 0;
+        //$i = $batchSize-1;
+        //$history = array_reverse($history);
+        //foreach ($history as $transition) {
+        //    [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+        //    if($done) {
+        //        $discounted = 0;
+        //    }
+        //    $discounted = $reward + $discounted*$this->gamma;
+        //    $discountedRewards[$i][0] = $discounted;
+        //    $rewards[$i] = $reward;
+        //    if(!($state instanceof NDArray)) {
+        //        throw new LogicException("state must be NDArray.");
+        //    }
+        //    if($la->isInt($state)) {
+        //        $state = $la->astype($state,dtype:NDArray::float32);
+        //    }
+        //    $la->copy($state,$states[$i]);
+        //    if(!($action instanceof NDArray)) {
+        //        throw new LogicException("action must be NDArray.");
+        //    }
+        //    if($action->ndim()!==0) {
+        //        throw new LogicException("shape of action must be scalar ndarray.");
+        //    }
+        //    $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
+        //    $i--;
+        //}
+
+        $batchSize = $experience->size();
+        $history = $experience->recently($batchSize);
+        [$obs,$actions,$nextState,$rewards,$dones,$truncated,$info] = $history;
+
+        $states = $this->extractStateList($obs);
+        $masks = $this->extractMaskList($obs);
+       
+        $states = $la->stack($states);
+        if($la->isInt($states)) {
+            $states = $la->astype($states,dtype:NDArray::float32);
         }
+        if($masks!==null) {
+            $masks = $la->stack($masks);
+        } else {
+            $masks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
+        }
+        $actions = $la->stack($actions);
+
+        $discountedRewards = $this->compute_discounted_rewards($rewards,$nextValue,$dones,$truncated,$this->gamma);
+
         $experience->clear();
 
+        $model = $this->model;
         // baseline
-        $baseline = $K->mean($discountedRewards);
-        $la->increment($discountedRewards, -1.0*$baseline);
+        if($this->useBaseline) {
+            $baseline = $la->reduceMean($discountedRewards);
+            $la->add($baseline, $discountedRewards, alpha:-1);
+        }
+
+        [$dmyLogits, $values] = $model($states,false);
+        $values = $la->squeeze($values,axis:-1);
+        // advantage
+        $advantage = $g->sub($discountedRewards,$la->copy($values));
+        if($this->useNormalize) {
+            // advantages = (advantages - mean(advantages)) / (std(advantages) + 1e-8)
+            $advantage = $this->standardize($advantage);
+        }
 
         $discountedRewards = $g->Variable($discountedRewards);
-        #onehot_actions = tf.one_hot(actions, model.output[0].shape[1])
+        $advantage = $g->Variable($advantage);
 
-        $valueLossWeight = $g->Variable($this->valueLossWeight);
-        $entropyWeight = $g->Variable($this->entropyWeight);
+        $valueLossWeight = $this->valueLossWeight;
+        $entropyWeight = $this->entropyWeight;
         // gradients
-        $model = $this->model;
+        $agent = $this;
         $lossFunc = $this->lossFunc;
         $training = $g->Variable(true);
-        [$loss, $entropy] = $nn->with($tape=$g->GradientTape(),function() 
-            use ($g,$lossFunc,$model,$states,$training,$actions,$discountedRewards,
+        [$loss, $policyLoss, $valueLoss, $entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
+            use ($la,$agent,$g,$lossFunc,$model,$states,$training,$masks,$actions,$discountedRewards,$advantage,
                 $valueLossWeight,$entropyWeight)
         {
             [$logits, $values] = $model($states,$training);
+            $values = $g->squeeze($values,axis:-1);
+            $logits = $g->masking($masks,$logits,fill:-1e9);
 
-            // advantage
-            $advantage = $g->sub($discountedRewards,$g->stopGradient($values));
-
-            // action probs
-            $actionProbs = $g->softmax($logits);
-            $selectedActionProbs = $g->expandDims($g->gather($actionProbs,$actions,batchDims:-1),-1);
-            $selectedActionProbs = $g->clipByValue($selectedActionProbs, 1e-10, 1.0);
+            // action log_probs
+            [$log_probs, $entropy] = $agent->log_prob_entropy_categorical($logits,$actions);
 
             // policy loss
-            $policyLoss = $g->scale(-1,$g->mul($g->log($selectedActionProbs),$advantage));
+            $policyLoss = $g->scale(-1,$g->reduceMean($g->mul($log_probs,$advantage)));
             
             // Value loss
             // SB3ではMSE固定
             $valueLoss = $lossFunc($discountedRewards,$values);
 
-            // policy entropy
-            $actionProbsCliped = $g->clipByValue($actionProbs, 1e-10, 1.0);
-            $entropy = $g->scale(-1,$g->reduceSum($g->mul($actionProbsCliped,$g->log($actionProbsCliped)), axis:1, keepdims:true));
-
+            // entropy loss
+            $entropyLoss = $g->reduceMean($entropy);
 
             // total loss
             $loss = $g->add(
                 $g->add(
-                    $g->mul($valueLossWeight, $valueLoss),
-                    $g->mul($entropyWeight, $entropy)
+                    $g->scale($valueLossWeight, $valueLoss),
+                    $g->scale($entropyWeight, $entropyLoss)
                 ),
                 $policyLoss
             );
 
-            $loss = $g->reduceMean($loss);
-            $entropy = $g->reduceMean($entropy);
-
-            return [$loss, $entropy];
+            return [$loss, $policyLoss, $valueLoss, $entropyLoss];
         });
         $grads = $tape->gradient($loss,$this->trainableVariables);
         $this->optimizer->update($this->trainableVariables,$grads);
@@ -341,9 +386,17 @@ class A2C extends AbstractAgent
         if($this->metrics->isAttracted('loss')) {
             $this->metrics->update('loss',$loss);
         }
+        if($this->metrics->isAttracted('Ploss')) {
+            $policyLoss = $K->scalar($policyLoss);
+            $this->metrics->update('Ploss',$policyLoss);
+        }
+        if($this->metrics->isAttracted('Vloss')) {
+            $valueLoss = $K->scalar($valueLoss);
+            $this->metrics->update('Vloss',$valueLoss);
+        }
         if($this->metrics->isAttracted('entropy')) {
-            $entropy = $K->scalar($entropy);
-            $this->metrics->update('entropy',$entropy);
+            $entropyLoss = $K->scalar($entropyLoss);
+            $this->metrics->update('entropy',$entropyLoss);
         }
         return $loss;
     }

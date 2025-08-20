@@ -392,40 +392,50 @@ class DDPG extends AbstractAgent
         $transition = $experience->last();
         $endEpisode = $transition[4];  // done
 
-        $state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
-        $action_batch = $la->zeros($la->alloc([$batchSize, $numActions]));
-        $next_state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
-        $reward_batch = $la->zeros($la->alloc([$batchSize,1]));
-        //$discounts = $la->zeros($la->alloc([$batchSize]));
+        //$state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
+        //$action_batch = $la->zeros($la->alloc([$batchSize, $numActions]));
+        //$next_state_batch = $la->zeros($la->alloc(array_merge([$batchSize], $stateShape)));
+        //$reward_batch = $la->zeros($la->alloc([$batchSize,1]));
+        ////$discounts = $la->zeros($la->alloc([$batchSize]));
+//
+        //$batch = $experience->sample($batchSize);
+        //$i = 0;
+        //foreach($batch as $transition) {
+        //    [$state,$action,$next_state,$reward,$done,$truncated,$info] = $transition;
+        //    //$state_batch[] = $state;
+        //    //$action_batch[] = $action;
+        //    //$next_state_batch[] = $next_state;
+        //    //$reward_batch[] = $reward;
+//
+        //    if(is_numeric($state)) {
+        //        $state_batch[$i][0] = $state;
+        //    } else {
+        //        $la->copy($state,$state_batch[$i]);
+        //    }
+        //    if(is_numeric($action)) {
+        //        $action_batch[$i][0] = $action;
+        //    } else {
+        //        $la->copy($action,$action_batch[$i]);
+        //    }
+        //    if(is_numeric($next_state)) {
+        //        $next_state_batch[$i][0] = $next_state;
+        //    } else {
+        //        $la->copy($next_state,$next_state_batch[$i]);
+        //    }
+        //    $reward_batch[$i][0] = $reward;
+        //    //$discounts[$i] = $done ? 0.0 : 1.0;
+        //    $i++;
+        //}
 
         $batch = $experience->sample($batchSize);
-        $i = 0;
-        foreach($batch as $transition) {
-            [$state,$action,$next_state,$reward,$done,$truncated,$info] = $transition;
-            //$state_batch[] = $state;
-            //$action_batch[] = $action;
-            //$next_state_batch[] = $next_state;
-            //$reward_batch[] = $reward;
+        [$obs,$actions,$nextObs,$rewards,$done,$truncated,$info] = $batch;
+        $state_batch = $this->extractStateList($obs);
+        $next_state_batch = $this->extractStateList($nextObs);
 
-            if(is_numeric($state)) {
-                $state_batch[$i][0] = $state;
-            } else {
-                $la->copy($state,$state_batch[$i]);
-            }
-            if(is_numeric($action)) {
-                $action_batch[$i][0] = $action;
-            } else {
-                $la->copy($action,$action_batch[$i]);
-            }
-            if(is_numeric($next_state)) {
-                $next_state_batch[$i][0] = $next_state;
-            } else {
-                $la->copy($next_state,$next_state_batch[$i]);
-            }
-            $reward_batch[$i][0] = $reward;
-            //$discounts[$i] = $done ? 0.0 : 1.0;
-            $i++;
-        }
+        $state_batch = $la->stack($state_batch);
+        $action_batch = $la->stack($actions);
+        $next_state_batch = $la->stack($next_state_batch);
+        $reward_batch = $la->expandDims($la->array($rewards),axis:-1);
 
         $gamma = $g->Variable($gamma);
         $state_batch = $g->Variable($state_batch);

@@ -10,6 +10,7 @@ use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
 use Rindow\RL\Agents\EventManager as EventManagerInterface;
 use Rindow\RL\Agents\Util\Metrics as MetricsInterface;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Util\EventManager;
 use Rindow\RL\Agents\Util\Metrics;
 
@@ -34,7 +35,7 @@ abstract class AbstractRunner implements Runner
         )
     {
         $experienceSize ??= 10000;
-        $replayBuffer ??= new ReplayBuffer($la,$experienceSize);
+        $replayBuffer ??= new QueueBuffer($la,$experienceSize);
         $eventManager ??= new EventManager();
 
         if($replayBuffer->maxSize()<$agent->subStepLength()) {

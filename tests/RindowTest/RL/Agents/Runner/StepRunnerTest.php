@@ -11,6 +11,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
+use Rindow\RL\Agents\Metrics;
 use Rindow\RL\Agents\Runner\StepRunner;
 use LogicException;
 use InvalidArgumentException;
@@ -138,6 +139,31 @@ class TestAgent implements Agent
     {}
 
     public function setElapsedTime($elapsedTime) : void
+    {}
+
+
+    public function setMetrics(Metrics $metrics) : void
+    {}
+
+    public function metrics() : Metrics
+    {}
+
+    public function resetData() : void
+    {}
+
+    public function reset(Environment $env) : array
+    {}
+
+    public function step(Environment $env, int $episodeSteps, NDArray $states, ?array $info=null) : array
+    {}
+
+    public function collect(
+        Environment $env,
+        ReplayBuffer $experience,
+        int $episodeSteps,
+        NDArray $states,
+        ?array $info,
+        ) : array
     {}
 
     public function action(array|NDArray $state,?bool $training=null,?array $info=null) : NDArray

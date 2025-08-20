@@ -10,7 +10,7 @@ class Sarsa extends QLearning
 {
     protected function getHistory(ReplayBuffer $experience) : array
     {
-        return $experience->recently(2);
+        return $experience->get(-2);
     }
 
     protected function tdError(
@@ -18,11 +18,11 @@ class Sarsa extends QLearning
         NDArray $nextValues,
         float $reward,
         ?NDArray $nextMask,
-        iterable $history,
+        ReplayBuffer $experience,
         ) : NDArray
     {
         $la = $this->la;
-        [$dmy0,$nextAction,$dmy1,$dmy2,$dmy3,$dmy4] = $history[1];
+        [$dmy0,$nextAction,$dmy1,$dmy2,$dmy3,$dmy4] = $experience->get(-1);
         // No masking is required as it uses the actual selected action.
         $nextQ = $la->gatherb($nextValues,$nextAction,axis:-1);
         $td = $la->axpy($q,$la->increment(

@@ -202,27 +202,26 @@ class Reinforce extends AbstractAgent
         return $this->model;
     }
 
-    protected function log_prob_categorical(
-        NDArray $logits,    // (batchsize,numActions) : float32
-        NDArray $actions,   // (batchSize) : int32
-    ) : NDArray
+    protected function compute_discounted_rewards(
+        array $rewards,
+        float $nextValue,
+        array $dones,
+        array $truncated,
+        float $gamma,
+        ) : NDArray
     {
-        $g = $this->g;
-        $la = $this->la;
-        //$log_probs_all = $g->log($g->softmax($logits)); // (batchsize,numActions) : float32
-        $log_probs_all = $g->logSoftmax($logits);
-        //echo "log_probs_all\n";
-        //echo $la->toString($log_probs_all,format:'%8.6f',indent:true)."\n";
-        //echo "actions\n";
-        //echo $la->toString($actions,format:'%8.6f',indent:true)."\n";
-        $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1); // (batchsize) : float32
-        //echo "selected_log_probs\n";
-        //echo $la->toString($selected_log_probs,format:'%8.6f',indent:true)."\n";
-
-        //$probs = $g->softmax($logits);  // (batchsize,numActions)
-        //$entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
-
-        return $selected_log_probs; //, $entropy;
+        $discountedRewards = [];
+        $discounted = $nextValue;
+        for($i=count($rewards)-1; $i>=0; $i--) {
+            if($dones[$i]||$truncated[$i]) {
+                $discounted = 0;
+            }
+            $discounted = $rewards[$i] + $discounted*$gamma;
+            $discountedRewards[] = $discounted;
+        }
+        $discountedRewards = array_reverse($discountedRewards);
+        $discountedRewards = $this->la->array($discountedRewards);
+        return $discountedRewards;
     }
 
     /**
@@ -237,42 +236,63 @@ class Reinforce extends AbstractAgent
         $stateShape = $this->stateShape;
         $numActions = $this->numActions;
 
-        $steps = $experience->size();
-        $rewards = $la->alloc([$steps]);
-        $states = $la->alloc(array_merge([$steps], $stateShape));
-        $discountedRewards = $la->alloc([$steps]);
-        $actions = $la->alloc([$steps],NDArray::int32);
-        $masks = $la->ones($la->alloc([$steps, $numActions],NDArray::bool));
+        //$steps = $experience->size();
+        //$rewards = $la->alloc([$steps]);
+        //$states = $la->alloc(array_merge([$steps], $stateShape));
+        //$discountedRewards = $la->alloc([$steps]);
+        //$actions = $la->alloc([$steps],NDArray::int32);
+        //$masks = $la->ones($la->alloc([$steps, $numActions],NDArray::bool));
+//
+        //$history = $experience->recently($steps);
+//
+        //$totalReward = 0;
+        //$i = $steps-1;
+        //$discounted = 0;
+        //$history = array_reverse($history);
+        //foreach ($history as $transition) {
+        //    [$obs,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+        //    $state = $this->extractState($obs);
+        //    $discounted = $reward + $discounted*$this->gamma;
+        //    $discountedRewards[$i] = $discounted;
+        //    $rewards[$i] = $reward;
+        //    if(!($state instanceof NDArray)) {
+        //        throw new LogicException("state must be NDArray.");
+        //    }
+        //    if($la->isInt($state)) {
+        //        $state = $la->astype($state,dtype:NDArray::float32);
+        //    }
+        //    $la->copy($state,$states[$i]);
+        //    if($action->ndim()!==0) {
+        //        throw new LogicException("shape of action must be scalar ndarray.");
+        //    }
+        //    $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
+        //    $mask = $this->extractMask($obs);
+        //    if($mask!=null) {
+        //        $la->copy($mask,$masks[$i]);
+        //    }
+        //    $i--;
+        //}
 
-        $history = $experience->recently($steps);
+        $batchSize = $experience->size();
+        $history = $experience->recently($batchSize);
+        [$obs,$actions,$nextState,$rewards,$dones,$truncated,$info] = $history;
+    
+        $states = $this->extractStateList($obs);
+        $masks = $this->extractMaskList($obs);
 
-        $totalReward = 0;
-        $i = $steps-1;
-        $discounted = 0;
-        $history = array_reverse($history);
-        foreach ($history as $transition) {
-            [$obs,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
-            $state = $this->extractState($obs);
-            $discounted = $reward + $discounted*$this->gamma;
-            $discountedRewards[$i] = $discounted;
-            $rewards[$i] = $reward;
-            if(!($state instanceof NDArray)) {
-                throw new LogicException("state must be NDArray.");
-            }
-            if($la->isInt($state)) {
-                $state = $la->astype($state,dtype:NDArray::float32);
-            }
-            $la->copy($state,$states[$i]);
-            if($action->ndim()!==0) {
-                throw new LogicException("shape of action must be scalar ndarray.");
-            }
-            $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-            $mask = $this->extractMask($obs);
-            if($mask!=null) {
-                $la->copy($mask,$masks[$i]);
-            }
-            $i--;
+        $states = $la->stack($states);
+        if($la->isInt($states)) {
+            $states = $la->astype($states,dtype:NDArray::float32);
         }
+        if($masks!==null) {
+            $masks = $la->stack($masks);
+        } else {
+            $masks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
+        }
+        $actions = $la->stack($actions);
+
+        $discountedRewards = $this->compute_discounted_rewards($rewards,0,$dones,$truncated,$this->gamma);
+
         $experience->clear();
 
         if($this->useBaseline) {
@@ -293,10 +313,6 @@ class Reinforce extends AbstractAgent
             $policyLogits = $trainModel($states,$training);
             $policyLogits = $g->masking($masks,$policyLogits,fill:-INF);
 
-            //$policyProbs = $g->softmax($policyLogits);
-            //$policyProbs = $g->gather($policyProbs,$actions,batchDims:-1);
-            //$policyProbs = $g->clipByValue($policyProbs, 1e-10, 1.0);
-            //$logProbs = $g->log($policyProbs);
             $logProbs = $agent->log_prob_categorical($policyLogits,$actions);
             //echo $la->toString($logProbs,format:'%8.6f',indent:true)."\n";
             

@@ -8,13 +8,13 @@ use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
 
 class ReplayBuffer implements ReplayBufferInterface
 {
-    protected $la;
-    protected $maxSize;
-    protected $size = 0;
-    protected $last = -1;
-    protected $array;
+    protected object $la;
+    protected int $maxSize;
+    protected int $size = 0;
+    protected int $last = -1;
+    protected SplFixedArray $array;
 
-    public function __construct($la,$maxSize)
+    public function __construct(object $la, int $maxSize)
     {
         $this->la = $la;
         if($maxSize<=0) {
@@ -24,7 +24,7 @@ class ReplayBuffer implements ReplayBufferInterface
         $this->array = new SplFixedArray($maxSize);
     }
 
-    public function clear()
+    public function clear() : void
     {
         $this->array = new SplFixedArray($this->maxSize);
         $this->size = 0;
@@ -46,7 +46,7 @@ class ReplayBuffer implements ReplayBufferInterface
         return $this->size();
     }
 
-    public function add($item) : void
+    public function add(mixed $item) : void
     {
         $this->last++;
         if($this->last >= $this->maxSize) {
@@ -58,7 +58,7 @@ class ReplayBuffer implements ReplayBufferInterface
         $this->array[$this->last] = $item;
     }
 
-    public function last()
+    public function last() : array
     {
         if($this->last<0) {
             throw new LogicException('No data');

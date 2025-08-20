@@ -255,58 +255,80 @@ class DQN extends AbstractAgent
         $transition = $experience->last();
         $endEpisode = $transition[4];  // done
 
-        $states = $la->alloc(array_merge([$batchSize], $stateShape),dtype:NDArray::float32);
-        $nextStates = $la->alloc(array_merge([$batchSize], $stateShape),dtype:NDArray::float32);
-        $rewards = $la->zeros($la->alloc([$batchSize],dtype:NDArray::float32));
-        $discounts = $la->zeros($la->alloc([$batchSize],dtype:NDArray::float32));
-        $actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
-        $masks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
-
+        //$states = $la->alloc(array_merge([$batchSize], $stateShape),dtype:NDArray::float32);
+        //$nextStates = $la->alloc(array_merge([$batchSize], $stateShape),dtype:NDArray::float32);
+        //$rewards = $la->zeros($la->alloc([$batchSize],dtype:NDArray::float32));
+        //$discounts = $la->zeros($la->alloc([$batchSize],dtype:NDArray::float32));
+        //$actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
+        //$nextMasks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
+//
+        //$batch = $experience->sample($batchSize);
+        //$i = 0;
+        //foreach($batch as $transition) {
+        //    [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $transition;
+        //    $state = $this->extractState($obs);
+        //    if(!($state instanceof NDArray)) {
+        //        throw new LogicException("state must be NDArray.");
+        //    }
+        //    if($la->isInt($state)) {
+        //        $state = $la->astype($state,dtype:NDArray::float32);
+        //    }
+        //    $la->copy($state,$states[$i]);
+        //    $nextState = $this->extractState($nextObs);
+        //    if(!($nextState instanceof NDArray)) {
+        //        throw new LogicException("nextState must be NDArray.");
+        //    }
+        //    if($la->isInt($nextState)) {
+        //        $nextState = $la->astype($nextState,dtype:NDArray::float32);
+        //    }
+        //    $la->copy($nextState,$nextStates[$i]);
+        //    $rewards[$i] = $reward;
+        //    $discounts[$i] = $done ? 0.0 : 1.0;
+        //    if(!($action instanceof NDArray)) {
+        //        throw new LogicException("action must be NDArray.");
+        //    }
+        //    if($action->ndim()!==0) {
+        //        throw new LogicException("shape of action must be scalar ndarray.");
+        //    }
+        //    $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
+        //    $nextMask = $this->extractMask($nextObs);
+        //    if($nextMask!==null) {
+        //        $la->copy($nextMask,$nextMasks[$i]);
+        //    }
+        //    $i++;
+        //}
         $batch = $experience->sample($batchSize);
-        $i = 0;
-        foreach($batch as $transition) {
-            [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $transition;
-            $state = $this->extractState($obs);
-            if(!($state instanceof NDArray)) {
-                throw new LogicException("state must be NDArray.");
-            }
-            if($la->isInt($state)) {
-                $state = $la->astype($state,dtype:NDArray::float32);
-            }
-            $la->copy($state,$states[$i]);
-            $nextState = $this->extractState($nextObs);
-            if(!($nextState instanceof NDArray)) {
-                throw new LogicException("nextState must be NDArray.");
-            }
-            if($la->isInt($nextState)) {
-                $nextState = $la->astype($nextState,dtype:NDArray::float32);
-            }
-            $la->copy($nextState,$nextStates[$i]);
-            $rewards[$i] = $reward;
-            $discounts[$i] = $done ? 0.0 : 1.0;
-            if(!($action instanceof NDArray)) {
-                throw new LogicException("action must be NDArray.");
-            }
-            if($action->ndim()!==0) {
-                throw new LogicException("shape of action must be scalar ndarray.");
-            }
-            $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-            $mask = $this->extractMask($nextObs);
-            if($mask!==null) {
-                $la->copy($mask,$masks[$i]);
-            }
-            $i++;
+        [$obs,$actions,$nextObs,$rewards,$done,$truncated,$info] = $batch;
+        $states = $this->extractStateList($obs);
+        $nextStates = $this->extractStateList($nextObs);
+        $nextMasks = $this->extractMaskList($nextObs);
+        $states = $la->stack($states);
+        if($la->isInt($states)) {
+            $states = $la->astype($states,dtype:NDArray::float32);
+        }
+        $nextStates = $la->stack($nextStates);
+        if($la->isInt($nextStates)) {
+            $nextStates = $la->astype($nextStates,dtype:NDArray::float32);
+        }
+        $rewards = $la->array($rewards);
+        $done = $la->array($done,dtype:NDArray::bool);
+        $discounts = $la->astype($la->not($done),dtype:NDArray::float32);
+        $actions = $la->stack($actions);
+        if($nextMasks!==null) {
+            $nextMasks = $la->stack($nextMasks);
+        } else {
+            $nextMasks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
         }
 
         //
         // calculate netQValues from the target model
         //
         $nextQValues = $this->targetModel->getActionValues($nextStates);
-        $la->masking($masks,$nextQValues,fill:-INF);
+        $la->masking($nextMasks,$nextQValues,fill:-INF);
         //echo $this->mo->toString($nextQValues,format:'%5.3f',indent:true)."\n";
         if($this->ddqn) {
             $nextActions = $this->trainModel->getActionValues($nextStates);
-            $la->masking($masks,$nextActions,fill:-INF);
+            $la->masking($nextMasks,$nextActions,fill:-INF);
             $nextActions = $la->reduceArgMax($nextActions,axis:-1,dtype:NDArray::int32);
             $mo = $this->trainModel->backend()->localMatrixOperator();
             //echo "NEXTQVALUES:".$mo->shapeToString($nextQValues->shape())."\n";

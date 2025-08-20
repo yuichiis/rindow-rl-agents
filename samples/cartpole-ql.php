@@ -57,8 +57,8 @@ $eta=0.1;
 $gamma=0.9;
 
 $policy = new AnnealingEpsGreedy($la,start:$espstart,stop:$espstop,decayRate:$decayRate);
-$agent = new QLearning($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
-//$agent = new Sarsa($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
+//$agent = new QLearning($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
+$agent = new Sarsa($la,$numStates,$numActions,$policy,$eta,$gamma,mo:$mo);
 $agent->setCustomStateFunction($digitizeStateFunc);
 
 function fitplot(object $la,array $x,float $window,float $bottom) : NDArray

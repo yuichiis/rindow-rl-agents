@@ -88,7 +88,7 @@ class QLearning extends AbstractAgent
 
     protected function getHistory(ReplayBuffer $experience) : array
     {
-        return $experience->recently(1);
+        return $experience->get(-1);
     }
 
     /**
@@ -101,7 +101,7 @@ class QLearning extends AbstractAgent
         NDArray $nextValues,
         float $reward,
         ?NDArray $nextMask,
-        iterable $history
+        ReplayBuffer $experience,
         ) : NDArray
     {
         $la = $this->la;
@@ -127,7 +127,7 @@ class QLearning extends AbstractAgent
         $la = $this->la;
 
         $history = $this->getHistory($experience);
-        [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $history[0];
+        [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $history;
         $state = $this->extractState($obs);
         if($state->shape()!==[1]) {
             throw new LogicException("Shape of State in replay buffer must be (1).".$la->shapeToString($state->shape()));
@@ -153,7 +153,7 @@ class QLearning extends AbstractAgent
             $nextState = $this->extractState($nextObs);
             $nextMask = $this->extractMask($nextObs);
             $nextValues = $la->gatherb($table,$nextState);
-            $tdError = $this->tdError($qLocation,$nextValues,$reward,$nextMask,$history);
+            $tdError = $this->tdError($qLocation,$nextValues,$reward,$nextMask,$experience);
             $la->axpy($tdError,$qLocation,$this->eta);
             $error = $la->nrm2($tdError);
         }

@@ -133,6 +133,68 @@ abstract class AbstractAgent implements Agent
         return $result; // (rolloutSteps)
     }
 
+    protected function log_prob_entropy_categorical(
+        NDArray $logits,    // (batchsize,numActions) : float32
+        NDArray $actions,   // (batchSize) : int32
+    ) : array
+    {
+        $g = $this->g;
+        $log_probs_all = $g->logSoftmax($logits); // (batchsize,numActions) : float32
+        $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1); // (batchsize) : float32
+
+        $probs = $g->softmax($logits);  // (batchsize,numActions)
+        $entropy = $g->scale(-1,$g->reduceSum($g->mul($probs, $log_probs_all), axis:1));
+
+        return [$selected_log_probs, $entropy];
+    }
+
+    protected function log_prob_categorical(
+        NDArray $logits,    // (batchsize,numActions) : float32
+        NDArray $actions,   // (batchSize) : int32
+    ) : NDArray
+    {
+        $g = $this->g;
+        $la = $this->la;
+        $log_probs_all = $g->logSoftmax($logits); // (batchsize,numActions) : float32
+        $selected_log_probs = $g->gather($log_probs_all, $actions, batchDims:1); // (batchsize) : float32
+
+        return $selected_log_probs; //, $entropy;
+    }
+
+    /**
+     *  Args:
+     *      mean (tf.Tensor):    平均
+     *      logStd (tf.Tensor):  Logされた標準偏差
+     *      value (tf.Tensor):   確率を計算したい値
+     *  Returns:
+     *      tuple[tf.Tensor, tf.Tensor]: (log_prob, entropy)
+     */
+    protected function log_prob_entropy_continuous(
+        NDArray $mean,      // (batchSize,numActions)
+        NDArray $logStd,    // (numActions)
+        NDArray $value,     // (batchSize,numActions)
+    ) : array
+    {
+        $g = $this->g;
+        // log_prob =
+        //      -0.5 * tf.square((actions - mu) / tf.math.exp(log_std))
+        //      -log_std
+        //      -0.5 * np.log(2.0 * np.pi))
+        $stableStd = $g->add($g->exp($logStd),$g->constant(1e-8));
+        $logProb = $g->sub(
+            $g->sub(
+                $g->scale(-0.5,$g->square($g->div($g->sub($value,$mean),$stableStd))),
+                $g->log($stableStd)
+            ),
+            $g->constant(0.5 * log(2.0 * pi()))
+        );
+        $logProb = $g->reduceSum($logProb, axis:1, keepdims:true);
+        $entropy = $g->add($g->constant(0.5 + 0.5*log(2*pi())), $g->log($stableStd));
+        $entropy = $g->add($g->zerosLike($mean),$entropy); // 他のテンソルとの互換性のため
+
+        return [$logProb, $entropy]; // logProb=(batchsize,numActions), entropy=(1,numActions)
+    }
+
     public function atleast2d(mixed $states) : NDArray
     {
         $la = $this->la;
@@ -188,6 +250,45 @@ abstract class AbstractAgent implements Agent
             throw new InvalidArgumentException("The $stateField field must be NDArray.");
         }
         return $state;
+    }
+
+    protected function extractStateList(array $obsList) : array
+    {
+        if(count($obsList)===0) {
+            return [];
+        }
+        if(!array_is_list($obsList)) {
+            throw new InvalidArgumentException("observation list must be list array.");
+        }
+        if($obsList[0] instanceof NDArray) {
+            return $obsList;
+        }
+        $stateList = [];
+        foreach($obsList as $obs) {
+            $stateList[] = $this->extractState($obs);
+        }
+        return $stateList;
+    }
+
+    protected function extractMaskList(array $obsList) : ?array
+    {
+        if(count($obsList)===0) {
+            return [];
+        }
+        if(!array_is_list($obsList)) {
+            throw new InvalidArgumentException("observation list must be list array.");
+        }
+        if($obsList[0] instanceof NDArray) {
+            return null;
+        }
+        if(!isset($obsList[0]['actionMask'])) {
+            return null;
+        }
+        $stateList = [];
+        foreach($obsList as $obs) {
+            $maskList[] = $this->extractMask($obs);
+        }
+        return $maskList;
     }
 
     public function reset(Env $env) : array
