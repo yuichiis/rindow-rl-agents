@@ -2,6 +2,8 @@
 namespace Rindow\RL\Agents\Agent\A2C;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Spaces\Box;
+use Interop\Polite\AI\RL\Spaces\Space;
 use Interop\Polite\AI\RL\Environment as Env;
 use InvalidArgumentException;
 use LogicException;
@@ -14,9 +16,9 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\ReplayBuffer;
-use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\RL\Agents\Policy\Boltzmann;
+use Rindow\RL\Agents\Policy\NormalDistribution;
 use function Rindow\Math\Matrix\R;
 
 class A2C extends AbstractAgent
@@ -42,9 +44,12 @@ class A2C extends AbstractAgent
     protected $trainableVariables;
     protected bool $enabledShapeInspection = true;
     protected int $batchSize;
+    protected NDArray $actionMin;
+    protected NDArray $actionMax;
 
     public function __construct(
         object $la,
+        ?bool $continuous=null,
         ?Network $network=null,
         ?Policy $policy=null,
         ?int $batchSize=null,
@@ -59,17 +64,43 @@ class A2C extends AbstractAgent
         ?Loss $lossFunc=null,
         ?array $stateShape=null, ?int $numActions=null,
         ?array $fcLayers=null,
+        mixed $actionKernelInitializer=null,
+        mixed $criticKernelInitializer=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
+        ?Space $actionSpace=null,
         ?string $stateField=null,
         ?object $mo = null
         )
     {
-        $network ??= $this->buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers);
+        $continuous ??= false;
+        if($continuous) {
+            if($actionSpace===null) {
+                throw new InvalidArgumentException('actionSpace must be specified for continuous actions.');
+            }
+            if(!($actionSpace instanceof Box)) {
+                throw new InvalidArgumentException('type of actionSpace must be Box for continuous actions.');
+            }
+            $shape = $actionSpace->shape();
+            if(count($shape)!==1) {
+                throw new InvalidArgumentException('shape of actionSpace must be rank 1.');
+            }
+            $policyMin ??= $actionSpace->low();
+            $policyMax ??= $actionSpace->high();
+            $numActions ??= $shape[0];
+        }
+
+            $network ??= $this->buildNetwork(
+            $la,$nn,$continuous,$stateShape,$numActions,
+            $fcLayers,
+            $actionKernelInitializer,
+            $criticKernelInitializer,
+            $policyMin,$policyMax,
+        );
         if(!($network instanceof Estimator)) {
             echo get_class($network);
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
-        $policy ??= $this->buildPolicy($la,$policyTau,$policyMin,$policyMax);
+        $policy ??= $this->buildPolicy($la,$continuous,$policyTau,$policyMin,$policyMax);
         parent::__construct($la,policy:$policy,stateField:$stateField);
 
         $stateShape ??= $network->stateShape();
@@ -87,7 +118,7 @@ class A2C extends AbstractAgent
         //$lossFunc ??= $nn->losses()->Huber();
         $lossFunc ??= $nn->losses()->MeanSquaredError();
 
-        $this->continuous = false;
+        $this->continuous = $continuous;
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
@@ -108,7 +139,18 @@ class A2C extends AbstractAgent
         $this->initialize();
     }
 
-    protected function buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers)
+    protected function buildNetwork(
+        object $la,
+        Builder $nn,
+        bool $continuous,
+        ?array $stateShape,
+        ?int $numActions,
+        ?array $fcLayers,
+        mixed $actionKernelInitializer,
+        mixed $criticKernelInitializer,
+        float|NDArray|null $min,
+        float|NDArray|null $max,
+        )
     {
         if($nn===null) {
             throw new InvalidArgumentException('nn must be specifed.');
@@ -119,8 +161,15 @@ class A2C extends AbstractAgent
         if($numActions===null) {
             throw new InvalidArgumentException('numActions must be specifed.');
         }
-        $network = new ActorCriticNetwork($la,$nn,
-            $stateShape, $numActions,fcLayers:$fcLayers);
+        $network = new ActorCriticNetwork(
+            $la,$nn,
+            $stateShape, $numActions,
+            fcLayers:$fcLayers,
+            continuous:$continuous,
+            actionMin:$min,actionMax:$max,
+            actionKernelInitializer:$actionKernelInitializer,
+            criticKernelInitializer:$criticKernelInitializer,
+        );
         return $network;
     }
 
@@ -140,18 +189,35 @@ class A2C extends AbstractAgent
 
     protected function buildPolicy(
         object $la,
+        bool $continuous,
         ?float $tau=null,
-        ?float $min=null,
-        ?float $max=null,
+        float|NDArray|null $min=null,
+        float|NDArray|null $max=null,
         )
     {
-        $policy = new Boltzmann(
-            $la,
-            $tau,
-            $min,
-            $max,
-            fromLogits:true,
-        );
+        if(!$continuous) {
+            // Discrete Actions
+            $policy = new Boltzmann(
+                $la,
+                $tau,
+                $min,
+                $max,
+                fromLogits:true,
+            );
+        } else {
+            // Continuous Actions
+            if(!($min instanceof NDArray)) {
+                throw new InvalidArgumentException("policyMin must be NDArray for continuous actions.");
+            }
+            if(!($max instanceof NDArray)) {
+                throw new InvalidArgumentException("policyMax must be NDArray for continuous actions.");
+            }
+            $policy = new NormalDistribution(
+                $la,
+            );
+            $this->actionMin = $min;
+            $this->actionMax = $max;
+        }
         return $policy;
     }
 
@@ -234,6 +300,46 @@ class A2C extends AbstractAgent
         return $discountedRewards;
     }
 
+    public function action(array|NDArray $obs, ?bool $training=null, ?array $info=null, ?bool $parallel = null) : NDArray
+    {
+        $la = $this->la;
+        $action = parent::action($obs,training:$training,info:$info,parallel:$parallel);
+        if($this->continuous) {
+            if($this->actionMin!==null) {
+                $action = $la->maximum($la->copy($action),$this->actionMin);
+            }
+            if($this->actionMax!==null) {
+                $action = $la->minimum($la->copy($action),$this->actionMax);
+            }
+        }
+        return $action;
+    }
+
+    public function collect(
+        Env $env,
+        ReplayBuffer $experience,
+        int $episodeSteps,
+        array|NDArray $obs,
+        ?array $info,
+        ) : array
+    {
+        $la = $this->la;
+        $actions = parent::action($obs,training:true,info:$info);
+        $orignalActions = $actions;
+        if($this->continuous) {
+            if($this->actionMin!==null) {
+                $actions = $la->maximum($la->copy($actions),$this->actionMin);
+            }
+            if($this->actionMax!==null) {
+                $actions = $la->minimum($la->copy($actions),$this->actionMax);
+            }
+        }
+        [$nextObs,$reward,$done,$truncated,$info] = $env->step($actions);
+        $nextObs = $this->customState($env,$nextObs,$done,$truncated,$info);
+        $reward = $this->customReward($env,$episodeSteps,$obs,$actions,$nextObs,$reward,$done,$truncated,$info);
+        $experience->add([$obs,$orignalActions,$nextObs,$reward,$done,$truncated,$info]);
+        return [$nextObs,$reward,$done,$truncated,$info];
+    }
 
     public function update(ReplayBuffer  $experience) : float
     {
@@ -244,6 +350,7 @@ class A2C extends AbstractAgent
         $batchSize = $this->batchSize;
         $stateShape = $this->stateShape;
         $numActions = $this->numActions;
+        $model = $this->model;
 
         if($experience->size()<$batchSize) {
             return 0.0;
@@ -261,8 +368,12 @@ class A2C extends AbstractAgent
             if($nextState->ndim()) {
                 $nextState = $la->expandDims($nextState,axis:0);
             }
-            [$tmp,$v] = $this->model->forward($nextState,false);
-            $nextValue = $la->scalar(($la->squeeze($v)));
+            if(!$this->continuous) {
+                [$dmy,$nextValue] = $model($nextState,false);
+            } else {
+                [$dmy,$nextValue,$dmy2] = $model($nextState,false);
+            }
+            $nextValue = $la->scalar(($la->squeeze($nextValue)));
         }
 
         $batchSize = $experience->size();
@@ -285,14 +396,17 @@ class A2C extends AbstractAgent
 
         $experience->clear();
 
-        $model = $this->model;
         // baseline
         if($this->useBaseline) {
             $baseline = $la->reduceMean($discountedRewards);
             $la->add($baseline, $discountedRewards, alpha:-1);
         }
 
-        [$dmyLogits, $values] = $model($states,false);
+        if(!$this->continuous) {
+            [$dmy, $values] = $model($states,false);
+        } else {
+            [$dmy, $values, $dmy2] = $model($states,false);
+        }
         $values = $la->squeeze($values,axis:-1);
         // advantage
         $advantage = $g->sub($discountedRewards,$la->copy($values));
@@ -314,14 +428,22 @@ class A2C extends AbstractAgent
             use ($la,$agent,$g,$lossFunc,$model,$states,$training,$masks,$actions,$discountedRewards,$advantage,
                 $valueLossWeight,$entropyWeight)
         {
-            [$logits, $values] = $model($states,$training);
-            $values = $g->squeeze($values,axis:-1);
-            if($masks!==null) {
-                $logits = $g->masking($masks,$logits,fill:-1e9);
-            }
-
             // action log_probs
-            [$log_probs, $entropy] = $agent->log_prob_entropy_categorical($logits,$actions);
+            if(!$agent->continuous) {
+                [$logits, $values] = $model($states,$training);
+                $values = $g->squeeze($values,axis:-1);
+                if($masks!==null) {
+                    $logits = $g->masking($masks,$logits,fill:-1e9);
+                }
+                [$log_probs, $entropy] = $agent->log_prob_entropy_categorical($logits,$actions);
+            } else {
+                [$means, $values, $logStd] = $model($states,$training);
+                $values = $g->squeeze($values,axis:-1);
+                [$log_probs, $entropy] = $agent->log_prob_entropy_continuous($means,$logStd,$actions);
+                // 多次元行動も考慮し、log_probとentropyをスカラーに変換
+                $log_probs = $g->reduceSum($log_probs, axis:-1);
+                $entropy = $g->reduceSum($entropy, axis:-1);
+            }
 
             // policy loss
             $policyLoss = $g->scale(-1,$g->reduceMean($g->mul($log_probs,$advantage)));
@@ -362,6 +484,11 @@ class A2C extends AbstractAgent
         if($this->metrics->isAttracted('entropy')) {
             $entropyLoss = $K->scalar($entropyLoss);
             $this->metrics->update('entropy',$entropyLoss);
+        }
+        if($this->metrics->isAttracted('std')) {
+            $std = $la->reduceMean($la->exp($la->copy($this->model->getLogStd())));
+            $std = $la->scalar($std);
+            $this->metrics->update('std',$std);
         }
         return $loss;
     }

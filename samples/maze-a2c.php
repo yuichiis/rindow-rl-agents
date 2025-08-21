@@ -40,7 +40,7 @@ $maxExperienceSize = 10000;#100000;
 $batchSize = 256;#32;#
 $gamma = 0.99;#0.9;#1.0;#
 $valueLossWeight = 0.5;
-$entropyWeight = 0.01;#0.01;
+$entropyWeight = 0.001;#0.01;
 $fcLayers = [64];# [32,32];# [128,128];# [10,10];#
 $activation = 'relu';#'tanh';#
 #$targetUpdatePeriod = 5;   #5;  #5;    #5;   # 200;#
@@ -121,9 +121,9 @@ if(!$agent->fileExists($filename)) {
     echo "\n";
     $ep = $la->array($history['iter']);
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['Ploss'],200,0))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['Vloss'],200,0))[0];
-    $arts[] = $plt->plot($ep,fitplot($la,$history['entropy'],200,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['Ploss'],50,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['Vloss'],50,0))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['entropy'],50,0))[0];
     $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
     $plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
     $plt->xlabel('episodes');

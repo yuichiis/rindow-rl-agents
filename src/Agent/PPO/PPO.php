@@ -507,7 +507,11 @@ class PPO extends AbstractAgent
                 $nextState = $la->expandDims($nextState,axis:0);
             }
             $nextState = $la->expandDims($nextState,axis:0);
-            [$tmp,$nextValue] = $model->forward($nextState,false);
+            if(!$this->continuous) {
+                [$tmp,$nextValue] = $model($nextState,false);
+            } else {
+                [$tmp,$nextValue,$tmp2] = $model($nextState,false);
+            }
         }
 
         $experience->clear();
@@ -567,7 +571,6 @@ class PPO extends AbstractAgent
             shuffle:true,
         );
         $clipValueLoss = $this->clipValueLoss;
-        $model = $this->model;
         $lossFunc = $this->lossFunc;
         $agent = $this;
         $training = $g->Variable(true);
