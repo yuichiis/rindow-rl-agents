@@ -251,13 +251,6 @@ class A2C extends AbstractAgent
 
         [$obs,$action,$nextObs,$reward,$done,$truncated,$info] = $experience->last();  // done
 
-        //$states = $la->alloc(array_merge([$batchSize], $stateShape));
-        //$nextStates = $la->alloc(array_merge([$batchSize], $stateShape));
-        //$rewards = $la->zeros($la->alloc([$batchSize]));
-        //$actions = $la->zeros($la->alloc([$batchSize],NDArray::int32));
-        //$discountedRewards = $la->zeros($la->alloc([$batchSize,1]));;
-
-
         if($done||$truncated) {
             $nextValue = 0;
         } else {
@@ -271,34 +264,6 @@ class A2C extends AbstractAgent
             [$tmp,$v] = $this->model->forward($nextState,false);
             $nextValue = $la->scalar(($la->squeeze($v)));
         }
-        //$history = $experience->recently($experience->size());
-        //$totalReward = 0;
-        //$i = $batchSize-1;
-        //$history = array_reverse($history);
-        //foreach ($history as $transition) {
-        //    [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
-        //    if($done) {
-        //        $discounted = 0;
-        //    }
-        //    $discounted = $reward + $discounted*$this->gamma;
-        //    $discountedRewards[$i][0] = $discounted;
-        //    $rewards[$i] = $reward;
-        //    if(!($state instanceof NDArray)) {
-        //        throw new LogicException("state must be NDArray.");
-        //    }
-        //    if($la->isInt($state)) {
-        //        $state = $la->astype($state,dtype:NDArray::float32);
-        //    }
-        //    $la->copy($state,$states[$i]);
-        //    if(!($action instanceof NDArray)) {
-        //        throw new LogicException("action must be NDArray.");
-        //    }
-        //    if($action->ndim()!==0) {
-        //        throw new LogicException("shape of action must be scalar ndarray.");
-        //    }
-        //    $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-        //    $i--;
-        //}
 
         $batchSize = $experience->size();
         $history = $experience->recently($batchSize);
@@ -313,8 +278,6 @@ class A2C extends AbstractAgent
         }
         if($masks!==null) {
             $masks = $la->stack($masks);
-        } else {
-            $masks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
         }
         $actions = $la->stack($actions);
 
@@ -353,7 +316,9 @@ class A2C extends AbstractAgent
         {
             [$logits, $values] = $model($states,$training);
             $values = $g->squeeze($values,axis:-1);
-            $logits = $g->masking($masks,$logits,fill:-1e9);
+            if($masks!==null) {
+                $logits = $g->masking($masks,$logits,fill:-1e9);
+            }
 
             // action log_probs
             [$log_probs, $entropy] = $agent->log_prob_entropy_categorical($logits,$actions);

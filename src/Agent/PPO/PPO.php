@@ -15,7 +15,6 @@ use Rindow\NeuralNetworks\Gradient\GraphFunction;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
-use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 use Rindow\RL\Agents\Policy\Boltzmann;
@@ -79,7 +78,7 @@ class PPO extends AbstractAgent
         mixed $criticKernelInitializer=null,
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
         ?Space $actionSpace=null,
-        ?EventManager $eventManager=null,
+        ?string $stateField=null,
         ?object $mo = null
         )
     {
@@ -112,7 +111,7 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
         $policy ??= $this->buildPolicy($la,$continuous,$policyTau,$policyMin,$policyMax);
-        parent::__construct($la,policy:$policy);
+        parent::__construct($la,policy:$policy,stateField:$stateField);
 
         $stateShape ??= $network->stateShape();
         $numActions ??= $network->numActions();
@@ -376,10 +375,10 @@ class PPO extends AbstractAgent
         return $newList;
     }
 
-    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null, ?bool $parallel = null) : NDArray
+    public function action(array|NDArray $obs, ?bool $training=null, ?array $info=null, ?bool $parallel = null) : NDArray
     {
         $la = $this->la;
-        $action = parent::action($states,training:$training,info:$info,parallel:$parallel);
+        $action = parent::action($obs,training:$training,info:$info,parallel:$parallel);
         if($this->continuous) {
             if($this->actionMin!==null) {
                 $action = $la->maximum($la->copy($action),$this->actionMin);
@@ -395,12 +394,12 @@ class PPO extends AbstractAgent
         Env $env,
         ReplayBuffer $experience,
         int $episodeSteps,
-        array|NDArray $states,
+        array|NDArray $obs,
         ?array $info,
         ) : array
     {
         $la = $this->la;
-        $actions = parent::action($states,training:true,info:$info);
+        $actions = parent::action($obs,training:true,info:$info);
         $orignalActions = $actions;
         if($this->continuous) {
             if($this->actionMin!==null) {
@@ -410,11 +409,11 @@ class PPO extends AbstractAgent
                 $actions = $la->minimum($la->copy($actions),$this->actionMax);
             }
         }
-        [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
-        $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
-        $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$info);
-        $experience->add([$states,$orignalActions,$nextState,$reward,$done,$truncated,$info]);
-        return [$nextState,$reward,$done,$truncated,$info];
+        [$nextObs,$reward,$done,$truncated,$info] = $env->step($actions);
+        $nextObs = $this->customState($env,$nextObs,$done,$truncated,$info);
+        $reward = $this->customReward($env,$episodeSteps,$obs,$actions,$nextObs,$reward,$done,$truncated,$info);
+        $experience->add([$obs,$orignalActions,$nextObs,$reward,$done,$truncated,$info]);
+        return [$nextObs,$reward,$done,$truncated,$info];
     }
 
     public function update(ReplayBuffer $experience) : float
@@ -490,8 +489,6 @@ class PPO extends AbstractAgent
         }
         if($masks!==null) {
             $masks = $la->stack($masks);
-        } else {
-            $masks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
         }
         $actions = $la->stack($actions);
         $rewards = $la->array($rewards);
@@ -560,8 +557,12 @@ class PPO extends AbstractAgent
         // gradients
         $oldValues = $la->squeeze($oldValues,axis:-1);
 
+        $sourceData = [$states, $actions, $oldLogProbs, $oldValues, $advantages, $returns];
+        if($masks!==null) {
+            $sourceData[] = $masks;
+        }
         $dataset = $nn->data->NDArrayDataset(
-            [$states, $actions, $oldLogProbs, $oldValues, $advantages, $returns],
+            $sourceData,
             batch_size:$batchSize,
             shuffle:true,
         );
@@ -573,15 +574,23 @@ class PPO extends AbstractAgent
         $loss = 0.0;
         for($epoch=0; $epoch<$this->epochs; $epoch++) {
             foreach($dataset as $batch) {
-                [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
+                if($masks===null) {
+                    $masksB = null;
+                    [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB] = $batch[0];
+                } else {
+                    [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB, $masksB] = $batch[0];
+                }
                 [$totalLoss,$policyLoss,$valueLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
-                    use ($la,$agent,$g,$lossFunc,$model,$statesB,$training,$actionsB,$oldLogProbsB, 
+                    use ($la,$agent,$g,$lossFunc,$model,$statesB,$training,$masksB,$actionsB,$oldLogProbsB, 
                         $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon,$oldValuesB,
                         $clipValueLoss)
                 {
                     if(!$agent->continuous) {
                         [$newLogits, $newValues] = $model($statesB,$training); // (batchSize,numActions),(batchSize,1)
                         $newValues = $g->squeeze($newValues,axis:-1);
+                        if($masksB!==null) {
+                            $newLogits = $g->masking($masksB,$newLogits,fill:-1e9);
+                        }
                         [$newLogProbs, $entropy] = $agent->log_prob_entropy_categorical($newLogits,$actionsB);
                     } else {
                         [$newMeans, $newValues, $newLogStd] = $model($statesB,$training);
