@@ -223,9 +223,6 @@ class PPO extends AbstractAgent
     {
         if(!$continuous) {
             // Discrete Actions
-            $tau ??= 1.0;
-            $min ??= -INF;
-            $max ??= INF;
             $policy = new Boltzmann(
                 $la,
                 $tau,
@@ -315,6 +312,7 @@ class PPO extends AbstractAgent
         NDArray $rewards, // (rolloutSteps)
         NDArray $values,  // (rolloutSteps+1,1)
         array $dones,
+        array $truncated,
         float $gamma,
         float $gaeLambda,
         ) : array
@@ -327,7 +325,7 @@ class PPO extends AbstractAgent
 
         $rolloutSteps = count($rewards);
         for($t=$rolloutSteps-1;$t>=0;$t--) {
-            if($dones[$t]) {
+            if($dones[$t]||$truncated[$t]) {
                 // 終端状態の場合、next_valueは0
                 $delta = $la->axpy($values[$t], $la->copy($rewards[$t]), alpha:-1);
                 $last_advantage = $delta;
@@ -433,54 +431,90 @@ class PPO extends AbstractAgent
         $batchSize = $this->batchSize;
         $rolloutSteps = $this->rolloutSteps;
         $numActions = $this->numActions;
+        $model = $this->model;
 
-        $states = $la->alloc(array_merge([$rolloutSteps], $stateShape));
-        $rewards = $la->zeros($la->alloc([$rolloutSteps]));
-        if(!$this->continuous) {
-            $actions = $la->zeros($la->alloc([$rolloutSteps],NDArray::int32));
-        } else {
-            $actions = $la->zeros($la->alloc([$rolloutSteps,$numActions]));
-        }
-        $dones = [];
+        //$states = $la->alloc(array_merge([$rolloutSteps], $stateShape));
+        //$rewards = $la->zeros($la->alloc([$rolloutSteps]));
+        //if(!$this->continuous) {
+        //    $actions = $la->zeros($la->alloc([$rolloutSteps],NDArray::int32));
+        //} else {
+        //    $actions = $la->zeros($la->alloc([$rolloutSteps,$numActions]));
+        //}
+        //$dones = [];
 
         // Rollout
-        $history = $experience->recently($experience->size());
-        $totalReward = 0;
-        $last_advantage = 0.0;
-        $i = 0;
-        foreach ($history as $transition) {
-            [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+        //$history = $experience->recently($experience->size());
+        //$i = 0;
+        //foreach ($history as $transition) {
+        //    [$state,$action,$nextState,$reward,$done,$truncated,$info] = $transition;
+//
+        //    // states
+        //    if(!($state instanceof NDArray)) {
+        //        throw new LogicException("state must be NDArray.");
+        //    }
+        //    if($la->isInt($state)) {
+        //        $state = $la->astype($state,dtype:NDArray::float32);
+        //    }
+        //    $la->copy($state,$states[$i]);
+        //    if(!($action instanceof NDArray)) {
+        //        throw new LogicException("action must be NDArray.");
+        //    }
+        //    // actions
+        //    if(!$this->continuous) {
+        //        if($action->ndim()!==0) {
+        //            $shapeString = $la->shapeToString($action->shape());
+        //            throw new LogicException("shape of action must be scalar ndarray. $shapeString given.");
+        //        }
+        //        $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
+        //    } else {
+        //        if($action->ndim()!==1) {
+        //            $shapeString = $la->shapeToString($action->shape());
+        //            throw new LogicException("shape of action must be rank 1 ndarray. $shapeString given.");
+        //        }
+        //        $la->copy($action,$actions[$i]);
+        //    }
+        //    $dones[$i] = ($done || $truncated);
+        //    $rewards[$i] = $reward;
+        //    $i++;
+        //}
 
-            // states
-            if(!($state instanceof NDArray)) {
-                throw new LogicException("state must be NDArray.");
-            }
-            if($la->isInt($state)) {
-                $state = $la->astype($state,dtype:NDArray::float32);
-            }
-            $la->copy($state,$states[$i]);
-            if(!($action instanceof NDArray)) {
-                throw new LogicException("action must be NDArray.");
-            }
-            // actions
-            if(!$this->continuous) {
-                if($action->ndim()!==0) {
-                    throw new LogicException("shape of action must be scalar ndarray.");
-                }
-                $la->copy($action->reshape([1]),$actions[R($i,$i+1)]);
-            } else {
-                if($action->ndim()!==1) {
-                    throw new LogicException("shape of action must be rank 1 ndarray.");
-                }
-                $la->copy($action,$actions[$i]);
-            }
-            $dones[$i] = ($done || $truncated);
-            $rewards[$i] = $reward;
-            $i++;
+        $history = $experience->recently($experience->size());
+        [$obs,$actions,$nextObs,$rewards,$dones,$truncated,$info] = $history;
+        $states = $this->extractStateList($obs);
+        $masks = $this->extractMaskList($obs);
+        $nextStates = $this->extractStateList($nextObs);
+
+        $states = $la->stack($states);
+        if($la->isInt($states)) {
+            $states = $la->astype($states,dtype:NDArray::float32);
         }
+        if($masks!==null) {
+            $masks = $la->stack($masks);
+        } else {
+            $masks = $la->ones($la->alloc([$batchSize, $numActions],NDArray::bool));
+        }
+        $actions = $la->stack($actions);
+        $rewards = $la->array($rewards);
+
+        $lastDone = $dones[array_key_last($dones)];
+        $lastTruncated = $truncated[array_key_last($truncated)];
+        if($lastDone||$lastTruncated) {
+            $nextValue = $la->array([[0]]);
+        } else {
+            $lastNextObs = $nextObs[array_key_last($nextObs)];
+            $nextState = $this->extractState($lastNextObs);
+            if($la->isInt($nextState)) {
+                $nextState = $la->astype($nextState,dtype:NDArray::float32);
+            }
+            if($nextState->ndim()===0) {
+                $nextState = $la->expandDims($nextState,axis:0);
+            }
+            $nextState = $la->expandDims($nextState,axis:0);
+            [$tmp,$nextValue] = $model->forward($nextState,false);
+        }
+
         $experience->clear();
 
-        $model = $this->model;
         if(!$this->continuous) {
             [$oldLogits, $oldValues] = $model($states,false);
         } else {
@@ -495,14 +529,13 @@ class PPO extends AbstractAgent
             }
         }
 
-        [$dmy, $nextValue] = $model($la->expandDims($nextState,0),false);
-
         $valuesForGAE = $la->concat([$oldValues,$nextValue],axis:0);
 
         [$advantages, $returns] = $this->compute_advantages_and_returns(
             $rewards,
             $valuesForGAE,
             $dones,
+            $truncated,
             $this->gamma,
             $this->gaeLambda,
         );

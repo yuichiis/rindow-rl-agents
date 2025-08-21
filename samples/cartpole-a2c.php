@@ -100,7 +100,7 @@ if(!$agent->fileExists($filename)) {
     $plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
-    $agent->saveWeightsToFile($filename);
+    //$agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }
