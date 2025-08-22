@@ -38,9 +38,8 @@ class NormalDistribution extends AbstractPolicy
     {
         $la = $this->la;
 
-        $actions = $estimator->getActionValues($states);
+        [$actions, $logStd] = $estimator->getActionValues($states,std:true);
         if($training) {
-            $logStd = $estimator->getLogStd();
             $actions = $this->calcNormalDistSampled($actions,$logStd);
         }
 

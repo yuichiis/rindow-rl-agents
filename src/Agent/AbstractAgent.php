@@ -171,7 +171,7 @@ abstract class AbstractAgent implements Agent
      */
     protected function log_prob_entropy_continuous(
         NDArray $mean,      // (batchSize,numActions)
-        NDArray $logStd,    // (numActions)
+        NDArray $logStd,    // (numActions) または (batchSize,numActions)
         NDArray $value,     // (batchSize,numActions)
     ) : array
     {

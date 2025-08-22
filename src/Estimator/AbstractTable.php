@@ -79,7 +79,7 @@ abstract class AbstractTable implements Estimator,Table
      * $states : (batches,1)          typeof int32
      * $actionValues : (batches,numActions) typeof float32
      */
-    public function getActionValues(NDArray $states) : NDArray
+    public function getActionValues(NDArray $states,?bool $std=null) : NDArray|array
     {
         $la = $this->la;
         if($states->ndim()!==2||!$la->isInt($states)||$states->shape()[1]!=1) {

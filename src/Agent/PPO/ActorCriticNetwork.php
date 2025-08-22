@@ -16,7 +16,8 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
     protected int $numActions;
     protected Model $stateLayers;
     protected Layer $actionLayer;
-    protected Variable $logStd;
+    // protected Variable $logStd; // <<< 変更点: 状態に依存しないlogStd変数を削除
+    protected Layer $logStdLayer; // <<< 変更点: 状態からlogStdを出力するレイヤーを追加
     protected Layer $criticLayer;
     protected bool $continuous;
     //protected ?NDArray $actionMin=null;
@@ -33,23 +34,19 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         ?string $actionActivation=null,
         mixed $actionKernelInitializer=null,
         mixed $criticKernelInitializer=null,
+        // <<< 変更点: logStdレイヤー用の初期化方法を追加（任意）
+        mixed $logStdKernelInitializer=null,
         ?NDArray $actionMin=null, ?NDArray $actionMax=null,
-        ?float $initialStd=null,
+        //?float $initialStd=null, // <<< 変更点: initialStdは不要になるため削除
         ?bool $continuous=null,
         )
     {
         $continuous ??= false;
-        //if(!$continuous) {
-            $activation ??= 'relu';
-        //} else {
-        //    $kernelInitializer ??= 'he_uniform';
-        //    $activation ??= 'tanh';
-        //    $actionActivation ??= 'tanh';
-        //}
+        $activation ??= 'relu';
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [128, 128];
         }
-        $initialStd ??= 1.0;
+        // $initialStd ??= 1.0; // <<< 変更点: 削除
 
         parent::__construct($builder,$stateShape);
         $this->la = $la;
@@ -88,12 +85,23 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
                 $this->actionScale = $nn->gradient()->constant($scale);
                 $this->actionShift = $nn->gradient()->constant($shift);
             }
-            $logStd = log($initialStd);
-            $this->logStd = $nn->gradient()->Variable(
-                $la->fill($logStd,$la->alloc([$numActions])),
-                name:'logStd',
-                trainable:true,
+
+            // --- ▼▼▼ 変更点 ▼▼▼ ---
+            // 状態に依存しないlogStdの変数の代わりに、状態からlogStdを出力する全結合層を定義
+            // $logStd = log($initialStd);
+            // $this->logStd = $nn->gradient()->Variable(
+            //     $la->fill($logStd,$la->alloc([$numActions])),
+            //     name:'logStd',
+            //     trainable:true,
+            // );
+            $logStdKernelInitializer ??= 'zeros'; // 学習初期の標準偏差をexp(0)=1.0にするため'zeros'で初期化
+            $this->logStdLayer = $nn->layers()->Dense(
+                $numActions,
+                // 活性化関数はなし（線形出力）
+                kernel_initializer:$logStdKernelInitializer,
+                name:'LogStd'
             );
+            // --- ▲▲▲ 変更点 ▲▲▲ ---
         }
         $this->criticLayer = $nn->layers()->Dense(
             1,
@@ -123,12 +131,18 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
                     $this->actionShift
                 );
             }
-            //$logstd_out = $g->clipByValue($this->logStd,-20,2);
-            $logstd_out = $this->logStd;
+
+            // --- ▼▼▼ 変更点 ▼▼▼ ---
+            // 状態の特徴量(state_out)からlog(std)を計算する
+            // $logstd_out = $this->logStd;
+            $logstd_out = $this->logStdLayer->forward($state_out, $training);
+            $logstd_out = $g->clipByValue($logstd_out,-20,2);
+            // --- ▲▲▲ 変更点 ▲▲▲ ---
+
             return [            // continuous outputs
                 $action_out,    // mu acions (batchsize,numActions)
                 $critic_out,    // values    (batchsize,1)
-                $logstd_out, // log(std)  (numActions)
+                $logstd_out,    // log(std)  (batchsize, numActions) <<< 形状が(numActions)から変わる
             ];
         }
     }
@@ -137,8 +151,9 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
      * @param  NDArray $states : (batches,...StateDims) typeof int32 or float32
      * @return NDArray $actionValues : (batches,...ValueDims) typeof float32
      */
-    public function getActionValues(NDArray $states) : NDArray
+    public function getActionValues(NDArray $states,?bool $std=null) : NDArray|array
     {
+        $std ??= false;
         $la = $this->la;
         if($states->ndim()<2) {
             $specs = $la->dtypeToString($states->dtype())."(".implode(',',$states->shape()).")";
@@ -150,21 +165,18 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         }
 
         if(!$this->continuous) {
+            // discreate
             [$action_out,$critic_out] = $this->forward($states,false);
-        } else {
-            [$action_out,$critic_out, $logStd] = $this->forward($states,false);
+            return $action_out;
         }
-        return $action_out;
+
+        // continuous
+        [$action_out,$critic_out, $logStd] = $this->forward($states,false);
+        if($std) {
+            return [$action_out,$logStd];
+        } else {
+            return $action_out;
+        }
     }
 
-    public function getLogStd() : NDArray
-    {
-        if(!$this->continuous) {
-            throw new LogicException("It can't get LogStd if this model is for discrete actions.");
-        }
-        //$g = $this->builder->gradient();
-        //$logstd_out = $g->clipByValue($this->logStd,-20,2);
-        $logstd_out = $this->logStd;
-        return $logstd_out;
-    }
 }

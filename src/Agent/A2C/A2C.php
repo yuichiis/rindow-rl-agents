@@ -428,7 +428,7 @@ class A2C extends AbstractAgent
         $agent = $this;
         $lossFunc = $this->lossFunc;
         $training = $g->Variable(true);
-        [$loss, $policyLoss, $valueLoss, $entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
+        [$loss, $policyLoss, $valueLoss, $entropyLoss, $logStd] = $nn->with($tape=$g->GradientTape(),function() 
             use ($la,$agent,$g,$lossFunc,$model,$states,$training,$masks,$actions,$discountedRewards,$advantage,
                 $valueLossWeight,$entropyWeight)
         {
@@ -468,7 +468,7 @@ class A2C extends AbstractAgent
                 ),
             );
 
-            return [$loss, $policyLoss, $valueLoss, $entropyLoss];
+            return [$loss, $policyLoss, $valueLoss, $entropyLoss, $logStd];
         });
         $grads = $tape->gradient($loss,$this->trainableVariables);
         $this->optimizer->update($this->trainableVariables,$grads);
@@ -490,7 +490,7 @@ class A2C extends AbstractAgent
             $this->metrics->update('entropy',$entropyLoss);
         }
         if($this->metrics->isAttracted('std')) {
-            $std = $la->reduceMean($la->exp($la->copy($this->model->getLogStd())));
+            $std = $la->exp($la->reduceMean($logStd));
             $std = $la->scalar($std);
             $this->metrics->update('std',$std);
         }

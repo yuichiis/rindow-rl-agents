@@ -197,7 +197,7 @@ class PPO extends AbstractAgent
             actionMin:$min,actionMax:$max,
             actionKernelInitializer:$actionKernelInitializer,
             criticKernelInitializer:$criticKernelInitializer,
-            // initialStd:$initialStd,    # delete for network std 
+            initialStd:$initialStd,
         );
         return $network;
     }
@@ -587,7 +587,7 @@ class PPO extends AbstractAgent
                 } else {
                     [$statesB, $actionsB, $oldLogProbsB, $oldValuesB, $advantagesB, $returnsB, $masksB] = $batch[0];
                 }
-                [$totalLoss,$policyLoss,$valueLoss,$entropyLoss, $logStd] = $nn->with($tape=$g->GradientTape(),function() 
+                [$totalLoss,$policyLoss,$valueLoss,$entropyLoss] = $nn->with($tape=$g->GradientTape(),function() 
                     use ($la,$agent,$g,$lossFunc,$model,$statesB,$training,$masksB,$actionsB,$oldLogProbsB, 
                         $advantagesB, $returnsB, $valueLossWeight,$entropyWeight,$clipEpsilon,$oldValuesB,
                         $clipValueLoss)
@@ -658,7 +658,7 @@ class PPO extends AbstractAgent
                         )
                     );
                     #echo $policyLoss->toArray().",".$valueLoss->toArray().",".$entropyLoss->toArray()."\n";
-                    return [$totalLoss,$policyLoss,$valueLoss,$entropyLoss,$newLogStd];
+                    return [$totalLoss,$policyLoss,$valueLoss,$entropyLoss];
                 });
                 $grads = $tape->gradient($totalLoss,$this->trainableVariables);
                 if($this->clipnorm!==null) {
@@ -682,8 +682,7 @@ class PPO extends AbstractAgent
                     $this->metrics->update('entropy',$entropyLoss);
                 }
                 if($this->metrics->isAttracted('std')) {
-                    
-                    $std = $la->reduceMean($la->reduceMean($la->exp($la->copy($logStd))));
+                    $std = $la->reduceMean($la->exp($la->copy($this->model->getLogStd())));
                     $std = $la->scalar($std);
                     $this->metrics->update('std',$std);
                 }

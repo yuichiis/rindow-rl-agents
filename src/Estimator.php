@@ -19,7 +19,7 @@ interface Estimator
      * @param  NDArray $states : (batches,...StateDims) typeof int32 or float32
      * @return NDArray $actionValues : (batches,...ValueDims) typeof float32
      */
-    public function getActionValues(NDArray $states) : NDArray;
+    public function getActionValues(NDArray $states, ?bool $std=null) : NDArray|array;
 
     ///**
     //* @param NDArray $states   : N x StatesDims typeof int32 or float32  ( ex. [[0.0],[1.0],[2.0]] )

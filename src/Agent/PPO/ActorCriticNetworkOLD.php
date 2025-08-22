@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\A2C;
+namespace Rindow\RL\Agents\Agent\PPO;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Estimator;
@@ -47,7 +47,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         //    $actionActivation ??= 'tanh';
         //}
         if($convLayers===null && $fcLayers===null) {
-            $fcLayers = [64, 64];
+            $fcLayers = [128, 128];
         }
         $initialStd ??= 1.0;
 
@@ -137,9 +137,8 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
      * @param  NDArray $states : (batches,...StateDims) typeof int32 or float32
      * @return NDArray $actionValues : (batches,...ValueDims) typeof float32
      */
-    public function getActionValues(NDArray $states,?bool $std=null) : NDArray|array
+    public function getActionValues(NDArray $states) : NDArray
     {
-        $std ??= false;
         $la = $this->la;
         if($states->ndim()<2) {
             $specs = $la->dtypeToString($states->dtype())."(".implode(',',$states->shape()).")";
@@ -151,17 +150,21 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         }
 
         if(!$this->continuous) {
-            // discreate
             [$action_out,$critic_out] = $this->forward($states,false);
-            return $action_out;
-        }
-
-        // continuous
-        [$action_out,$critic_out, $logStd] = $this->forward($states,false);
-        if($std) {
-            return [$action_out,$logStd];
         } else {
-            return $action_out;
+            [$action_out,$critic_out, $logStd] = $this->forward($states,false);
         }
+        return $action_out;
+    }
+
+    public function getLogStd() : NDArray
+    {
+        if(!$this->continuous) {
+            throw new LogicException("It can't get LogStd if this model is for discrete actions.");
+        }
+        //$g = $this->builder->gradient();
+        //$logstd_out = $g->clipByValue($this->logStd,-20,2);
+        $logstd_out = $this->logStd;
+        return $logstd_out;
     }
 }

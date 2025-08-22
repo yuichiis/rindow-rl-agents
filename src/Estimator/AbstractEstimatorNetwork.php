@@ -62,7 +62,7 @@ abstract class AbstractEstimatorNetwork extends AbstractNetwork implements Estim
     * $states : (batches,...stateShape) typeof int32 or float32
     * $actionValues : (batches,...numActions)  typeof float32
     */
-    public function getActionValues(NDArray $states) : NDArray
+    public function getActionValues(NDArray $states,?bool $std=null) : NDArray|array
     {
         $la = $this->la;
         if($states->ndim()<2) {

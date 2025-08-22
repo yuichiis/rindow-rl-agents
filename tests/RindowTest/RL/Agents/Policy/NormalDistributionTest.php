@@ -40,14 +40,9 @@ class TestEstimator implements Estimator
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getActionValues(NDArray $state) : NDArray
+    public function getActionValues(NDArray $state,?bool $std=null) : NDArray|array
     {
         return $state;
-    }
-
-    public function getLogStd() : NDArray
-    {
-        return $this->logStd;
     }
 
     //public function probabilities(NDArray $state) : NDArray

@@ -34,7 +34,7 @@ class TestEstimator implements Estimator
     * @param NDArray $state
     * @return NDArray $qValues
     */
-    public function getActionValues(NDArray $state) : NDArray
+    public function getActionValues(NDArray $state,?bool $std=null) : NDArray|array
     {
         $la = $this->la;
         $state = $la->squeeze($state,axis:-1);
