@@ -37,23 +37,17 @@ $evalInterval = 1000; #10; #
 $numEvalEpisodes = 5;
 $maxExperienceSize = 10000;#100000;
 #######################
-$batchSize = 256;#32;#
-$gamma = 0.99;#0.9;#1.0;#
+$batchSize = 32; # <= Maze 32 # 5; #
+$gamma = 0.99; # 0.9;#1.0;#
 $valueLossWeight = 0.5;
-$entropyWeight = 0.001;#0.01;
+$entropyWeight = 0.001; # 0.01;
 $fcLayers = [64];# [32,32];# [128,128];# [10,10];#
-$activation = 'relu';#'tanh';#
-#$targetUpdatePeriod = 5;   #5;  #5;    #5;   # 200;#
-#$targetUpdateTau =    0.05;#0.1;#0.025;#0.01;#1.0;#
-$learningRate = 1e-3;#1e-1;#
-#$epsStart = 0.9;#0.1;#1.0; #1.0; #1.0; #
-#$epsStop =  0.1;#0.1;#0.05;#0.01;#0.05;#
-#$decayRate = 0.07;#0.001;#0.0005;#
-#$episodeAnnealing = true;
+#$activation = 'relu';#'tanh';#
+$learningRate = 7e-4; # 1e-1;#
 $experienceSize = 10000;#100;#
 //$lossFn = $nn->losses->MeanSquaredError();
-$useBaseline = true; # true;
-$useNormalize = false;
+$useBaseline = true; # <= Maze true # false #
+$useNormalize = false; # <= Maze false # true #
 
 
 
