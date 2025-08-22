@@ -27,15 +27,15 @@ $plt = new Plot(null,$mo);
 
 $numIterations = 100000;#200000;#300;#1000;#
 $logInterval =   100;  #10; #
-$evalInterval = 2048; #10; #
+$evalInterval = 2000; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
-$batchSize = 32; # 256;#
+$batchSize = 5; # 256;#
 $gamma = 0.99;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.001;#0.01;
-$useBaseline = true; # false;
-$useNormalize = false; # true;
+$useBaseline = false; # true;
+$useNormalize = true; # false;
 $fcLayers = [64,64];# [32,32];#
 $learningRate = 7e-4;#1e-3;#1e-5;#
 
