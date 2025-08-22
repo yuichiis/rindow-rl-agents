@@ -34,6 +34,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         mixed $actionKernelInitializer=null,
         mixed $criticKernelInitializer=null,
         ?NDArray $actionMin=null, ?NDArray $actionMax=null,
+        ?float $initialStd=null,
         ?bool $continuous=null,
         )
     {
@@ -48,6 +49,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [64, 64];
         }
+        $initialStd ??= 1.0;
 
         parent::__construct($builder,$stateShape);
         $this->la = $la;
@@ -86,8 +88,9 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
                 $this->actionScale = $nn->gradient()->constant($scale);
                 $this->actionShift = $nn->gradient()->constant($shift);
             }
+            $logStd = log($initialStd);
             $this->logStd = $nn->gradient()->Variable(
-                $la->zeros($la->alloc([$numActions])),
+                $la->fill($logStd,$la->alloc([$numActions])),
                 name:'logStd',
                 trainable:true,
             );

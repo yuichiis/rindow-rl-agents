@@ -69,6 +69,7 @@ class A2C extends AbstractAgent
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
         ?Space $actionSpace=null,
         ?string $stateField=null,
+        ?float $initialStd=null,
         ?object $mo = null
         )
     {
@@ -89,12 +90,13 @@ class A2C extends AbstractAgent
             $numActions ??= $shape[0];
         }
 
-            $network ??= $this->buildNetwork(
+        $network ??= $this->buildNetwork(
             $la,$nn,$continuous,$stateShape,$numActions,
             $fcLayers,
             $actionKernelInitializer,
             $criticKernelInitializer,
             $policyMin,$policyMax,
+            $initialStd,
         );
         if(!($network instanceof Estimator)) {
             echo get_class($network);
@@ -150,6 +152,7 @@ class A2C extends AbstractAgent
         mixed $criticKernelInitializer,
         float|NDArray|null $min,
         float|NDArray|null $max,
+        ?float $initialStd,
         )
     {
         if($nn===null) {
@@ -169,6 +172,7 @@ class A2C extends AbstractAgent
             actionMin:$min,actionMax:$max,
             actionKernelInitializer:$actionKernelInitializer,
             criticKernelInitializer:$criticKernelInitializer,
+            initialStd:$initialStd,
         );
         return $network;
     }
@@ -457,11 +461,11 @@ class A2C extends AbstractAgent
 
             // total loss
             $loss = $g->add(
-                $g->add(
+                $policyLoss,
+                $g->sub(
                     $g->scale($valueLossWeight, $valueLoss),
                     $g->scale($entropyWeight, $entropyLoss)
                 ),
-                $policyLoss
             );
 
             return [$loss, $policyLoss, $valueLoss, $entropyLoss];

@@ -639,7 +639,7 @@ class PPO extends AbstractAgent
                     }
 
                     // policy entropy
-                    $entropyLoss = $g->scale(-1,$g->reduceMean($entropy));
+                    $entropyLoss = $g->reduceMean($entropy);
 
                     #echo "actor=".$la->toString($policyLoss,format:'%+3.3f').
                     #    ",critic=".$la->toString($valueLoss,format:'%7.1f').
@@ -648,7 +648,7 @@ class PPO extends AbstractAgent
                     // total loss
                     $totalLoss = $g->add(
                         $policyLoss,
-                        $g->add(
+                        $g->sub(
                             $g->scale($valueLossWeight, $valueLoss),
                             $g->scale($entropyWeight, $entropyLoss)
                         )

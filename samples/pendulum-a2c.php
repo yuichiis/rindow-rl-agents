@@ -30,22 +30,42 @@ $numIterations = 300000;#200000;#300;#1000;#
 $targetScore = null; # -250; #
 $numAchievements = null; # 10; #
 $logInterval =   100;  #10; #
-$evalInterval = 1024; #10; #
+$evalInterval = 4000; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
-$batchSize = 1024; # 256;# 32;#
+$batchSize = 5; #  <= Pendulum 8 # 32;
 //$gamma = 0.99;
-$gamma = 0.9;#  # <= Pendulum 0.9;# 0.99;
+$gamma = 0.9;#  # <= Pendulum 0.9; # 0.99;
 $valueLossWeight = 0.5;
-//$entropyWeight = 0.001;
-$entropyWeight = 0.01; # <= Pendulum 0.01; # 0.001
+//$entropyWeight = 0.0;
+$entropyWeight = 0.001;
+//$entropyWeight = 0.01; # <= Pendulum 0.01; # 0.001
+//$entropyWeight = 0.1;
 $useBaseline = false; # false;
 $useNormalize = true; # true;
 $fcLayers = [128,128]; # [64,64];# [32,32];#
+$initialStd = 4.5; # 1.64;
 $learningRate = 7e-4;#1e-3;#1e-5;#
 $minval = -0.003;
 $maxval = 0.003;
 $actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+
+echo "numIterations = {$numIterations}\n"; #
+echo "targetScore = {$targetScore}\n"; #
+echo "numAchievements = {$numAchievements}\n"; #
+echo "logInterval = {$logInterval}\n"; #
+echo "evalInterval = {$evalInterval}\n"; #
+echo "numEvalEpisodes = {$numEvalEpisodes}\n"; #
+echo "maxExperienceSize = {$maxExperienceSize}\n"; #
+echo "batchSize = {$batchSize}\n"; #
+echo "gamma = {$gamma}\n"; #
+echo "valueLossWeight = {$valueLossWeight}\n"; #
+echo "entropyWeight = {$entropyWeight}\n"; #
+echo "useBaseline = {$useBaseline}\n"; #
+echo "useNormalize = {$useNormalize}\n"; #
+echo "fcLayers = [".implode(",",$fcLayers)."]\n"; #
+echo "initialStd = {$initialStd}\n"; #
+echo "learningRate = {$learningRate}\n"; #
 
 
 $env = new PendulumV1($la);
@@ -69,7 +89,9 @@ $agent = new A2C(
     batchSize:$batchSize,gamma:$gamma,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
     useBaseline:$useBaseline,useNormalize:$useNormalize,
-    optimizerOpts:['lr'=>$learningRate],mo:$mo,
+    optimizerOpts:['lr'=>$learningRate],
+    initialStd:$initialStd,
+    mo:$mo,
 );
 $agent->summary();
 
@@ -119,7 +141,7 @@ if(!$agent->fileExists($filename)) {
     $plt->legend($arts,['reward','Ploss','Vloss','entropy','std','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
-    $agent->saveWeightsToFile($filename);
+    //$agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }

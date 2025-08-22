@@ -27,10 +27,10 @@ $plt = new Plot(null,$mo);
 
 $numIterations = 100000;#200000;#300;#1000;#
 $logInterval =   100;  #10; #
-$evalInterval = 2000; #10; #
+$evalInterval = 2048; #10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000;#100000;
-$batchSize = 256;#32;#
+$batchSize = 32; # 256;#
 $gamma = 0.99;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.001;#0.01;
