@@ -38,13 +38,12 @@ $batchSize = 5; #  <= Pendulum 8 # 32;
 $gamma = 0.9;#  # <= Pendulum 0.9; # 0.99;
 $valueLossWeight = 0.5;
 //$entropyWeight = 0.0;
-$entropyWeight = 0.001;
-//$entropyWeight = 0.01; # <= Pendulum 0.01; # 0.001
-//$entropyWeight = 0.1;
+$entropyWeight = 0.001; # <= Pendulum 0.001 # default:same 0.001 
+//$entropyWeight = 0.01
 $useBaseline = false; # false;
 $useNormalize = true; # true;
 $fcLayers = [128,128]; # [64,64];# [32,32];#
-$initialStd = 4.5; # 1.64;
+$initialStd = 4.5; # <= Pendulum 4.5; # 1.0
 $learningRate = 7e-4;#1e-3;#1e-5;#
 $minval = -0.003;
 $maxval = 0.003;

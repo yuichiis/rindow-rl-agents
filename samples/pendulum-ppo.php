@@ -41,6 +41,7 @@ $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.01; # <= Pendulum 0.01; # 0.001
 $fcLayers = [128,128];
+$initialStd = 5.0; # # <= Pendulum 5.0 # 1.0;
 $normAdv = true;
 $clipEpsilon = 0.2;
 $clipValueLoss = true; # false; # 
@@ -70,6 +71,7 @@ $agent = new PPO(
     nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
     rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
     fcLayers:$fcLayers,
+    initialStd:$initialStd,
     actionKernelInitializer:$actionKernelInitializer,
     gamma:$gamma,gaeLambda:$gaeLambda,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,

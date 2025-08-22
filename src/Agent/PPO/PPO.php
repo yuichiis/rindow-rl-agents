@@ -79,7 +79,8 @@ class PPO extends AbstractAgent
         ?float $policyTau=null,?float $policyMin=null,?float $policyMax=null,
         ?Space $actionSpace=null,
         ?string $stateField=null,
-        ?object $mo = null
+        ?float $initialStd=null,
+        ?object $mo = null,
         )
     {
         $continuous ??= false;
@@ -105,6 +106,7 @@ class PPO extends AbstractAgent
             $actionKernelInitializer,
             $criticKernelInitializer,
             $policyMin,$policyMax,
+            $initialStd,
         );
         if(!($network instanceof Estimator)) {
             echo get_class($network);
@@ -175,6 +177,7 @@ class PPO extends AbstractAgent
         mixed $criticKernelInitializer,
         float|NDArray|null $min,
         float|NDArray|null $max,
+        ?float $initialStd,
         )
     {
         if($nn===null) {
@@ -194,6 +197,7 @@ class PPO extends AbstractAgent
             actionMin:$min,actionMax:$max,
             actionKernelInitializer:$actionKernelInitializer,
             criticKernelInitializer:$criticKernelInitializer,
+            initialStd:$initialStd,
         );
         return $network;
     }
