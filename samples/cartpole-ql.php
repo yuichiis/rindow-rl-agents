@@ -96,7 +96,7 @@ if(!$agent->fileExists($filename)) {
     $plt->ylabel('Reward');
     $plt->legend($arts,['reward','valRewards','error','epsilon']);
     $plt->show();
-    //$agent->saveWeightsToFile($filename);
+    $agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }

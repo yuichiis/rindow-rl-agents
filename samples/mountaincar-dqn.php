@@ -94,23 +94,40 @@ $customReward3 = function($env,$stepCount,$state,$action,$nextState,$reward,$don
     return $reward;
 };
 
-$customReward4 = function($env,$stepCount,$state,$action,$nextState,$reward,$done,$truncated,$info) use ($work) {
-    $nextPosition = $nextState[0];
-    $nextVelocity = $nextState[1];
+$customGainReward = function($env, $stepCount, $state, $action, $nextState, $reward, $done, $truncated, $info) {
     $position = $state[0];
     $velocity = $state[1];
-    $gravity = 0.0025;
+    $nextPosition = $nextState[0];
+    $nextVelocity = $nextState[1];
 
-    $c = 1 / ($gravity*sin(3*0.5) + 0.5*0.07*0.07); #正規化定数
+    // ---- 1. エネルギー増加による報酬（行動の指針）----
+    $calculateEnergy = function($p, $v) {
+        $potentialEnergy = sin(3 * $p); 
+        $kineticEnergy = 0.5 * ($v ** 2);
+        return $potentialEnergy + $kineticEnergy;
+    };
+    $energy = $calculateEnergy($position, $velocity);
+    $nextEnergy = $calculateEnergy($nextPosition, $nextVelocity);
+    
+    // エネルギーの増加量に、学習を安定させるための係数をかける
+    $energyReward = 10 * ($nextEnergy - $energy);
 
-    $nextEnergy = $c*($gravity*sin(3*$nextPosition) + 0.5*$nextVelocity*$nextVelocity);
-    $energy = $c*($gravity*sin(3*$position) + 0.5*$velocity*$velocity);
-    $energyGain = $nextEnergy - $energy;
-    $reward += $energyGain*10;
-    if(($done || $truncated) && $nextPosition>=0.5) {
-        $reward += 100;
+    // ---- 2. ステップペナルティ（効率化の促進）----
+    // 毎ステップ、一定のコストを課す
+    $stepPenalty = -0.1;
+
+    // ---- 3. ゴールボーナス ----
+    $goalBonus = 0;
+    if ($done && $nextPosition >= 0.5) {
+        $goalBonus = 100;
     }
-    return $reward;
+
+    // ---- 最終的な報酬の計算 ----
+    // 3つの要素をすべて合計する
+    $finalReward = $energyReward + $stepPenalty + $goalBonus;
+    //echo "finalReward: {$finalReward}, energyReward: {$energyReward}, stepPenalty: {$stepPenalty}, goalBonus: {$goalBonus}\n";
+    
+    return $finalReward;
 };
 
 // { $numIterations = 1000; $logInterval = 1; $evalInterval = 10; $numEvalEpisodes = 10;
@@ -121,18 +138,18 @@ $customReward4 = function($env,$stepCount,$state,$action,$nextState,$reward,$don
 //   // no custom reward
 // }
 
-$numIterations = 20000;#1000;#300;#
-$logInterval =   500;  #5;  #10; #
-$evalInterval =  500;#10; #1000; #
-$numEvalEpisodes = 1;#10;
-$maxExperienceSize = 50000;#20000;#100000;
-$batchSize = 256;#256;#128;#64;#
+$numIterations = 50000; # 1000; # 300;#
+$logInterval =   100;  #5;  # 10; #
+$evalInterval =  500; # 10; # 1000; #
+$numEvalEpisodes = 10; # 10;
+$maxExperienceSize = 50000;# 20000;# 100000;
+$batchSize = 256; # 256;# 128;# 64;#
 $gamma = 0.99;#1.0;#
 $convLayers = null;
 $convType = null;
-$fcLayers = [64,64]; # [16,16,16]; # [128,52];# [24,48];# [128,64,32];# [32,32];#
+$fcLayers = [128,128]; # [16,16,16]; # [128,52];# [24,48];# [128,64,32];# [32,32];#
 $activation = null;#'tanh';
-$targetUpdatePeriod = 10;  #-1; #5;    #5;   #5;   #200;#
+$targetUpdatePeriod = 10;  #-1; #5;    #5;   #5;   # 200;#
 $targetUpdateTau =    1e-2;#1.0;#0.025;#0.01;#0.05;#1.0;#
 $learningRate = 1e-3;#1e-5;#
 $epsStart = 1.0;#1.0; #1.0; #0.9;#1.0; #
@@ -153,7 +170,7 @@ $numActions = $env->actionSpace()->n();
 //exit();
 
 $evalEnv = new MountainCarV0($la);
-$dqnAgent = new DQN(
+$agent = new DQN(
     $la,
     nn:$nn,
     stateShape:$stateShape,numActions:$numActions,
@@ -164,57 +181,69 @@ $dqnAgent = new DQN(
     ddqn:$ddqn,lossFn:$lossFn,optimizerOpts:['lr'=>$learningRate],
     mo:$mo
 );
-$dqnAgent->summary();
-//$driver = new EpisodeRunner($la,$env,$dqnAgent,$maxExperienceSize);
-$driver = new StepRunner($la,$env,$dqnAgent,$maxExperienceSize,evalEnv:$evalEnv);
-$driver->setCustomRewardFunction($customReward4);
+$agent->summary();
+$agent->setCustomRewardFunction($customGainReward);
+//$driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
+$driver = new StepRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
+
+function fitplot($la,array $x,float $window,float $bottom) : NDArray
+{
+    $scale = $window/(max($x)-min($x));
+    $bias = -min($x)*$scale+$bottom;
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
 $filename = __DIR__.'\\mountaincar-dqn';
-if(!$dqnAgent->fileExists($filename)) {
+if(!$agent->fileExists($filename)) {
+    $driver->metrics()->format('steps', '%5.1f');
+    $driver->metrics()->format('reward','%5.1f');
+    $driver->metrics()->format('Ploss','%+5.2e');
+    $driver->metrics()->format('Vloss','%+5.2e');
+    $driver->metrics()->format('valSteps','%5.1f');
+    $driver->metrics()->format('valRewards','%5.1f');
     $arts = [];
     //$driver->agent()->initialize();
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:$maxSteps=null,
-        metrics:$metrics=['steps','reward','epsilon','loss','val_steps','val_reward'],
+        metrics:['steps','reward','epsilon','loss','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,verbose:$verbose=1);
-    echo "\n";
-    $ep = $mo->arange((int)($numIterations/$evalInterval),$evalInterval,$evalInterval);
-    $arts[] = $plt->plot($ep,$la->scal(-1,$la->array($history['steps'])))[0];
+        logInterval:$logInterval,verbose:$verbose=1
+    );
+    $ep = $la->array($history['iter']);
+    $arts[] = $plt->plot($ep,$la->array($history['steps']))[0];
     //$arts[] = $plt->plot($ep,$la->scal(-1,$la->array($history['val_steps'])))[0];
     $arts[] = $plt->plot($ep,$la->array($history['reward']))[0];
-    //$arts[] = $plt->plot($ep,$la->array($history['val_reward']))[0];
-    //$arts[] = $plt->plot($ep,$la->increment($la->array($history['loss']),-100,100/max($history['loss'])))[0];
-    //$arts[] = $plt->plot($ep,$la->increment($la->array($history['epsilon']),-100,100))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['loss'],100,100))[0];
+    $arts[] = $plt->plot($ep,fitplot($la,$history['epsilon'],100,100))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valSteps']))[0];
+    $arts[] = $plt->plot($ep,$la->array($history['valRewards']))[0];
 
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
-    //$plt->legend($arts,['steps','val_steps','reward','val_reward','loss','epsilon']);
+    $plt->legend($arts,['steps','reward','loss','epsilon','valSteps','valRewards']);
     //$plt->legend($arts,['reward','loss','val_reward','epsilon']);
     //$plt->legend($arts,['steps','val_steps']);
-    $plt->legend($arts,['steps','reward']);
+    //$plt->legend($arts,['steps','reward']);
     $plt->show();
-    $dqnAgent->saveWeightsToFile($filename);
+    $agent->saveWeightsToFile($filename);
 } else {
-    $dqnAgent->loadWeightsFromFile($filename);
+    $agent->loadWeightsFromFile($filename);
 }
 
 
 echo "Creating demo animation.\n";
 for($i=0;$i<1;$i++) {
-    [$state,$info] = $env->reset();
+    [$state,$info] = $agent->reset($env);
     $env->render();
     $done=false;
     $truncated=false;
     $testReward = 0;
     $testSteps = 0;
     while(!($done||$truncated)) {
-        $action = $dqnAgent->action($state,training:false,info:$info);
-        [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
-        $testReward += $customReward4($env,$testSteps,$state,$action,$nextState,$reward,$done,$truncated,$info);
-        //$testReward += $reward;
+        [$state,$reward,$done,$truncated,$info] = $agent->step($env,$testSteps,$state,info:$info);
+        $testReward += $reward;
         $testSteps++;
-        $state = $nextState;
         $env->render();
     }
     $ep = $i+1;

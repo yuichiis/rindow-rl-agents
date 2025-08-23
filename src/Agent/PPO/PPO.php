@@ -599,6 +599,7 @@ class PPO extends AbstractAgent
                             $newLogits = $g->masking($masksB,$newLogits,fill:-1e9);
                         }
                         [$newLogProbs, $entropy] = $agent->log_prob_entropy_categorical($newLogits,$actionsB);
+                        $newLogStd = null;
                     } else {
                         [$newMeans, $newValues, $newLogStd] = $model($statesB,$training);
                         $newValues = $g->squeeze($newValues,axis:-1);
@@ -682,8 +683,7 @@ class PPO extends AbstractAgent
                     $this->metrics->update('entropy',$entropyLoss);
                 }
                 if($this->metrics->isAttracted('std')) {
-                    
-                    $std = $la->reduceMean($la->reduceMean($la->exp($la->copy($logStd))));
+                    $std = $la->sum($la->exp($la->copy($logStd)))/$logStd->size();
                     $std = $la->scalar($std);
                     $this->metrics->update('std',$std);
                 }

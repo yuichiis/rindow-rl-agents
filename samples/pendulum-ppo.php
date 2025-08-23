@@ -26,13 +26,13 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 300000;# 100000;#300;#1000;#
+$numIterations = 300000;# 100000; # 300; # 1000; #
 $targetScore = null; # -250; #
 $numAchievements = null; # 10; #
-$logInterval =   null; #1000;  #10; #
-$evalInterval =  1024; #10; #
+$logInterval =   null; # 1000;  # 10; #
+$evalInterval =  1024; # 10; #
 $numEvalEpisodes = 10;
-$maxExperienceSize = 10000;#100000;
+$maxExperienceSize = 10000; # 100000;
 $rolloutSteps = 1024; # 2048;
 $batchSize = 64;# 32;#
 $epochs = 10;
@@ -41,16 +41,17 @@ $gaeLambda = 0.95;
 $valueLossWeight = 0.5;
 $entropyWeight = 0.01; # <= Pendulum 0.01; # 0.001
 $fcLayers = [128,128];
-$initialStd = 5.0; # # <= Pendulum 5.0 # 1.0;
+//$initialStd = null; # 
 $normAdv = true;
 $clipEpsilon = 0.2;
 $clipValueLoss = true; # false; # 
 $learningRate = 3e-4;# 1e-3;#1e-5;#
 $clipnorm = 0.5;
 // Initializing the action layer kernel for Pendulum
-$minval = -0.003;
-$maxval = 0.003;
-$actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+//$minval = -0.003;
+//$maxval = 0.003;
+//$actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+$actionKernelInitializer = null;
 
 
 $env = new PendulumV1($la);
@@ -71,7 +72,7 @@ $agent = new PPO(
     nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
     rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
     fcLayers:$fcLayers,
-    initialStd:$initialStd,
+    //initialStd:$initialStd,
     actionKernelInitializer:$actionKernelInitializer,
     gamma:$gamma,gaeLambda:$gaeLambda,
     valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,

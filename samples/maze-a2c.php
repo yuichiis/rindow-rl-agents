@@ -123,7 +123,7 @@ if(!$agent->fileExists($filename)) {
     $plt->xlabel('episodes');
     $plt->ylabel('avg steps');
     $plt->show();
-    //$agent->saveWeightsToFile($filename);
+    $agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }

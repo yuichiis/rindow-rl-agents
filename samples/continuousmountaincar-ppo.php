@@ -5,9 +5,9 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
+use Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0;
 use Rindow\RL\Agents\Runner\StepRunner;
-use Rindow\RL\Agents\Agent\A2C\A2C;
+use Rindow\RL\Agents\Agent\PPO\PPO;
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
@@ -26,48 +26,34 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 300000;#200000;#300;#1000;#
+$numIterations = 300000;# 100000; # 300; # 1000; #
 $targetScore = null; # -250; #
 $numAchievements = null; # 10; #
-$logInterval =   100;  #10; #
-$evalInterval = 4000; #10; #
-$numEvalEpisodes = 10;
-$maxExperienceSize = 10000;#100000;
-$batchSize = 5; #  <= Pendulum 8 # 32;
-//$gamma = 0.99;
-$gamma = 0.9;#  # <= Pendulum 0.9; # 0.99;
+$logInterval =   null; # 1000;  # 10; #
+$evalInterval =  2048; # 10; #
+$numEvalEpisodes = 5;
+$maxExperienceSize = 10000; # 100000;
+$rolloutSteps = 1024; # 2048;
+$batchSize = 64;# 32;#
+$epochs = 10;
+$gamma = 0.99;#  # <= continuousmountaincar 0.9;# 0.99;
+$gaeLambda = 0.95;
 $valueLossWeight = 0.5;
-//$entropyWeight = 0.0;
-$entropyWeight = 0.001; # <= Pendulum 0.001 # default:same 0.001 
-//$entropyWeight = 0.01
-$useBaseline = false; # false;
-$useNormalize = true; # true;
-$fcLayers = [128,128]; # [64,64];# [32,32];#
-$initialStd = 4.5; # <= Pendulum 4.5; # 1.0
-$learningRate = 7e-4;#1e-3;#1e-5;#
-$minval = -0.003;
-$maxval = 0.003;
-$actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+$entropyWeight = 0.001; # <= continuousmountaincar 0.01; # 0.001
+$fcLayers = [128,128];
+$initialStd = null; # 
+$normAdv = true;
+$clipEpsilon = 0.2;
+$clipValueLoss = true; # false; # 
+$learningRate = 3e-4;# 1e-3;#1e-5;#
+$clipnorm = 0.5;
+// Initializing the action layer kernel for continuousmountaincar
+//$minval = -0.003;
+//$maxval = 0.003;
+//$actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+$actionKernelInitializer = null;
 
-echo "numIterations = {$numIterations}\n"; #
-echo "targetScore = {$targetScore}\n"; #
-echo "numAchievements = {$numAchievements}\n"; #
-echo "logInterval = {$logInterval}\n"; #
-echo "evalInterval = {$evalInterval}\n"; #
-echo "numEvalEpisodes = {$numEvalEpisodes}\n"; #
-echo "maxExperienceSize = {$maxExperienceSize}\n"; #
-echo "batchSize = {$batchSize}\n"; #
-echo "gamma = {$gamma}\n"; #
-echo "valueLossWeight = {$valueLossWeight}\n"; #
-echo "entropyWeight = {$entropyWeight}\n"; #
-echo "useBaseline = {$useBaseline}\n"; #
-echo "useNormalize = {$useNormalize}\n"; #
-echo "fcLayers = [".implode(",",$fcLayers)."]\n"; #
-echo "initialStd = {$initialStd}\n"; #
-echo "learningRate = {$learningRate}\n"; #
-
-
-$env = new PendulumV1($la);
+$env = new ContinuousMountainCarV0($la);
 $stateShape = $env->observationSpace()->shape();
 $actionSpace = $env->actionSpace();
 
@@ -76,21 +62,23 @@ $actionSpace = $env->actionSpace();
 //$env->show();
 //exit();
 
-$evalEnv = new PendulumV1($la);
+$evalEnv = new ContinuousMountainCarV0($la);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
-$agent = new A2C(
+$agent = new PPO(
     $la,
     continuous:true,
     nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
+    rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
     fcLayers:$fcLayers,
-    actionKernelInitializer:$actionKernelInitializer,
-    batchSize:$batchSize,gamma:$gamma,
-    valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
-    useBaseline:$useBaseline,useNormalize:$useNormalize,
-    optimizerOpts:['lr'=>$learningRate],
     initialStd:$initialStd,
-    mo:$mo,
+    actionKernelInitializer:$actionKernelInitializer,
+    gamma:$gamma,gaeLambda:$gaeLambda,
+    valueLossWeight:$valueLossWeight,entropyWeight:$entropyWeight,
+    normAdv:$normAdv,
+    clipEpsilon:$clipEpsilon,clipValueLoss:$clipValueLoss,
+    clipnorm:$clipnorm,
+    optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
 $agent->summary();
 
@@ -107,7 +95,7 @@ function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
     return $la->increment($la->scal($scale,$la->array($x)),$bias);
 }
 
-$filename = __DIR__.'\\pendulum-a2c';
+$filename = __DIR__.'\\continuousmountaincar-ppo';
 if(!$agent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$agent,,experienceSize:$maxExperienceSize);
     $driver = new StepRunner($la,$env,$agent,experienceSize:$maxExperienceSize,evalEnv:$evalEnv);
@@ -140,7 +128,7 @@ if(!$agent->fileExists($filename)) {
     $plt->legend($arts,['reward','Ploss','Vloss','entropy','std','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
-    $agent->saveWeightsToFile($filename);
+    //$agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }
@@ -166,5 +154,5 @@ for($i=0;$i<5;$i++) {
     echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
 }
 echo "\n";
-$filename = $env->show(path:__DIR__.'\\pendulum-a2c-trained.gif');
+$filename = $env->show(path:__DIR__.'\\continuousmountaincar-ppo-trained.gif');
 echo "filename: {$filename}\n";
