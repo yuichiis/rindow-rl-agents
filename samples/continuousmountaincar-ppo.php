@@ -57,12 +57,44 @@ $env = new ContinuousMountainCarV0($la);
 $stateShape = $env->observationSpace()->shape();
 $actionSpace = $env->actionSpace();
 
-//$env->reset();
-//$env->render();
-//$env->show();
-//exit();
-
 $evalEnv = new ContinuousMountainCarV0($la);
+
+$customGainReward = function($env, $stepCount, $state, $action, $nextState, $reward, $done, $truncated, $info) {
+    $position = $state[0];
+    $velocity = $state[1];
+    $nextPosition = $nextState[0];
+    $nextVelocity = $nextState[1];
+
+    // ---- 1. エネルギー増加による報酬（行動の指針）----
+    $calculateEnergy = function($p, $v) {
+        $potentialEnergy = sin(3 * $p); 
+        $kineticEnergy = 0.5 * ($v ** 2);
+        return $potentialEnergy + $kineticEnergy;
+    };
+    $energy = $calculateEnergy($position, $velocity);
+    $nextEnergy = $calculateEnergy($nextPosition, $nextVelocity);
+    
+    // エネルギーの増加量に、学習を安定させるための係数をかける
+    $energyReward = 10 * ($nextEnergy - $energy);
+
+    // ---- 2. ステップペナルティ（効率化の促進）----
+    // 毎ステップ、一定のコストを課す
+    $stepPenalty = -0.1;
+
+    // ---- 3. ゴールボーナス ----
+    $goalBonus = 0;
+    if ($done && $nextPosition >= 0.45) { // Continuousのゴールは0.5でなく0.45
+        $goalBonus = 100;
+    }
+
+    // ---- 最終的な報酬の計算 ----
+    // 3つの要素をすべて合計する
+    $finalReward = $energyReward + $stepPenalty + $goalBonus;
+    //echo "finalReward: {$finalReward}, energyReward: {$energyReward}, stepPenalty: {$stepPenalty}, goalBonus: {$goalBonus}\n";
+    
+    return $finalReward;
+};
+
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $agent = new PPO(
@@ -81,6 +113,7 @@ $agent = new PPO(
     optimizerOpts:['lr'=>$learningRate],mo:$mo,
 );
 $agent->summary();
+$agent->setCustomRewardFunction($customGainReward);
 
 function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
 {
@@ -101,34 +134,36 @@ if(!$agent->fileExists($filename)) {
     $driver = new StepRunner($la,$env,$agent,experienceSize:$maxExperienceSize,evalEnv:$evalEnv);
     $arts = [];
     //$driver->agent()->initialize();
-    $driver->metrics()->format('reward','%7.1f');
+    $driver->metrics()->format('steps', '%5.1f');
+    $driver->metrics()->format('reward','%5.1f');
     $driver->metrics()->format('Ploss','%+5.2e');
     $driver->metrics()->format('Vloss','%+5.2e');
+    $driver->metrics()->format('valSteps', '%5.1f');
+    $driver->metrics()->format('valRewards', '%5.1f');
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
-        //metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
-        metrics:['reward','Ploss','Vloss','entropy','std','valRewards'],
+        metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
     $iter = $la->array($history['iter']);
-    //$arts[] = $plt->plot($iter,$la->array($history['steps']))[0];
+    $arts[] = $plt->plot($iter,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($iter,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($iter,fitplot($la,$history['Ploss'],200,0))[0];
-    $arts[] = $plt->plot($iter,fitplot($la,$history['Vloss'],200,0))[0];
-    $arts[] = $plt->plot($iter,fitplot($la,$history['entropy'],200,0))[0];
-    $arts[] = $plt->plot($iter,fitplot($la,$history['std'],200,0))[0];
-    //$arts[] = $plt->plot($iter,$la->array($history['valSteps']))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Ploss'],200,200))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Vloss'],200,200))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['entropy'],200,200))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['std'],200,200))[0];
+    $arts[] = $plt->plot($iter,$la->array($history['valSteps']))[0];
     $arts[] = $plt->plot($iter,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
-    #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
+    $plt->legend($arts,['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards']);
     //$plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
-    $plt->legend($arts,['reward','Ploss','Vloss','entropy','std','valRewards']);
+    //$plt->legend($arts,['reward','Ploss','Vloss','entropy','std','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
-    //$agent->saveWeightsToFile($filename);
+    $agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }

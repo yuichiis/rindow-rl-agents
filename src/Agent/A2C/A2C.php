@@ -440,6 +440,7 @@ class A2C extends AbstractAgent
                     $logits = $g->masking($masks,$logits,fill:-1e9);
                 }
                 [$log_probs, $entropy] = $agent->log_prob_entropy_categorical($logits,$actions);
+                $logStd = null;
             } else {
                 [$means, $values, $logStd] = $model($states,$training);
                 $values = $g->squeeze($values,axis:-1);

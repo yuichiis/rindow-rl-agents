@@ -188,7 +188,7 @@ if(!$agent->fileExists($filename)) {
     $plt->xlabel('Iterations');
     $plt->ylabel('Reward');
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
-    $plt->legend($arts,['steps','reward','Ploss','Vloss','entropy','valSteps','valReward']);
+    $plt->legend($arts,['steps','reward','Ploss','Vloss','entropy','valSteps','valRewards']);
     //$plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();

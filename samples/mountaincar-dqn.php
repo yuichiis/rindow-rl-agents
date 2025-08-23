@@ -197,8 +197,7 @@ $filename = __DIR__.'\\mountaincar-dqn';
 if(!$agent->fileExists($filename)) {
     $driver->metrics()->format('steps', '%5.1f');
     $driver->metrics()->format('reward','%5.1f');
-    $driver->metrics()->format('Ploss','%+5.2e');
-    $driver->metrics()->format('Vloss','%+5.2e');
+    $driver->metrics()->format('loss','%+5.2e');
     $driver->metrics()->format('valSteps','%5.1f');
     $driver->metrics()->format('valRewards','%5.1f');
     $arts = [];
