@@ -7,7 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use LogicException;
 use InvalidArgumentException;
 
@@ -88,7 +88,7 @@ class AnnealingEpsGreedyTest extends TestCase
         ],dtype:NDArray::float32);
         $estimator = new TestEstimator($la,$values,noRules:true);
         $policy = new AnnealingEpsGreedy($la,decayRate:0.005);
-        $buf = new ReplayBuffer($la,$maxSize=100);
+        $buf = new QueueBuffer($la,$maxSize=100);
 
         $epsilon = [];
         $avg = [];
@@ -102,8 +102,8 @@ class AnnealingEpsGreedyTest extends TestCase
             // actions(batchs) = (1)
             $this->assertEquals([1],$actions->shape());
             $this->assertEquals(NDArray::int32,$actions->dtype());
-            $buf->add($actions[0]);
-            $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
+            $buf->add([$actions[0]]);
+            $avg[] = array_sum($buf->sample($buf->size())[0])/$buf->size();
         }
         $epsilon = $la->array($epsilon);
         $avg = $la->array($avg);
@@ -127,7 +127,7 @@ class AnnealingEpsGreedyTest extends TestCase
         ],dtype:NDArray::float32);
         $estimator = new TestEstimator($la,$values,noRules:false);
         $policy = new AnnealingEpsGreedy($la,decayRate:0.005);
-        $buf = new ReplayBuffer($la,$maxSize=100);
+        $buf = new QueueBuffer($la,$maxSize=100);
 
         $epsilon = [];
         $avg = [];
@@ -143,8 +143,8 @@ class AnnealingEpsGreedyTest extends TestCase
             // actions(batchs) = (1)
             $this->assertEquals([1],$actions->shape());
             $this->assertEquals(NDArray::int32,$actions->dtype());
-            $buf->add($actions[0]);
-            $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
+            $buf->add([$actions[0]]);
+            $avg[] = array_sum($buf->sample($buf->size())[0])/$buf->size();
         }
         $epsilon = $la->array($epsilon);
         $avg = $la->array($avg);

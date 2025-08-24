@@ -10,7 +10,7 @@ use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\PPO\PPO;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\RL\Agents\Util\Metrics;
 use Rindow\RL\Gym\Core\Spaces\Box;
@@ -49,6 +49,7 @@ class TESTPPOClass extends PPO
         NDArray $rewards, // (rolloutSteps)
         NDArray $values,  // (rolloutSteps+1,1)
         array $dones,
+        array $truncated,
         float $gamma,
         float $gaeLambda,
         ) : array
@@ -57,6 +58,7 @@ class TESTPPOClass extends PPO
             $rewards,
             $values,
             $dones,
+            $truncated,
             $gamma,
             $gaeLambda,
         );
@@ -119,7 +121,7 @@ class PPOTest extends TestCase
             $la->array([1]),
         ];
         for($i=0;$i<100;$i++) {
-            $actions = $agent->action($states,training:true);
+            $actions = $agent->action($states,training:true,parallel:true);
             $this->assertEquals([2],$actions->shape());
             $this->assertEquals(NDArray::int32,$actions->dtype());
         }
@@ -139,12 +141,13 @@ class PPOTest extends TestCase
 
         $rewards = [-1.0856306552886963, 0.9973454475402832, 0.28297850489616394, -1.5062947273254395, -0.5786002278327942, 1.6514365673065186, -2.4266791343688965, -0.4289126396179199, 1.2659361362457275, -0.8667404055595398];
         $values = [-0.2049688994884491, 0.33364400267601013, -0.26434439420700073, -0.13481280207633972, 0.23233819007873535, 1.0453966856002808, 0.3585890233516693, -1.134916067123413, -1.349687933921814, -0.27974411845207214, -0.8566373586654663];
-        $dones = [False, False, False, False, True, False, False, False, False, False];
+        $dones     = [False, False, False, False, True, False, False, False, False, False];
+        $truncated = [False, False, False, False, False,False, False, False, False, False];
         $gamma = 0.9;
         $gaeLambda = 0.95;
         $rewards = $la->array($rewards);
         $values = $la->expandDims($la->array($values),axis:-1);
-        [$advantages, $returns] = $agent->test_compute_advantages_and_returns($rewards,$values,$dones,$gamma,$gaeLambda);
+        [$advantages, $returns] = $agent->test_compute_advantages_and_returns($rewards,$values,$dones,$truncated,$gamma,$gaeLambda);
 
         $trues_advantages= [-1.0648003, -0.5665709, -1.1606578, -1.8557299, -0.8109384,
                             -1.9460603, -3.3623745,  0.51967,    1.2027901, -1.3579699];
@@ -287,7 +290,7 @@ class PPOTest extends TestCase
         $metrics = new Metrics();
         $agent->setMetrics($metrics);
         $metrics->attract(['loss','entropy']);
-        $mem = new ReplayBuffer($la,$maxsize=3);
+        $mem = new QueueBuffer($la,$maxsize=3);
         //[$state,$action,$nextState,$reward,$done,$info]
         $losses = [];
         for($i=0;$i<100;$i++) {
@@ -320,7 +323,7 @@ class PPOTest extends TestCase
             $la->array([1]),
         ];
         for($i=0;$i<100;$i++) {
-            $actions = $agent->action($states,training:true);
+            $actions = $agent->action($states,training:true,parallel:true);
             $this->assertEquals([2,2],$actions->shape());
             $this->assertEquals(NDArray::float32,$actions->dtype());
         }
@@ -343,7 +346,7 @@ class PPOTest extends TestCase
         $metrics = new Metrics();
         $agent->setMetrics($metrics);
         $metrics->attract(['loss','entropy']);
-        $mem = new ReplayBuffer($la,$maxsize=3);
+        $mem = new QueueBuffer($la,$maxsize=3);
         //[$state,$action,$nextState,$reward,$done,$info]
         $losses = [];
         for($i=0;$i<100;$i++) {

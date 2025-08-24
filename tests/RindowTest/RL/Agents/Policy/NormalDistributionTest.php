@@ -7,7 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\NormalDistribution;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use LogicException;
 use InvalidArgumentException;
 use function Rindow\Math\Matrix\R;
@@ -42,7 +42,14 @@ class TestEstimator implements Estimator
     */
     public function getActionValues(NDArray $state,?bool $std=null) : NDArray|array
     {
-        return $state;
+        if($std) {
+            $la = $this->la;
+            $shape = $state->shape();
+            array_shift($shape);
+            return [$state,$la->ones($la->alloc($shape))];
+        } else {
+            return $state;
+        }
     }
 
     //public function probabilities(NDArray $state) : NDArray

@@ -53,7 +53,7 @@ class UCB1 extends AbstractAgent
         $this->step = 0;
     }
 
-    public function resetData()
+    public function resetData() : void
     {
         $this->initialize();
     }
@@ -68,6 +68,11 @@ class UCB1 extends AbstractAgent
         return 1;
     }
 
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
     //public function maxQValue(mixed $state) : float
     //{
     //    $q = $this->la->max($this->values);
@@ -78,7 +83,7 @@ class UCB1 extends AbstractAgent
     * @param Any $states
     * @return Any $action
     */
-    public function action(array|NDArray $state, ?bool $training=null, ?array $info=null) : NDArray
+    public function action(array|NDArray $state, ?bool $training=null, ?array $info=null, ?bool $parallel = null) : NDArray
     {
         $la = $this->la;
         if($training) {

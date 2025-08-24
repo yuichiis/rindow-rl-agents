@@ -7,8 +7,9 @@ use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Metrics;
 use Rindow\RL\Agents\ReplayBuffer;
+use Rindow\RL\Agents\Metrics;
+use Rindow\RL\Agents\Util\Metrics as MetricsImpl;
 use InvalidArgumentException;
 use LogicException;
 
@@ -21,7 +22,7 @@ abstract class AbstractAgent implements Agent
     protected ?string $stateField;
     protected mixed $customRewardFunction=null;
     protected mixed $customStateFunction=null;
-    protected ?Metrics $metrics;
+    protected ?Metrics $metrics=null;
 
     public function __construct(
         object $la,
@@ -32,6 +33,7 @@ abstract class AbstractAgent implements Agent
         $this->la = $la;
         $this->policy = $policy;
         $this->stateField = $stateField;
+        $this->metrics = new MetricsImpl();
     }
 
     public function register(?EventManager $eventManager=null) : void

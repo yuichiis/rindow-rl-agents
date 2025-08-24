@@ -34,7 +34,7 @@ class AverageReward extends AbstractAgent
         $this->numTrials = $la->zeros($la->alloc([$this->numActions],NDArray::float32));
     }
 
-    public function resetData()
+    public function resetData() : void
     {
         $this->valueTable->initialize();
     }
@@ -45,6 +45,11 @@ class AverageReward extends AbstractAgent
     }
 
     public function subStepLength() : int
+    {
+        return 1;
+    }
+
+    public function numRolloutSteps() : int
     {
         return 1;
     }

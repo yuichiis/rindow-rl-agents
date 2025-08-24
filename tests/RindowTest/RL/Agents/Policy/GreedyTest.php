@@ -7,7 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\Greedy;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use LogicException;
 use InvalidArgumentException;
 
@@ -87,7 +87,7 @@ class GreedyTest extends TestCase
         ]);
         $estimator = new TestEstimator($la,$probs,noRules:true);
         $policy = new Greedy($la);
-        $buf = new ReplayBuffer($la,$maxSize=100);
+        $buf = new QueueBuffer($la,$maxSize=100);
 
         $a = [];
         $states = $la->array([[0]],dtype:NDArray::int32);
@@ -124,7 +124,7 @@ class GreedyTest extends TestCase
         ]);
         $estimator = new TestEstimator($la,$probs,noRules:true);
         $policy = new Greedy($la);
-        $buf = new ReplayBuffer($la,$maxSize=100);
+        $buf = new QueueBuffer($la,$maxSize=100);
 
         $a = [];
         $states = $la->array([[0]],dtype:NDArray::int32);

@@ -8,17 +8,14 @@ use Rindow\RL\Agents\Agent;
 use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
 use Rindow\RL\Agents\EventManager as EventManagerInterface;
-use Rindow\RL\Agents\Util\Metrics as MetricsInterface;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\Metrics as MetricsInterface;
 use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Util\EventManager;
-use Rindow\RL\Agents\Util\Metrics;
 
 abstract class AbstractRunner implements Runner
 {
     protected object $la;
     protected Agent $agent;
-    protected MetricsInterface $metrics;
     protected ReplayBufferInterface $experience;
     protected EventManagerInterface $eventManager;
     protected int $experienceSize;
@@ -50,8 +47,6 @@ abstract class AbstractRunner implements Runner
         $this->experience = $replayBuffer;
         $this->eventManager = $eventManager;
         $agent->register($eventManager);
-        $this->metrics = new Metrics();
-        $this->agent->setMetrics($this->metrics);
     }
 
     protected function onStartEpisode() : void
@@ -111,7 +106,7 @@ abstract class AbstractRunner implements Runner
     public function initialize() : void
     {
         $this->experience->clear();
-        $this->metrics->clear();
+        $this->agent->metrics()->clear();
     }
 
     public function agent() : Agent
@@ -121,7 +116,7 @@ abstract class AbstractRunner implements Runner
 
     public function metrics() : MetricsInterface
     {
-        return $this->metrics;
+        return $this->agent()->metrics();
     }
 
     protected function console(string $message)

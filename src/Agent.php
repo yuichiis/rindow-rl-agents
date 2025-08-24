@@ -25,7 +25,7 @@ interface Agent
     * @param  NDArray $states : N x StatesDims typeof NDArray
     * @return NDArray $actions : N x ActionDims typeof NDArray
     */
-    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null) : NDArray;
+    public function action(array|NDArray $states, ?bool $training=null, ?array $info=null, ?bool $parallel=null) : NDArray;
 
     public function reset(Env $env) : array;
 

@@ -1,0 +1,487 @@
+<?php
+namespace Rindow\RL\Agents\Agent\SAC;
+
+use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\Loss\Loss;
+use Rindow\NeuralNetworks\Optimizer\Optimizer;
+use Rindow\NeuralNetworks\Layer\Layer;
+use Rindow\NeuralNetworks\Gradient\GraphFunction;
+use Rindow\RL\Agents\Policy;
+use Rindow\RL\Agents\Estimator;
+use Rindow\RL\Agents\Network;
+use Rindow\RL\Agents\EventManager;
+use Rindow\RL\Agents\Policy\OUNoise;
+use Rindow\RL\Agents\Agent\AbstractAgent;
+
+use InvalidArgumentException;
+
+class SAC extends AbstractAgent
+{
+    const ACTOR_FILENAME = '%s-actor.model';
+    const CRITIC_FILENAME = '%s-critic.model';
+    protected float $gamma;
+    protected array $stateShape;
+    protected int $numActions;
+    protected int $targetUpdatePeriod;
+    protected int $targetUpdateTimer;
+    protected ?Optimizer $optimizer;
+    protected ?array $optimizerOpts;
+    protected ?object $mo;
+    protected bool $enabledShapeInspection = true;
+    protected ?Builder $nn;
+    protected Model $actorModel;
+    protected Model $criticModel;
+    protected Model $targetActor;
+    protected Model $targetCritic;
+    protected int $batchSize;
+    protected NDArray $lowerBound;
+    protected NDArray $upperBound;
+    protected float $targetUpdateTau;
+    protected Optimizer $criticOptimizer;
+    protected Optimizer $actorOptimizer;
+    //protected GraphFunction $actorModelGraph;
+    //protected GraphFunction $criticModelGraph;
+    //protected ?array $criticTrainableVariables=null;
+
+    public function __construct(
+        object $la,
+        object $nn,
+        array $stateShape,
+        int $numActions,
+        NDArray $lowerBound,
+        NDArray $upperBound,
+        ?Policy $policy=null,
+        ?int $batchSize=null,
+        ?NDArray $mean=null,
+        float|NDArray|null $stdDev=null,
+        ?NDArray $xInitial=null,
+        ?float $gamma=null,
+        ?float $theta=null,
+        ?float $dt=null,
+        ?int $targetUpdatePeriod=null,
+        ?float $targetUpdateTau=null,
+        ?Optimizer $criticOptimizer=null,
+        ?array $criticOptimizerOpts=null,
+        ?Optimizer $actorOptimizer=null,
+        ?array $actorOptimizerOpts=null,
+        //?array $fcLayers=null,
+        //?array $staConvLayers=null, ?string $staConvType=null, ?array $staFcLayers=null,
+        //?array $actLayers=null,
+        //?array $comLayers=null,
+        //?float $actorInitMin=null, ?float $actorInitMax=null,
+        ?array $actorNetworkOptions=null,
+        ?array $criticNetworkOptions=null,
+        ?EventManager $eventManager=null,
+        ?float $noiseDecay=null,
+        float|NDArray|null $minStdDev=null,
+        ?bool $episodeAnnealing=null,
+        ?object $mo = null,
+        )
+    {
+        $batchSize ??= 32;
+        $stdDev ??= 0.2;
+        $gamma ??= 0.99;
+        $targetUpdatePeriod  ??= 1;
+        $targetUpdateTau     ??= 0.005;
+        $criticOptimizerOpts ??=  ['lr'=>0.002];
+        $actorOptimizerOpts  ??=  ['lr'=>0.001];
+
+        if($lowerBound->shape()!=[$numActions]) {
+            throw new InvalidArgumentException(
+                "shape of lowerBound must match to the numActions ($numActions): ".
+                $la->shapeToString($lowerBound->shape())." givien."
+            );
+        }
+        if($upperBound->shape()!=[$numActions]) {
+            throw new InvalidArgumentException(
+                "shape of upperBound must match to the numActions ($numActions): ".
+                $la->shapeToString($upperBound->shape())." givien."
+            );
+        }
+
+        $mean ??=  $la->zeros($la->alloc([$numActions]));
+        if(is_numeric($stdDev)) {
+            $stdDev = $la->fill($stdDev,$la->zeros($la->alloc([$numActions])));
+        }
+        if(is_numeric($minStdDev)) {
+            $minStdDev = $la->fill($minStdDev,$la->zeros($la->alloc([$numActions])));
+        }
+        $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
+        $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
+
+        $this->mo = $mo;
+        $this->actorModel   = $this->buildActorNetwork(
+            $nn, $stateShape, $numActions, $actorNetworkOptions,
+        );
+        $this->criticModel  = $this->buildCriticNetwork(
+            $nn, $stateShape, $numActions, $criticNetworkOptions,
+        );
+        //$this->actorModel->compile(optimizer:$actorOptimizer);
+        //$this->criticModel->compile(optimizer:$criticOptimizer);
+        $this->targetActor = clone $this->actorModel;
+        $this->targetCritic = clone $this->criticModel;
+
+        $policy ??= $this->buildPolicy(
+            $la,
+            $mean,$stdDev,$lowerBound,$upperBound,
+            $theta,$dt,$xInitial,
+            $noiseDecay,$minStdDev,$episodeAnnealing,
+        );
+        parent::__construct($la,$policy,$eventManager);
+        $this->nn = $nn;
+        $this->stateShape = $stateShape;
+        $this->numActions = $numActions;
+        $this->batchSize = $batchSize;
+        $this->gamma = $gamma;
+        $this->lowerBound = $lowerBound;
+        $this->upperBound = $upperBound;
+        $this->targetUpdatePeriod = $targetUpdatePeriod;
+        $this->targetUpdateTau = $targetUpdateTau;
+        $this->criticOptimizer = $criticOptimizer;
+        $this->actorOptimizer = $actorOptimizer;
+        //$this->backend = $nn->backend();
+
+        //$this->actorTrainableVariables = $this->actorModel->trainableVariables();
+        //$this->criticTrainableVariables = $this->criticModel->trainableVariables();
+
+        //$this->actorVariables = $this->actorModel->variables();
+        //$this->criticVariables = $this->criticModel->variables();
+        //$this->targetActorVariables = $this->targetActor->variables();
+        //$this->targetCriticVariables = $this->targetCritic->variables();
+
+
+        //$this->actorModelGraph = $nn->gradient->function([$this->actorModel,'forward']);
+        //$this->criticModelGraph = $nn->gradient->function([$this->criticModel,'forward']);
+        //$this->targetActorGraph = $nn->gradient->function([$this->targetActor,'forward']);
+        //$this->targetCriticGraph = $nn->gradient->function([$this->targetCritic,'forward']);
+        $this->initialize();
+        //$this->actorModelGraph = null;
+        //$this->criticModelGraph = null;
+    }
+
+    protected function buildActorNetwork(
+        Builder $nn,
+        array $stateShape, int $numActions,
+        ?array $actorNetworkOptions=null,
+    )
+    {
+        $actorNetworkOptions ??= [];
+        $network = new ActorNetwork($nn,
+            $stateShape, $numActions,
+            ...$actorNetworkOptions,
+        );
+        $network->build(array_merge([1],$stateShape));
+        return $network;
+    }
+
+    protected function buildCriticNetwork(
+        Builder $nn,
+        array $stateShape, int $numActions,
+        ?array $criticNetworkOptions=null,
+    )
+    {
+        $criticNetworkOptions ??= [];
+        $network = new CriticNetwork(
+            $nn,
+            $stateShape, $numActions,
+            ...$criticNetworkOptions,
+        );
+        $network->build(array_merge([1],$stateShape),[1,$numActions]);
+        return $network;
+    }
+
+    protected function buildPolicy(
+        object $la,
+        NDArray $mean,
+        NDArray $stdDeviation,
+        NDArray $lowerBound,
+        NDArray $upperBound,
+        ?float $theta,
+        ?float $dt,
+        ?NDArray $xInitial,
+        ?float $noiseDecay,
+        ?NDArray $minStdDev,
+        ?bool $episodeAnnealing,
+        )
+    {
+        $policy = new OUNoise(
+            $la,
+            $mean,
+            $stdDeviation,
+            $lowerBound,
+            $upperBound,
+            theta:$theta,
+            dt:$dt,
+            x_initial:$xInitial,
+            noise_decay:$noiseDecay,
+            min_std_dev:$minStdDev,
+            episodeAnnealing:$episodeAnnealing,
+        );
+        return $policy;
+    }
+
+    public function actorNetwork()
+    {
+        return $this->actorModel;
+    }
+
+    public function targetActorNetwork()
+    {
+        return $this->targetActor;
+    }
+
+    public function criticNetwork()
+    {
+        return $this->criticModel;
+    }
+
+    public function targetCriticNetwork()
+    {
+        return $this->targetCritic;
+    }
+
+    public function summary()
+    {
+        echo "***** Actor Network *****\n";
+        $this->actorModel->summary();
+        echo "\n";
+        echo "***** Critic Network *****\n";
+        $this->criticModel->summary();
+    }
+
+    public function fileExists(string $filename) : bool
+    {
+        $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
+        $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
+        if(file_exists($actormodel) && file_exists($criticmodel)) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public function saveWeightsToFile(string $filename) : void
+    {
+        $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
+        $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
+        $this->actorModel->saveWeightsToFile($actormodel);
+        $this->criticModel->saveWeightsToFile($criticmodel);
+    }
+
+    public function loadWeightsFromFile(string $filename) : void
+    {
+        $actormodel = sprintf(self::ACTOR_FILENAME,$filename);
+        $criticmodel = sprintf(self::CRITIC_FILENAME,$filename);
+        $this->actorModel->loadWeightsFromFile($actormodel);
+        $this->criticModel->loadWeightsFromFile($criticmodel);
+        //$this->trainModelGraph = $nn->gradient->function([$this->trainModel,'forward']);
+        //$this->trainableVariables = $this->trainModel->trainableVariables();
+        $this->initialize();
+    }
+
+    public function syncWeights($tau=null)
+    {
+        //$this->copyWeights(
+        //    $this->targetActorVariables,
+        //    $this->actorVariables,
+        //    $tau);
+        //$this->copyWeights(
+        //    $this->targetCriticVariables,
+        //    $this->criticVariables,
+        //    $tau);
+
+        //$this->copyWeights(
+        //    $this->targetActor->variables(),
+        //    $this->actorModel->variables(),
+        //    $tau);
+        //$this->copyWeights(
+        //    $this->targetCritic->variables(),
+        //    $this->criticModel->variables(),
+        //    $tau);
+
+        $this->targetActor->copyWeights($this->actorModel,$tau);
+        $this->targetCritic->copyWeights($this->criticModel,$tau);
+    }
+
+    //public function copyWeights($target,$source,float $tau=null) : void
+    //{
+    //    $K = $this->backend;
+    //    if($tau===null) {
+    //        $tau = 1.0;
+    //    }
+    //    $tTau = (1.0-$tau);
+    //    foreach (array_map(null,$target,$source) as [$targParam,$srcParam]) {
+    //        $K->update_scale($targParam->value(),$tTau);
+    //        $K->update_add($targParam->value(),$srcParam->value(),$tau);
+    //    }
+    //}
+
+    public function initialize() : void // : Operation
+    {
+        //$this->trainModel->compileQModel(
+        //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
+        //$this->targetModel->compileQModel(
+        //    $this->lossFn, $this->lossOpts, $this->optimizer, $this->optimizerOpts);
+        if($this->targetUpdatePeriod>0) {
+            $this->targetUpdateTimer = $this->targetUpdatePeriod;
+        }
+        $this->syncWeights($tau=1.0);
+    }
+
+    public function isStepUpdate() : bool
+    {
+        return true;
+    }
+
+    public function subStepLength() : int
+    {
+        return $this->batchSize;
+    }
+
+    public function numRolloutSteps() : int
+    {
+        return 1;
+    }
+
+    protected function estimator() : Estimator
+    {
+        return $this->actorModel;
+    }
+
+    //public function maxQValue(mixed $states) : float
+    //{
+    //    $la = $this->la;
+    //    $states = $this->atleast2d($states);
+    //    $actions = $this->actorModel->predict($states);
+    //    $qValues = $this->criticModel->predict([$states, $actions]);
+    //    $q = $this->la->max($qValues);
+    //    return $q;
+    //}
+
+    protected function updateTarget($endEpisode)
+    {
+        if($this->targetUpdatePeriod > 0) {
+            $this->targetUpdateTimer--;
+            if($this->targetUpdateTimer <= 0) {
+                $this->syncWeights($this->targetUpdateTau);
+                $this->targetUpdateTimer = $this->targetUpdatePeriod;
+            }
+        } else {
+            if($endEpisode) {
+                $this->syncWeights($this->targetUpdateTau);
+            }
+        }
+    }
+
+    public function update($experience) : float
+    {
+        $la = $this->la;
+        $nn = $this->nn; 
+        $K = $nn->backend(); 
+        $g = $nn->gradient();
+        $batchSize = $this->batchSize;
+        $stateShape = $this->stateShape;
+        $numActions = $this->numActions;
+        $gamma = $this->gamma;
+
+        if($experience->size()<$batchSize) {
+            return 0.0;
+        }
+        $transition = $experience->last();
+        $endEpisode = $transition[4];  // done
+
+        $batch = $experience->sample($batchSize);
+        [$obs,$actions,$nextObs,$rewards,$done,$truncated,$info] = $batch;
+        $state_batch = $this->extractStateList($obs);
+        $next_state_batch = $this->extractStateList($nextObs);
+
+        $state_batch = $la->stack($state_batch);
+        $action_batch = $la->stack($actions);
+        $next_state_batch = $la->stack($next_state_batch);
+        $reward_batch = $la->expandDims($la->array($rewards),axis:-1);
+        $done_batch = $la->array($done);
+
+        $gamma = $g->Variable($gamma);
+        $state_batch = $g->Variable($state_batch);
+        $action_batch = $g->Variable($action_batch);
+        $next_state_batch = $g->Variable($next_state_batch);
+        $reward_batch = $g->Variable($reward_batch);
+        $done_batch = $g->Variable($done_batch);
+        $training = true;//$g->Variable(true);
+
+        $targetActor = $this->targetActor;
+        $targetCritic = $this->targetCritic;
+        $criticModel = $this->criticModel;
+        $actorModel = $this->actorModel;
+
+        $alpha = $la->exp($la->copy($log_alpha));
+        $critic_loss = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$actorModel,$targetCritic,$criticModel,
+                $next_state_batch,$reward_batch,$gamma,
+                $state_batch,$action_batch,$training,$alpha,$done_batch,
+            ) {
+                [$next_actions, $next_log_prob] = $actorModel($next_state_batch, $training);
+                [$target_q1_value_next,$target_q2_value_next] = $targetCritic($next_state_batch, $next_actions, $training);
+                $target_q_next = $g->minimum($target_q1_value_next, $target_q2_value_next);
+
+                $soft_target = $g->sub($target_q_next, $g->mul($alpha,$next_log_prob));
+                $y = $g->add($reward_batch, $g->scale($gamma, $g->mul($g->sub(1.0 - $done_batch), $soft_target)));
+                [$q1_current, $q2_current] = $criticModel($state_batch, $action_batch);
+
+                $critic_loss = $g->reduceMean($g->square($g->sub($y - $q1_current))) + $g->reduceMean($g->square($g->sub($y, $q2_current)));
+                return $critic_loss;
+            }
+        );
+        $criticTrainableVariables = $this->criticModel->trainableVariables();
+        $critic_grad = $tape->gradient($critic_loss, $criticTrainableVariables);
+        $this->criticOptimizer->update($criticTrainableVariables,$critic_grad);
+        //echo $K->toString($actionValues,null,true)."\n";
+
+        $actor_loss = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$actorModel,$criticModel,
+                $gamma,
+                $state_batch,$training,$alpha,
+            ) {
+                [$pi_action, $pi_log_prob] = $actorModel($state_batch);
+                [$q1_pi, $q2_pi] = $criticModel($state_batch, $pi_action);
+                $min_q_pi = $g->minimum($q1_pi, $q2_pi);
+                $actor_loss = $g->reduceMean($g->sub($g->mul($alpha, $pi_log_prob), $min_q_pi));
+
+                return $actor_loss;
+            }
+        );
+        $actorTrainableVariables = $this->actorModel->trainableVariables();
+        $actor_grad = $tape->gradient($actor_loss, $actorTrainableVariables);
+        $this->actorOptimizer->update($actorTrainableVariables,$actor_grad);
+
+        $alpha_loss = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$log_alpha,$pi_log_prob,$target_entropy,
+            ) {
+                $alpha_loss = $g->scale(-1,$g->reduce_mean($g->mul($log_alpha, $g->add($g->stop_gradient($pi_log_prob), $target_entropy))));
+                return $alpha_loss;
+            }
+        );
+        if($alpha_optimizer) {
+            $actor_grad = $tape->gradient($actor_loss, [$log_alpha]);
+            $this->actorOptimizer->update([$log_alpha],$actor_grad);
+        }
+
+        if($this->enabledShapeInspection) {
+            $this->targetActor->setShapeInspection(false);
+            $this->targetCritic->setShapeInspection(false);
+            $this->actorModel->setShapeInspection(false);
+            $this->criticModel->setShapeInspection(false);
+            $this->enabledShapeInspection = false;
+        }
+        
+        $this->updateTarget($endEpisode);
+
+        $loss = $K->scalar($actor_loss->value());
+        if($this->metrics->isAttracted('loss')) {
+            $this->metrics->update('loss',$loss);
+        }
+        return $loss;
+    }
+}

@@ -48,8 +48,8 @@ class EpisodeRunner extends AbstractRunner
                 throw new InvalidArgumentException("You cannot specify `numEvalEpisodes` without an `evalEnv` being specified.");
             }
         }
-        $this->metrics->attract($metrics);
-        $metrics = $this->metrics;
+        $this->metrics()->attract($metrics);
+        $metrics = $this->metrics();
         $numAchievements ??= 5;
 
         $history = [];

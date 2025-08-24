@@ -9,7 +9,7 @@ use Rindow\RL\Gym\ClassicControl\MultiarmedBandit\Slots;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Agent\UCB1\UCB1;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;

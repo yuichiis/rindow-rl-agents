@@ -10,7 +10,7 @@ use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\AverageReward\AverageReward;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
@@ -103,8 +103,8 @@ class AverageRewardTest extends TestCase
         $env = new Slots($la,$probabilities);
         $policy = new AnnealingEpsGreedy($la,$epsStart=0.9,$epsEnd=0.1,$decayRate=0.1);
         $agent = new AverageReward($la,numActions:count($probabilities),policy:$policy);
-        $driver = new EpisodeRunner($la,$env,$agent,$experienceSize=10000);
-        $driver->setCustomStateFunction($stateFunc);
+        $agent->setCustomStateFunction($stateFunc);
+        $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000,evalEnv:$env);
 
         $numIterations = 50;
         $evalInterval  =  1;

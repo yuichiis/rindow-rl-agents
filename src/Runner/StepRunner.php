@@ -56,8 +56,8 @@ class StepRunner extends AbstractRunner
                 throw new InvalidArgumentException("You cannot specify `numEvalEpisodes` without an `evalEnv` being specified.");
             }
         }
-        $this->metrics->attract($metrics);
-        $metrics = $this->metrics;
+        $this->metrics()->attract($metrics);
+        $metrics = $this->metrics();
         $isStepUpdate = $agent->isStepUpdate();
         $subStepLen = $agent->subStepLength();
         $startTime = time();
@@ -196,7 +196,9 @@ class StepRunner extends AbstractRunner
                 }
             }
         }
-        $this->console("\n");
+        if($verbose>0) {
+            $this->console("\n");
+        }
         return $metrics->history();
     }
 }

@@ -10,7 +10,7 @@ use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\DQN\DQN;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
@@ -115,7 +115,7 @@ class DQNTest extends TestCase
             $agent = new DQN($la,policy:$policy,nn:$nn, stateShape:[1], numActions:2,fcLayers:[100]);
             for($i=0;$i<100;$i++) {
                 $states = [$la->array([1]),$la->array([2])]; // parallel
-                $a = $agent->action($states,training:true);
+                $a = $agent->action($states,training:true,parallel:true);
                 //echo "a=".$mo->toString($a,indent:true)."\n";
                 //echo "fixedAction=".$mo->toString($policyActionOutput,indent:true)."\n";
                 $this->assertInstanceof(NDArray::class,$a);
@@ -140,7 +140,7 @@ class DQNTest extends TestCase
         $agent = new DQN($la,
             batchSize:2, epsStart:0, epsStop:0,
             nn:$nn, stateShape:[1], numActions:2, fcLayers:[100]);
-        $mem = new ReplayBuffer($la,$maxsize=2);
+        $mem = new QueueBuffer($la,$maxsize=2);
         //[$state,$action,$nextState,$reward,$done,$truncated,$info]
         $mem->add([$la->array([0]),$la->array(1,dtype:NDArray::int32),$la->array([1]),1,false,false,[]]);
         $mem->add([$la->array([1]),$la->array(1,dtype:NDArray::int32),$la->array([2]),1,false,false,[]]);

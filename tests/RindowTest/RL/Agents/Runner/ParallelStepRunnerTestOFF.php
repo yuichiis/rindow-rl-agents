@@ -13,6 +13,7 @@ use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Metrics;
 use Rindow\RL\Agents\Runner\ParallelStepRunner;
+use Rindow\RL\Agents\Util\Metrics as MetricsImpl;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
@@ -112,6 +113,7 @@ class TestAgent implements Agent
     protected array $actionResult;
     protected array $assertUpdateLast;
     protected array $assertActionInfo;
+    protected Metrics $metrics;
 
     public function __construct(
         object $la,
@@ -126,6 +128,7 @@ class TestAgent implements Agent
         $this->actionResult = $actionResult;
         $this->assertUpdateLast = $assertUpdateLast;
         $this->assertActionInfo = $assertActionInfo;
+        $this->metrics = new MetricsImpl();
     }
 
     public function register(?EventManager $eventManager=null) : void
@@ -150,19 +153,28 @@ class TestAgent implements Agent
     {}
 
     public function setMetrics(Metrics $metrics) : void
-    {}
+    {
+        $this->metrics = $metrics;
+    }
 
     public function metrics() : Metrics
-    {}
+    {
+        return $this->metrics;
+    }
 
     public function resetData() : void
     {}
 
     public function reset(Environment $env) : array
-    {}
+    {
+        return $env->reset();
+    }
 
     public function step(Environment $env, int $episodeSteps, NDArray $states, ?array $info=null) : array
-    {}
+    {
+        $actions = $this->action($states,training:true,info:$info);
+        return $env->step($actions);
+    }
 
     public function collect(
         Environment $env,
@@ -171,9 +183,14 @@ class TestAgent implements Agent
         NDArray $states,
         ?array $info,
         ) : array
-    {}
+    {
+        $actions = $this->action($states,training:true,info:$info);
+        [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
+        $experience->add([$states,$actions,$nextState,$reward,$done,$truncated,$info]);
+        return [$nextState,$reward,$done,$truncated,$info];
+    }
 
-    public function action(array|NDArray $state,?bool $training=null,?array $info=null) : NDArray
+    public function action(array|NDArray $state,?bool $training=null,?array $info=null, ?bool $parallel = null) : NDArray
     {
         $la = $this->la;
         if(is_array($state)) {
@@ -230,7 +247,7 @@ class TestAgent implements Agent
             throw new \Exception('invalid update experience');
         }
         next($this->assertUpdateLast);
-
+        $this->metrics->update('loss',1.0);
         return 1.0;
     }
 
@@ -358,6 +375,7 @@ class ParallelStepRunnerTest extends TestCase
             metrics:['steps','reward','loss'],
         );
         $this->assertEquals([
+            'iter'   => [2,   4  ],
             'steps'  => [0,  2],
             'reward' => [0, 23.5],
             'loss'   => [1,  1],
@@ -474,14 +492,15 @@ class ParallelStepRunnerTest extends TestCase
         $losses = $driver->train(
             numIterations:$steps,
             evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-            metrics:['steps','reward','loss','val_steps','val_reward']
+            metrics:['steps','reward','loss','valSteps','valRewards']
         );
         $this->assertEquals([
+            'iter'      => [2,   4  ],
             'steps'     => [0,   2],
             'reward'    => [0,   1.0],
             'loss'      => [1.0, 1.0],
-            'val_steps' => [3,   3],
-            'val_reward'=> [1.5, 1.5],
+            'valSteps'  => [3,   3],
+            'valRewards'=> [1.5, 1.5],
         ],$losses);
         $this->assertEquals([false,false,false],$agent->currents());
         $this->assertTrue(true);

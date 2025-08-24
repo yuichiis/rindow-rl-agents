@@ -7,7 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\EpsilonGreedy;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use LogicException;
 use InvalidArgumentException;
 
@@ -89,7 +89,7 @@ class EpsilonGreedyTest extends TestCase
         ]);
         $estimator = new TestEstimator($la,$values,noRules:true);
         $policy = new EpsilonGreedy($la,epsilon:$epsilon);
-        $buf = new ReplayBuffer($la,$maxSize=100);
+        $buf = new QueueBuffer($la,$maxSize=100);
 
         $avg = [];
         $states = $la->array([[0]],dtype:NDArray::int32);
@@ -97,8 +97,8 @@ class EpsilonGreedyTest extends TestCase
             $actions = $policy->actions($estimator,$states,training:true,masks:null);
             $this->assertEquals([1],$actions->shape());
             $this->assertEquals(NDArray::int32,$actions->dtype());
-            $buf->add($actions[0]);
-            $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
+            $buf->add([$actions[0]]);
+            $avg[] = array_sum($buf->sample($buf->size())[0])/$buf->size();
         }
         $avg = $la->array($avg);
         $plt->plot($avg);
@@ -122,7 +122,7 @@ class EpsilonGreedyTest extends TestCase
         ]);
         $estimator = new TestEstimator($la,$values,noRules:false);
         $policy = new EpsilonGreedy($la,epsilon:$epsilon);
-        $buf = new ReplayBuffer($la,$maxSize=100);
+        $buf = new QueueBuffer($la,$maxSize=100);
 
         $avg = [];
         $states = $la->array([[0]],dtype:NDArray::int32);
@@ -131,8 +131,8 @@ class EpsilonGreedyTest extends TestCase
             $actions = $policy->actions($estimator,$states,training:true,masks:$masks);
             $this->assertEquals([1],$actions->shape());
             $this->assertEquals(NDArray::int32,$actions->dtype());
-            $buf->add($actions[0]);
-            $avg[] = array_sum($buf->sample($buf->size()))/$buf->size();
+            $buf->add([$actions[0]]);
+            $avg[] = array_sum($buf->sample($buf->size())[0])/$buf->size();
         }
         $avg = $la->array($avg);
         $plt->plot($avg);

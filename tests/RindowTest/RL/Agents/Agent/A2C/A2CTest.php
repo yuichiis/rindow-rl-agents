@@ -10,7 +10,7 @@ use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\A2C\A2C;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Policy\Boltzmann;
 use Rindow\Math\Plot\Plot;
 use LogicException;
@@ -84,7 +84,7 @@ class A2CTest extends TestCase
             $la->array([1]),
         ];
         for($i=0;$i<100;$i++) {
-            $actions = $agent->action($states,training:true);
+            $actions = $agent->action($states,training:true,parallel:true);
             $this->assertEquals([2],$actions->shape());
             $this->assertEquals(NDArray::int32,$actions->dtype());
         }
@@ -101,7 +101,7 @@ class A2CTest extends TestCase
             batchSize:3,
             nn:$nn, stateShape:[1], numActions:2, fcLayers:[100]
         );
-        $mem = new ReplayBuffer($la,$maxsize=3);
+        $mem = new QueueBuffer($la,$maxsize=3);
         //[$state,$action,$nextState,$reward,$done,$info]
         $losses = [];
         for($i=0;$i<100;$i++) {

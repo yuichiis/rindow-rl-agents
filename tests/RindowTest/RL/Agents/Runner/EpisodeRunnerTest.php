@@ -13,6 +13,7 @@ use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Metrics;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
+use Rindow\RL\Agents\Util\Metrics as MetricsImpl;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
@@ -106,6 +107,7 @@ class TestAgent implements Agent
     protected array $actionResult;
     protected array $assertUpdateLast;
     protected array $assertActionInfo;
+    protected Metrics $metrics;
 
     public function __construct(
         $la,
@@ -120,25 +122,35 @@ class TestAgent implements Agent
         $this->actionResult = $actionResult;
         $this->assertUpdateLast = $assertUpdateLast;
         $this->assertActionInfo = $assertActionInfo;
+        $this->metrics = new MetricsImpl();
     }
 
     public function register(?EventManager $eventManager=null) : void
     {}
 
     public function setMetrics(Metrics $metrics) : void
-    {}
+    {
+        $this->metrics = $metrics;
+    }
 
     public function metrics() : Metrics
-    {}
+    {
+        return $this->metrics;
+    }
 
     public function resetData() : void
     {}
 
     public function reset(Environment $env) : array
-    {}
+    {
+        return $env->reset();
+    }
 
     public function step(Environment $env, int $episodeSteps, NDArray $states, ?array $info=null) : array
-    {}
+    {
+        $actions = $this->action($states,training:true,info:$info);
+        return $env->step($actions);
+    }
 
     public function collect(
         Environment $env,
@@ -147,7 +159,12 @@ class TestAgent implements Agent
         NDArray $states,
         ?array $info,
         ) : array
-    {}
+    {
+        $actions = $this->action($states,training:true,info:$info);
+        [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
+        $experience->add([$states,$actions,$nextState,$reward,$done,$truncated,$info]);
+        return [$nextState,$reward,$done,$truncated,$info];
+    }
 
     public function currents()
     {
@@ -216,7 +233,7 @@ class TestAgent implements Agent
             throw new \Exception('invalid update experience');
         }
         next($this->assertUpdateLast);
-
+        $this->metrics->update('loss',1.0);
         return 1.0;
     }
 
@@ -312,7 +329,7 @@ class EpisodeRunnerTest extends TestCase
         ];
         $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
         $driver = new EpisodeRunner($la,$env, $agent, $experienceSize);
-        $losses = $driver->train(numIterations:$episodes);
+        $losses = $driver->train(numIterations:$episodes, numEvalEpisodes:0);
         $this->assertEquals([],$losses);
         $this->assertEquals([false,false,false],$agent->currents());
         $this->assertTrue(true);
@@ -408,18 +425,19 @@ class EpisodeRunnerTest extends TestCase
             ['valid_directions'=>[12,22,32,42,112,122,132,142]],
         ];
         $agent = new TestAgent($la,$assertActionState,$actionResult,$assertUpdateLast,$assertActionInfo);
-        $driver = new EpisodeRunner($la,$env, $agent, $experienceSize);
+        $driver = new EpisodeRunner($la,$env, $agent, experienceSize:$experienceSize, evalEnv:$env);
         $losses = $driver->train(
             numIterations:$episodes,
             evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-            metrics:['steps','reward','loss','val_steps','val_reward']
+            metrics:['steps','reward','loss','valSteps','valRewards']
         );
         $this->assertEquals([
+            'iter'      => [2,   4  ],
             'steps'     => [3,   3  ],
             'reward'    => [1.5, 1.5],
             'loss'      => [1.0, 1.0],
-            'val_steps' => [3,   3  ],
-            'val_reward'=> [1.5, 1.5],
+            'valSteps'  => [3,   3  ],
+            'valRewards'=> [1.5, 1.5],
         ],$losses);
         $this->assertEquals([false,false,false],$agent->currents());
         $this->assertTrue(true);

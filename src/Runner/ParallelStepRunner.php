@@ -4,7 +4,7 @@ namespace Rindow\RL\Agents\Runner;
 use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\Agent;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 
 class ParallelStepRunner extends AbstractRunner
 {
@@ -26,7 +26,7 @@ class ParallelStepRunner extends AbstractRunner
         $numEnvs = count($envs);
         if($replayBuffers===null) {
             for($i=0;$i<$numEnvs;$i++) {
-                $replayBuffers[] = new ReplayBuffer($this->la,$experienceSize);
+                $replayBuffers[] = new QueueBuffer($this->la,$experienceSize);
             }
         }
         $this->experiences = $replayBuffers;
@@ -34,8 +34,9 @@ class ParallelStepRunner extends AbstractRunner
     }
 
     public function train(
-        ?int $numIterations=null, ?int $maxSteps=null, ?array $metrics=null,
+        ?int $numIterations=null, ?int $numRolloutSteps=null, ?int $maxSteps=null, ?array $metrics=null,
         ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
+        ?int $targetScore=null, ?int $numAchievements=null,
         ?int $verbose=null) : array
     {
         $la = $this->la;
@@ -83,8 +84,8 @@ class ParallelStepRunner extends AbstractRunner
         $infos = [];
         $episodeSteps = [];
         foreach($envs as $env) {
-            [$state,$info] = $env->reset();
-            $states[] = $this->customState($env,$state,false,false,$info);
+            [$state,$info] = $agent->reset($env);
+            $states[] = $state;
             $infos[] = $info;
             $episodeSteps[] = 0;
         }
@@ -95,15 +96,16 @@ class ParallelStepRunner extends AbstractRunner
             if($verbose==1&&$step==0) {
                 $this->progressBar('Step',$step,$numIterations,$startTime,25);
             }
-            $actions = $agent->action($states,training:true,info:$infos);
+            //$actions = $agent->action($states,training:true,info:$infos);
             $infos = [];
             foreach($envs as $i => $env) {
-                $action = $la->squeeze($actions[[$i,$i+1]],axis:0);
-                [$nextState,$reward,$done,$truncated,$info] = $env->step($action);
-                $nextStates[$i] = $this->customState($env,$nextState,$done,$truncated,$info);
-                $reward = $this->customReward($env,$episodeSteps[$i],$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info);
-                $infos[] = $info;
-                $experiences[$i]->add([$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info]);
+                //$action = $la->squeeze($actions[[$i,$i+1]],axis:0);
+                //[$nextState,$reward,$done,$truncated,$info] = $env->step($action);
+                //$nextStates[$i] = $agent->customState($env,$nextState,$done,$truncated,$info);
+                //$reward = $agent->customReward($env,$episodeSteps[$i],$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info);
+                //$infos[] = $info;
+                //$experiences[$i]->add([$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info]);
+                [$nextState,$reward,$done,$truncated,$info] = $agent->collect($env,$experiences[$i],$episodeSteps[$i],$states[$i],$infos[$i]);
                 $loss = $agent->update($experiences[$i]);
                 if($loss!==null) {
                     $sumLoss += $loss;
@@ -121,8 +123,10 @@ class ParallelStepRunner extends AbstractRunner
                     $totalEpisodeCount++;
                     $episodeCount++;
                     $logEpisodeCount++;
-                    [$nextState,$info] = $env->reset();
-                    $nextStates[$i] = $this->customState($env,$nextState,false,false,$info);
+                    //[$nextState,$info] = $env->reset();
+                    //$nextStates[$i] = $this->customState($env,$nextState,false,false,$info);
+                    [$nextState,$info] = $agent->reset();
+                    $nextStates[$i] = $nextState;
                     $episodeSteps[$i] = 0;
                 }
             }

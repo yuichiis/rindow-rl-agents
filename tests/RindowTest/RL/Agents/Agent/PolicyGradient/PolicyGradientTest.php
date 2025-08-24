@@ -6,7 +6,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\PolicyGradient\PolicyGradient;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
@@ -84,12 +84,13 @@ class PolicyGradientTest extends TestCase
             [3],
             [0,3],
         ];
-        $agent = new PolicyGradient($la,$numStates,$numActions,eta:0.1,mo:$mo);
+        $agent = new PolicyGradient($la,$numStates,$numActions,eta:0.1,stateField:'location',mo:$mo);
         foreach($fixedActions as $idx => $actions) {
             for($i=0;$i<100;$i++) {
                 $state = $la->array([$idx],dtype:NDArray::int32);
-                $info = ['validActions'=>$rules[$idx]];
-                $action = $agent->action($state,training:true,info:$info);
+                $mask = $rules[$idx];
+                $obs = ['location'=>$state,'actionMask'=>$mask];
+                $action = $agent->action($obs,training:true,info:[]);
                 $action = $la->scalar($action);
                 //var_dump($action);
                 //var_dump($actions);
@@ -169,13 +170,20 @@ class PolicyGradientTest extends TestCase
         ], dtype:NDArray::bool);
         [$numStates,$numActions] = $rules->shape();
         [$width,$height,$exit] = [3,3,8];
-        $stateFunc = function($env,$x,$done) use ($la) {
-            return $la->expandDims($x,axis:-1);
+        $stateFunc = function($env,$obs,$done) use ($la,$width) {
+            $location = $obs['location'];
+            $y = $location[0];
+            $x = $location[1];
+            $pos = $y*$width + $x;
+            $pos = $la->array([$pos],dtype:NDArray::int32);
+            $mask = $obs['actionMask'];
+            return ['location'=>$pos,'actionMask'=>$mask];
         };
         $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
-        $agent = new PolicyGradient($la,$numStates,$numActions,$eta=0.1,mo:$mo);
-        $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000);
-        $driver->setCustomStateFunction($stateFunc);
+        $evalEnv = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
+        $agent = new PolicyGradient($la,$numStates,$numActions,$eta=0.1,stateField:'location',mo:$mo);
+        $agent->setCustomStateFunction($stateFunc);
+        $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000,evalEnv:$evalEnv);
 
         $numIterations=200;
         $evalInterval=10;

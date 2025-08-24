@@ -7,7 +7,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Policy\OUNoise;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use LogicException;
 use InvalidArgumentException;
 use function Rindow\Math\Matrix\R;

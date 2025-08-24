@@ -10,7 +10,7 @@ use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Agent\Reinforce\Reinforce;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
@@ -98,7 +98,7 @@ class ReinforceTest extends TestCase
             nn:$nn, stateShape:[1], numActions:2, fcLayers:[100],
             mo:$mo,
         );
-        $mem = new ReplayBuffer($la,$maxsize=10000);
+        $mem = new QueueBuffer($la,$maxsize=10000);
         $losses = [];
         for($i=0;$i<5;$i++) {
             //[$state,$action,$nextState,$reward,$done,$discontinued,$info]

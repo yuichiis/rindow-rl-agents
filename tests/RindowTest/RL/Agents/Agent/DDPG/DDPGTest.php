@@ -9,7 +9,7 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\Estimator;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Agent\DDPG\DDPG;
 use Rindow\RL\Agents\Agent\DDPG\ActorNetwork;
 use Rindow\RL\Agents\Agent\DDPG\CriticNetwork;
@@ -175,7 +175,7 @@ class DDPGTest extends TestCase
             targetUpdatePeriod:1,
             targetUpdateTau:0.005,
         );
-        $mem = new ReplayBuffer($la,$maxsize=2);
+        $mem = new QueueBuffer($la,$maxsize=2);
         //[$state,$action,$nextState,$reward,$done,$info]
         $mem->add([$la->array([0,0,0]),$la->array([0.1]),$la->array([0,0.1,0.1]),-0.1,false,false,[]]);
         $mem->add([$la->array([0,0,0]),$la->array([0.1]),$la->array([0,0.1,0.1]),-0.1,false,false,[]]);

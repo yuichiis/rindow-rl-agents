@@ -8,7 +8,7 @@ use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\Sarsa\Sarsa;
 use Rindow\RL\Agents\Agent\QLearning\QTable as ValueTable;
 use Rindow\RL\Agents\Policy\AnnealingEpsGreedy;
-use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\ReplayBuffer\QueueBuffer;
 use Rindow\RL\Agents\Runner\EpisodeRunner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 use Rindow\Math\Plot\Plot;
@@ -96,12 +96,13 @@ class SarsaTest extends TestCase
             [0,3],
         ];
         $policy = new AnnealingEpsGreedy($la,start:1.0,stop:0.01,decayRate:0.01);
-        $agent = new Sarsa($la,$numStates,$numActions,$policy,eta:0.1,gamma:0.9,mo:$mo);
+        $agent = new Sarsa($la,$numStates,$numActions,$policy,eta:0.1,gamma:0.9,stateField:'location',mo:$mo);
         foreach($fixedActions as $idx => $actions) {
             for($i=0;$i<100;$i++) {
                 $state = $la->array([$idx],dtype:NDArray::int32);
-                $info = ['validActions'=>$rules[$idx]];
-                $action = $agent->action($state,training:true,info:$info);
+                $mask = $rules[$idx];
+                $obs = ['location'=>$state,'actionMask'=>$mask];
+                $action = $agent->action($obs,training:true,info:[]);
                 $action = $la->scalar($action);
                 $this->assertTrue(in_array($action,$actions));
             }
@@ -182,16 +183,23 @@ class SarsaTest extends TestCase
             [true,  false, false, false], // 8
         ], dtype:NDArray::bool);
         [$width,$height,$exit] = [3,3,8];
-        $stateFunc = function($env,$x,$done) use ($la) {
-            return $la->expandDims($x,axis:-1);
+        $stateFunc = function($env,$obs,$done) use ($la,$width) {
+            $location = $obs['location'];
+            $y = $location[0];
+            $x = $location[1];
+            $pos = $y*$width + $x;
+            $pos = $la->array([$pos],dtype:NDArray::int32);
+            $mask = $obs['actionMask'];
+            return ['location'=>$pos,'actionMask'=>$mask];
         };
         $env = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
-        $numStates = $env->observationSpace()->n();
+        $evalEnv = new Maze($la,$rules,$width,$height,$exit,$throw=true,$maxEpisodeSteps=100);
+        $numStates = $width*$height;
         $numActions = $env->actionSpace()->n();
         $policy = new AnnealingEpsGreedy($la,start:$espstart=1.0,stop:$stop=0.01,decayRate:$decayRate=0.01);
-        $agent = new Sarsa($la,$numStates,$numActions,$policy,$eta=0.1,$gamma=0.9,mo:$mo);
-        $driver = new EpisodeRunner($la,$env,$agent,$experienceSize=10000);
-        $driver->setCustomStateFunction($stateFunc);
+        $agent = new Sarsa($la,$numStates,$numActions,policy:$policy,eta:0.1,gamma:0.9,stateField:'location',mo:$mo);
+        $agent->setCustomStateFunction($stateFunc);
+        $driver = new EpisodeRunner($la,$env,$agent,experienceSize:10000,evalEnv:$evalEnv);
 
         $numIterations=200;
         $evalInterval=10;
