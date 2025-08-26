@@ -11,22 +11,21 @@ use Rindow\NeuralNetworks\Builder\Builder;
 use InvalidArgumentException;
 use LogicException;
 
-class CriticNetwork extends AbstractNetwork implements Estimator
+class CriticNetwork extends AbstractNetwork
 {
     protected int $numActions;
     protected Model $q1StateLayers;
     protected Layer $q1CriticLayer;
     protected Model $q2StateLayers;
     protected Layer $q2CriticLayer;
+    protected object $g;
 
     public function __construct(
-        object $la,
         Builder $builder,
         array $stateShape, int $numActions,
         ?array $convLayers=null,?string $convType=null,?array $fcLayers=null,
         ?string $activation=null, ?string $kernelInitializer=null,
         mixed $criticKernelInitializer=null,
-        ?NDArray $actionMin=null, ?NDArray $actionMax=null,
         )
     {
         $activation ??= 'relu';
@@ -36,8 +35,9 @@ class CriticNetwork extends AbstractNetwork implements Estimator
         // $initialStd ??= 1.0; // <<< 変更点: 削除
 
         parent::__construct($builder,$stateShape);
-        $this->la = $la;
         $nn = $this->builder();
+        $la = $this->la;
+        $this->g = $nn->gradient();
 
         $this->numActions = $numActions;
         $this->q1StateLayers = $this->buildMlpLayers(
@@ -49,7 +49,7 @@ class CriticNetwork extends AbstractNetwork implements Estimator
             kernelInitializer:$kernelInitializer,
             name:'Q1State'
         );
-        $this->q1criticLayer = $nn->layers()->Dense(
+        $this->q1CriticLayer = $nn->layers()->Dense(
             1,
             kernel_initializer:$criticKernelInitializer,
             name:'Q1Critic'
@@ -77,9 +77,9 @@ class CriticNetwork extends AbstractNetwork implements Estimator
         $g = $this->g;
         $sa = $g->concat([$state, $action], axis:1);
         $q1 = $this->q1StateLayers->forward($sa,$training);
-        $q1 = $this->criticLayer->forward($q1,$training);
-        $q2 = $this->q1StateLayers->forward($sa,$training);
-        $q2 = $this->criticLayer->forward($q2,$training);
-       return [$q1,$q2];
+        $q1 = $this->q1CriticLayer->forward($q1,$training);
+        $q2 = $this->q2StateLayers->forward($sa,$training);
+        $q2 = $this->q2CriticLayer->forward($q2,$training);
+        return [$q1,$q2];
     }
 }

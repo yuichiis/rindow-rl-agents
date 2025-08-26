@@ -26,7 +26,6 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
     protected ?NDArray $actionShift = null;
 
     public function __construct(
-        object $la,
         Builder $builder,
         array $stateShape, int $numActions,
         ?array $convLayers=null,?string $convType=null,?array $fcLayers=null,
@@ -49,7 +48,7 @@ class ActorCriticNetwork extends AbstractNetwork implements Estimator
         // $initialStd ??= 1.0; // <<< 変更点: 削除
 
         parent::__construct($builder,$stateShape);
-        $this->la = $la;
+        $la = $this->la;
         $nn = $this->builder();
 
         $this->numActions = $numActions;

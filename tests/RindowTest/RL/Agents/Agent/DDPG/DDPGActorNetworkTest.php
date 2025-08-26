@@ -1,5 +1,5 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DDPG\ActorNetworkTest;
+namespace RindowTest\RL\Agents\Agent\DDPG\DDPGActorNetworkTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -12,7 +12,7 @@ use InvalidArgumentException;
 use Throwable;
 
 
-class ActorNetworkTest extends TestCase
+class DDPGActorNetworkTest extends TestCase
 {
     public function newMatrixOperator()
     {

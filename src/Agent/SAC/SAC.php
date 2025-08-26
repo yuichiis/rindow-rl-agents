@@ -2,17 +2,20 @@
 namespace Rindow\RL\Agents\Agent\SAC;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\AI\RL\Spaces\Box;
+use Interop\Polite\AI\RL\Spaces\Space;
 use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Loss\Loss;
 use Rindow\NeuralNetworks\Optimizer\Optimizer;
 use Rindow\NeuralNetworks\Layer\Layer;
 use Rindow\NeuralNetworks\Gradient\GraphFunction;
+use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\EventManager;
-use Rindow\RL\Agents\Policy\OUNoise;
+use Rindow\RL\Agents\Policy\NormalDistribution;
 use Rindow\RL\Agents\Agent\AbstractAgent;
 
 use InvalidArgumentException;
@@ -35,12 +38,15 @@ class SAC extends AbstractAgent
     protected Model $criticModel;
     protected Model $targetActor;
     protected Model $targetCritic;
+    protected Variable $logAlpha;
+    protected float $targetEntropy;
     protected int $batchSize;
     protected NDArray $lowerBound;
     protected NDArray $upperBound;
     protected float $targetUpdateTau;
     protected Optimizer $criticOptimizer;
     protected Optimizer $actorOptimizer;
+    protected ?Optimizer $alphaOptimizer;
     //protected GraphFunction $actorModelGraph;
     //protected GraphFunction $criticModelGraph;
     //protected ?array $criticTrainableVariables=null;
@@ -49,24 +55,25 @@ class SAC extends AbstractAgent
         object $la,
         object $nn,
         array $stateShape,
-        int $numActions,
-        NDArray $lowerBound,
-        NDArray $upperBound,
+        ?int $numActions=null,
+        ?NDArray $lowerBound=null,
+        ?NDArray $upperBound=null,
         ?Policy $policy=null,
         ?int $batchSize=null,
-        ?NDArray $mean=null,
-        float|NDArray|null $stdDev=null,
-        ?NDArray $xInitial=null,
         ?float $gamma=null,
-        ?float $theta=null,
-        ?float $dt=null,
+        ?float $initailAlpha=null,
+        ?bool $autoTuneAlpha=null,
+        ?float $targetEntropy=null,
         ?int $targetUpdatePeriod=null,
         ?float $targetUpdateTau=null,
+        ?float $learningRate=null,
         ?Optimizer $criticOptimizer=null,
         ?array $criticOptimizerOpts=null,
         ?Optimizer $actorOptimizer=null,
         ?array $actorOptimizerOpts=null,
-        //?array $fcLayers=null,
+        ?Optimizer $alphaOptimizer=null,
+        ?array $alphaOptimizerOpts=null,
+        ?array $fcLayers=null,
         //?array $staConvLayers=null, ?string $staConvType=null, ?array $staFcLayers=null,
         //?array $actLayers=null,
         //?array $comLayers=null,
@@ -74,42 +81,52 @@ class SAC extends AbstractAgent
         ?array $actorNetworkOptions=null,
         ?array $criticNetworkOptions=null,
         ?EventManager $eventManager=null,
-        ?float $noiseDecay=null,
-        float|NDArray|null $minStdDev=null,
-        ?bool $episodeAnnealing=null,
+        ?Space $actionSpace=null,
         ?object $mo = null,
         )
     {
+        if($actionSpace!==null) {
+            if(!($actionSpace instanceof Box)) {
+                throw new InvalidArgumentException('type of actionSpace must be Box for continuous actions.');
+            }
+            $shape = $actionSpace->shape();
+            if(count($shape)!==1) {
+                throw new InvalidArgumentException('shape of actionSpace must be rank 1.');
+            }
+            $lowerBound ??= $actionSpace->low();
+            $upperBound ??= $actionSpace->high();
+            $numActions ??= $shape[0];
+        }
+
         $batchSize ??= 32;
-        $stdDev ??= 0.2;
         $gamma ??= 0.99;
+        $initailAlpha ??= 0.2;
+        $autoTuneAlpha ??= true;
         $targetUpdatePeriod  ??= 1;
         $targetUpdateTau     ??= 0.005;
-        $criticOptimizerOpts ??=  ['lr'=>0.002];
-        $actorOptimizerOpts  ??=  ['lr'=>0.001];
+        $learningRate ??= 3e-4;
+        $criticOptimizerOpts ??=  ['lr'=>$learningRate];
+        $actorOptimizerOpts  ??=  ['lr'=>$learningRate];
+        $alphaOptimizerOpts  ??=  ['lr'=>$learningRate];
 
-        if($lowerBound->shape()!=[$numActions]) {
+        if($numActions===null) {
+            throw new InvalidArgumentException("Either numActions or actionSpace must be specified.");
+        }
+        if($lowerBound===null || $lowerBound->shape()!=[$numActions]) {
             throw new InvalidArgumentException(
                 "shape of lowerBound must match to the numActions ($numActions): ".
                 $la->shapeToString($lowerBound->shape())." givien."
             );
         }
-        if($upperBound->shape()!=[$numActions]) {
+        if($upperBound === null || $upperBound->shape()!=[$numActions]) {
             throw new InvalidArgumentException(
                 "shape of upperBound must match to the numActions ($numActions): ".
                 $la->shapeToString($upperBound->shape())." givien."
             );
         }
 
-        $mean ??=  $la->zeros($la->alloc([$numActions]));
-        if(is_numeric($stdDev)) {
-            $stdDev = $la->fill($stdDev,$la->zeros($la->alloc([$numActions])));
-        }
-        if(is_numeric($minStdDev)) {
-            $minStdDev = $la->fill($minStdDev,$la->zeros($la->alloc([$numActions])));
-        }
-        $criticOptimizer = $criticOptimizer ?? $nn->optimizers->Adam(...$criticOptimizerOpts);
-        $actorOptimizer = $actorOptimizer ?? $nn->optimizers->Adam(...$actorOptimizerOpts);
+        $criticOptimizer ??= $nn->optimizers->Adam(...$criticOptimizerOpts);
+        $actorOptimizer  ??= $nn->optimizers->Adam(...$actorOptimizerOpts);
 
         $this->mo = $mo;
         $this->actorModel   = $this->buildActorNetwork(
@@ -125,22 +142,34 @@ class SAC extends AbstractAgent
 
         $policy ??= $this->buildPolicy(
             $la,
-            $mean,$stdDev,$lowerBound,$upperBound,
-            $theta,$dt,$xInitial,
-            $noiseDecay,$minStdDev,$episodeAnnealing,
+            $lowerBound,$upperBound,
         );
-        parent::__construct($la,$policy,$eventManager);
+        $g = $nn->gradient();
+        if($autoTuneAlpha) {
+            $logAlpha = $g->Variable($la->array([log($initailAlpha)], dtype:NDArray::float32), trainable:true);
+            $alphaOptimizer  ??= $nn->optimizers->Adam(...$alphaOptimizerOpts);
+        } else {
+            $logAlpha = $g->Variable($la->array([log($initailAlpha)], dtype:NDArray::float32), trainable:false);
+            $alphaOptimizer = null;
+        }
+        $targetEntropy ??= -$numActions;
+        
+        parent::__construct($la,$policy);
         $this->nn = $nn;
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
         $this->gamma = $gamma;
+        $this->targetEntropy = $targetEntropy;
         $this->lowerBound = $lowerBound;
         $this->upperBound = $upperBound;
         $this->targetUpdatePeriod = $targetUpdatePeriod;
         $this->targetUpdateTau = $targetUpdateTau;
         $this->criticOptimizer = $criticOptimizer;
         $this->actorOptimizer = $actorOptimizer;
+        $this->alphaOptimizer = $alphaOptimizer;
+
+        $this->logAlpha = $logAlpha;
         //$this->backend = $nn->backend();
 
         //$this->actorTrainableVariables = $this->actorModel->trainableVariables();
@@ -194,30 +223,14 @@ class SAC extends AbstractAgent
 
     protected function buildPolicy(
         object $la,
-        NDArray $mean,
-        NDArray $stdDeviation,
         NDArray $lowerBound,
         NDArray $upperBound,
-        ?float $theta,
-        ?float $dt,
-        ?NDArray $xInitial,
-        ?float $noiseDecay,
-        ?NDArray $minStdDev,
-        ?bool $episodeAnnealing,
         )
     {
-        $policy = new OUNoise(
+        $policy = new NormalDistribution(
             $la,
-            $mean,
-            $stdDeviation,
-            $lowerBound,
-            $upperBound,
-            theta:$theta,
-            dt:$dt,
-            x_initial:$xInitial,
-            noise_decay:$noiseDecay,
-            min_std_dev:$minStdDev,
-            episodeAnnealing:$episodeAnnealing,
+            min:$lowerBound,
+            max:$upperBound,
         );
         return $policy;
     }
@@ -375,6 +388,29 @@ class SAC extends AbstractAgent
         }
     }
 
+    public function action() : NDArray
+    {
+        normal_dist = ds.Normal(mean, std)
+        if deterministic:
+            z = mean
+        else:
+            z = normal_dist.sample()
+        action = tf.tanh(z)
+        log_prob = normal_dist.log_prob(z) - tf.math.log(1 - tf.pow(action, 2) + EPSILON)
+        if len(log_prob.shape) > 1:
+            log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=True)
+        else:
+            log_prob = tf.reduce_sum(log_prob, keepdims=True)
+        scaled_action = action * self.action_high_bound
+        if add_batch_dim:
+            scaled_action = tf.squeeze(scaled_action, axis=0)
+            log_prob = tf.squeeze(log_prob, axis=0)
+        if deterministic:
+            return scaled_action
+        return scaled_action, log_prob
+
+    }
+
     public function update($experience) : float
     {
         $la = $this->la;
@@ -408,29 +444,35 @@ class SAC extends AbstractAgent
         $action_batch = $g->Variable($action_batch);
         $next_state_batch = $g->Variable($next_state_batch);
         $reward_batch = $g->Variable($reward_batch);
-        $done_batch = $g->Variable($done_batch);
+        //$done_batch = $g->Variable($done_batch);
+        $discount_batch = $la->expandDims($la->increment($la->copy($done_batch),beta:1,alpha:-1),axis:-1);
         $training = true;//$g->Variable(true);
+        $targetEntropy = $g->Variable($this->targetEntropy);
 
         $targetActor = $this->targetActor;
         $targetCritic = $this->targetCritic;
         $criticModel = $this->criticModel;
         $actorModel = $this->actorModel;
+        $logAlpha = $this->logAlpha;
 
-        $alpha = $la->exp($la->copy($log_alpha));
+        $alpha = $la->exp($la->copy($this->logAlpha));
         $critic_loss = $nn->with($tape=$g->GradientTape(),function () use (
                 $g,$actorModel,$targetCritic,$criticModel,
                 $next_state_batch,$reward_batch,$gamma,
-                $state_batch,$action_batch,$training,$alpha,$done_batch,
+                $state_batch,$action_batch,$training,$alpha,$discount_batch,
             ) {
                 [$next_actions, $next_log_prob] = $actorModel($next_state_batch, $training);
                 [$target_q1_value_next,$target_q2_value_next] = $targetCritic($next_state_batch, $next_actions, $training);
                 $target_q_next = $g->minimum($target_q1_value_next, $target_q2_value_next);
 
                 $soft_target = $g->sub($target_q_next, $g->mul($alpha,$next_log_prob));
-                $y = $g->add($reward_batch, $g->scale($gamma, $g->mul($g->sub(1.0 - $done_batch), $soft_target)));
+                $y = $g->add($reward_batch, $g->scale($gamma, $g->mul($discount_batch, $soft_target)));
                 [$q1_current, $q2_current] = $criticModel($state_batch, $action_batch);
 
-                $critic_loss = $g->reduceMean($g->square($g->sub($y - $q1_current))) + $g->reduceMean($g->square($g->sub($y, $q2_current)));
+                $critic_loss = $g->add(
+                    $g->reduceMean($g->square($g->sub($y, $q1_current))),
+                    $g->reduceMean($g->square($g->sub($y, $q2_current))),
+                );
                 return $critic_loss;
             }
         );
@@ -439,7 +481,7 @@ class SAC extends AbstractAgent
         $this->criticOptimizer->update($criticTrainableVariables,$critic_grad);
         //echo $K->toString($actionValues,null,true)."\n";
 
-        $actor_loss = $nn->with($tape=$g->GradientTape(),function () use (
+        [$actor_loss,$pi_log_prob] = $nn->with($tape=$g->GradientTape(),function () use (
                 $g,$actorModel,$criticModel,
                 $gamma,
                 $state_batch,$training,$alpha,
@@ -449,23 +491,24 @@ class SAC extends AbstractAgent
                 $min_q_pi = $g->minimum($q1_pi, $q2_pi);
                 $actor_loss = $g->reduceMean($g->sub($g->mul($alpha, $pi_log_prob), $min_q_pi));
 
-                return $actor_loss;
+                return [$actor_loss,$pi_log_prob];
             }
         );
         $actorTrainableVariables = $this->actorModel->trainableVariables();
         $actor_grad = $tape->gradient($actor_loss, $actorTrainableVariables);
         $this->actorOptimizer->update($actorTrainableVariables,$actor_grad);
 
+
         $alpha_loss = $nn->with($tape=$g->GradientTape(),function () use (
-                $g,$log_alpha,$pi_log_prob,$target_entropy,
+                $g,$logAlpha,$pi_log_prob,$targetEntropy,
             ) {
-                $alpha_loss = $g->scale(-1,$g->reduce_mean($g->mul($log_alpha, $g->add($g->stop_gradient($pi_log_prob), $target_entropy))));
+                $alpha_loss = $g->scale(-1,$g->reduceMean($g->mul($logAlpha, $g->add($g->stopGradient($pi_log_prob), $targetEntropy))));
                 return $alpha_loss;
             }
         );
-        if($alpha_optimizer) {
-            $actor_grad = $tape->gradient($actor_loss, [$log_alpha]);
-            $this->actorOptimizer->update([$log_alpha],$actor_grad);
+        if($this->alphaOptimizer) {
+            $alpha_grad = $tape->gradient($alpha_loss, [$logAlpha]);
+            $this->alphaOptimizer->update([$logAlpha],$alpha_grad);
         }
 
         if($this->enabledShapeInspection) {
@@ -478,10 +521,26 @@ class SAC extends AbstractAgent
         
         $this->updateTarget($endEpisode);
 
-        $loss = $K->scalar($actor_loss->value());
-        if($this->metrics->isAttracted('loss')) {
-            $this->metrics->update('loss',$loss);
+        $actor_loss = $K->scalar($actor_loss->value());
+        if($this->metrics->isAttracted('Ploss')) {
+            $this->metrics->update('Ploss',$actor_loss);
         }
-        return $loss;
+        if($this->metrics->isAttracted('Vloss')) {
+            $critic_loss = $K->scalar($critic_loss->value());
+            $this->metrics->update('Vloss',$critic_loss);
+        }
+        if($this->metrics->isAttracted('Aloss')) {
+            $alpha_loss = $K->scalar($alpha_loss->value());
+            $this->metrics->update('Vloss',$alpha_loss);
+        }
+        if($this->metrics->isAttracted('alpha')) {
+            $alpha = $K->scalar($alpha->value());
+            $this->metrics->update('Vloss',$alpha_loss);
+        }
+        if($this->metrics->isAttracted('alpha')) {
+            $alpha = $K->scalar($alpha->value());
+            $this->metrics->update('Vloss',$alpha_loss);
+        }
+        return $actor_loss;
     }
 }

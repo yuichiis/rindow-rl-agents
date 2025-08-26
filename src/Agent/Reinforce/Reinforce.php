@@ -61,7 +61,7 @@ class Reinforce extends AbstractAgent
         )
     {
         $network ??= $this->buildNetwork(
-            $la,$nn,
+            $nn,
             $stateShape,$numActions,$fcLayers,$activation,$kernelInitializer,
         );
         $nn ??= $network->builder();
@@ -95,7 +95,6 @@ class Reinforce extends AbstractAgent
     }
 
     protected function buildNetwork(
-        object $la,
         Builder $nn,
         array $stateShape,
         int $numActions,
@@ -114,7 +113,7 @@ class Reinforce extends AbstractAgent
             throw new InvalidArgumentException('numActions must be specifed.');
         }
         $network = new PolicyNetwork(
-            $la, $nn,
+            $nn,
             $stateShape, $numActions,
             fcLayers:$fcLayers,
             activation:$activation,

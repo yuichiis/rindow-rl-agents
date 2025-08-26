@@ -1,18 +1,18 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\Reinforce\PolicyNetworkTest;
+namespace RindowTest\RL\Agents\Agent\SAC\SACCriticNetworkTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\Reinforce\PolicyNetwork;
+use Rindow\RL\Agents\Agent\SAC\CriticNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
 
-class PolicyNetworkTest extends TestCase
+class SACCriticNetworkTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -47,17 +47,25 @@ class PolicyNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $network = new PolicyNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
+        $combine = 32;
+        $network = new CriticNetwork(
+            builder:$nn,
+            stateShape:[1],
+            numActions:2,
+            fcLayers:[100,$combine],
+        );
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
         $trainableVariables = $network->trainableVariables();
         $states = $la->array([[0],[1]]);
-        $nextQValues = $la->array([[0,1],[0,1]]);
+        $targetActions = $la->array([[0,1],[0,1]]);
+        $targetValues = $la->array([[0],[1]]);
         for($i=0;$i<100;$i++) {
             $loss = $nn->with($tape=$g->GradientTape(), function()
-                    use ($network,$lossFn,$states,$nextQValues) {
-                $qValues = $network($states,true);
-                $loss = $lossFn->forward($nextQValues,$qValues);
+                    use ($g,$network,$lossFn,$states,$targetActions,$targetValues) {
+                [$q1,$q2] = $network($states,$targetActions,true);
+                $critActions = $g->add($q1,$q2);
+                $loss = $lossFn->forward($targetValues,$critActions);
                 return $loss;
             });
             $grads = $tape->gradient($loss,$trainableVariables);
@@ -67,7 +75,7 @@ class PolicyNetworkTest extends TestCase
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('QNetwork');
+        $plt->title('CriticNetwork for SAC');
         $plt->show();
         $this->assertTrue(true);
     }
@@ -77,7 +85,7 @@ class PolicyNetworkTest extends TestCase
     //    $mo = $this->newMatrixOperator();
     //    $la = $mo->la();
     //    $nn = $this->newBuilder($mo);
-    //    $network = new PolicyNetwork($la,$nn,$stateShape=[1],$numActions=4,fcLayers:[100]);
+    //    $network = new QNetwork($la,$nn,$stateShape=[1],$numActions=4,fcLayers:[100]);
     //    $states = $la->array([[1],[1],[1]],NDArray::int32);
     //    $num = 1000;
     //    $actions = $la->alloc([$num,count($states),1],NDArray::int32);
@@ -98,7 +106,7 @@ class PolicyNetworkTest extends TestCase
     //        [  1,NAN,NAN,  1],
     //        [  1,  1,NAN,NAN],
     //    ]);
-    //    $network = new PolicyNetwork($la,$nn,$stateShape=[1],$numActions=4,fcLayers:[100],rules:$rules);
+    //    $network = new QNetwork($la,$nn,$stateShape=[1],$numActions=4,fcLayers:[100],rules:$rules);
     //    $states = $la->array([[0],[1],[2]],NDArray::int32);
     //    $num = 1000;
     //    $actions = $la->alloc([$num,count($states),1],NDArray::int32);
@@ -122,7 +130,7 @@ class PolicyNetworkTest extends TestCase
     //
     //
     //    // no rules
-    //    $network = new PolicyNetwork($la,$nn,stateShape:[1],numActions:4,fcLayers:[100]);
+    //    $network = new QNetwork($la,$nn,stateShape:[1],numActions:4,fcLayers:[100]);
     //    $states = $la->array([1,0,2],NDArray::int32);    // (batches=3,state=1)
     //    $probs = $network->probabilities($states);
     //    //$this->assertEquals([3,4],$probs->shape());
@@ -140,7 +148,7 @@ class PolicyNetworkTest extends TestCase
     //        [  1,  1,NAN,NAN],
     //        [NAN,  1,  1,NAN],
     //    ]);
-    //    $network = new PolicyNetwork($la,$nn,stateShape:[1],numActions:4,fcLayers:[100],rules:$rules);
+    //    $network = new QNetwork($la,$nn,stateShape:[1],numActions:4,fcLayers:[100],rules:$rules);
     //    $states = $la->array([[1],[0],[2]],NDArray::int32);    // (batches=3,state=1)
     //    $probs = $network->probabilities($states);
     //    $this->assertEquals([3,4],$probs->shape());
@@ -157,7 +165,7 @@ class PolicyNetworkTest extends TestCase
     //    $la = $mo->la();
     //    $nn = $this->newBuilder($mo);
 //
-    //    $network = new PolicyNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
+    //    $network = new QNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
     //    $qValues = $network->getActionValues($la->array([[1.0]]));
     //    $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
     //    $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]));
@@ -176,7 +184,7 @@ class PolicyNetworkTest extends TestCase
     //        [  1,NAN,NAN,  1],
     //        [  1,  1,NAN,NAN],
     //    ]);
-    //    $network = new PolicyNetwork($la,$nn,$stateShape=[1],$numActions=4,fcLayers:[100],rules:$rules);
+    //    $network = new QNetwork($la,$nn,$stateShape=[1],$numActions=4,fcLayers:[100],rules:$rules);
     //    $qValues = $network->getActionValues($la->array([[1.0]]));
     //    $this->assertEquals([1,4],$qValues->shape());
     //    $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]));
@@ -191,24 +199,4 @@ class PolicyNetworkTest extends TestCase
 //
     //}
 
-    public function testGetQValues()
-    {
-        $mo = $this->newMatrixOperator();
-        $la = $mo->la();
-        $nn = $this->newBuilder($mo);
-
-        $network = new PolicyNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
-        $qValues = $network->getActionValues($la->array([[1.0]]));
-        $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
-        $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]));
-        $this->assertEquals([3,2],$qValues2->shape());
-        $qValues3 = $network->getActionValues($la->array([[1.0]]));
-        $this->assertEquals([1,2],$qValues3->shape());
-        $qValues4 = $network->getActionValues($la->array([[2.0]]));
-        $this->assertEquals([1,2],$qValues4->shape());
-        
-        $this->assertEquals($qValues->toArray(),$qValues3->toArray());
-        $this->assertNotEquals($qValues->toArray(),$qValues4->toArray());
-
-    }
 }

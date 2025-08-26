@@ -18,7 +18,6 @@ class QNetwork extends AbstractEstimatorNetwork
     protected ?object $mo;  // for debug
 
     public function __construct(
-        object $la,
         Builder $builder,
         array $stateShape,
         int $numActions,
@@ -33,7 +32,7 @@ class QNetwork extends AbstractEstimatorNetwork
         )
     {
         parent::__construct($builder,$stateShape);
-        $this->la = $la;
+        $la = $this->la;
         $this->numActions = $numActions;
         if($fcLayers===null) {
             $fcLayers = [32, 16];

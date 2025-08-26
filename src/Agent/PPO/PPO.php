@@ -101,7 +101,7 @@ class PPO extends AbstractAgent
         }
 
         $network ??= $this->buildNetwork(
-            $la,$nn,$continuous,$stateShape,$numActions,
+            $nn,$continuous,$stateShape,$numActions,
             $fcLayers,
             $actionKernelInitializer,
             $criticKernelInitializer,
@@ -167,7 +167,6 @@ class PPO extends AbstractAgent
     }
 
     protected function buildNetwork(
-        object $la,
         ?Builder $nn,
         bool $continuous,
         ?array $stateShape,
@@ -190,7 +189,7 @@ class PPO extends AbstractAgent
             throw new InvalidArgumentException('numActions must be specifed.');
         }
         $network = new ActorCriticNetwork(
-            $la,$nn,
+            $nn,
             $stateShape, $numActions,
             fcLayers:$fcLayers,
             continuous:$continuous,

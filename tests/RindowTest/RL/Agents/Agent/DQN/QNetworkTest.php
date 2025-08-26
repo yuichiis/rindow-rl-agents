@@ -47,7 +47,7 @@ class QNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $network = new QNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
+        $network = new QNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
         $trainableVariables = $network->trainableVariables();
@@ -197,7 +197,7 @@ class QNetworkTest extends TestCase
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
 
-        $network = new QNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
+        $network = new QNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
         $qValues = $network->getActionValues($la->array([[1.0]]));
         $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
         $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]));

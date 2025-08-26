@@ -42,6 +42,12 @@ class NormalDistribution extends AbstractPolicy
         if($training) {
             $actions = $this->calcNormalDistSampled($actions,$logStd);
         }
+        if($this->min!==null) {
+            $actions = $la->maximum($la->copy($actions),$this->min);
+        }
+        if($this->max!==null) {
+            $actions = $la->minimum($la->copy($actions),$this->max);
+        }
 
         return $actions;
     }

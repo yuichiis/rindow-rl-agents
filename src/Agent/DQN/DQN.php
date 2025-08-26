@@ -63,7 +63,7 @@ class DQN extends AbstractAgent
         ?object $mo = null
         )
     {
-        $network ??= $this->buildNetwork($la,$nn,$stateShape,$numActions,$fcLayers,$activation,$kernelInitializer);
+        $network ??= $this->buildNetwork($nn,$stateShape,$numActions,$fcLayers,$activation,$kernelInitializer);
         if(!($network instanceof Estimator)) {
             throw new InvalidArgumentException('Network must have Network and Estimator interfaces.');
         }
@@ -101,7 +101,7 @@ class DQN extends AbstractAgent
     }
 
     protected function buildNetwork(
-        object $la, Builder $nn,
+        Builder $nn,
         array $stateShape, int $numActions,
         array $fcLayers,
         ?string $activation=null,
@@ -118,7 +118,7 @@ class DQN extends AbstractAgent
         //    throw new InvalidArgumentException('numActions must be specifed.');
         //}
         $network = new QNetwork(
-            $la,$nn,
+            $nn,
             $stateShape, $numActions,
             fcLayers:$fcLayers,
             activation:$activation,

@@ -1,18 +1,18 @@
 <?php
-namespace RindowTest\RL\Agents\Agent\DDPG\CriticNetworkTest;
+namespace RindowTest\RL\Agents\Agent\SAC\SACActorNetworkTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\DDPG\CriticNetwork;
+use Rindow\RL\Agents\Agent\SAC\ActorNetwork;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
 
-class CriticNetworkTest extends TestCase
+class SACActorNetworkTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -47,24 +47,29 @@ class CriticNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $combine = 32;
-        $network = new CriticNetwork(
+        $actionMin = $la->array([-2,-2]);
+        $actionMax = $la->array([2,2]);
+        $network = new ActorNetwork(
             builder:$nn,
             stateShape:[1],
             numActions:2,
-            staFcLayers:[100,$combine],
-            actLayers:[$combine],
+            fcLayers:[100],
+            actionMin:$actionMin,
+            actionMax:$actionMax,
         );
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
         $trainableVariables = $network->trainableVariables();
         $states = $la->array([[0],[1]]);
         $targetActions = $la->array([[0,1],[0,1]]);
+        $targetLogStd = $la->array([[0],[0]]);
         for($i=0;$i<100;$i++) {
             $loss = $nn->with($tape=$g->GradientTape(), function()
-                    use ($network,$lossFn,$states,$targetActions) {
-                $critActions = $network($states,$targetActions,true);
-                $loss = $lossFn->forward($targetActions,$critActions);
+                    use ($g,$network,$lossFn,$states,$targetActions,$targetLogStd) {
+                [$actorActions,$logStd] = $network($states,true);
+                $actorLoss = $lossFn->forward($targetActions,$actorActions);
+                $logStdLoss = $lossFn->forward($targetLogStd,$logStd);
+                $loss = $g->add($actorLoss,$logStdLoss);
                 return $loss;
             });
             $grads = $tape->gradient($loss,$trainableVariables);
@@ -74,7 +79,7 @@ class CriticNetworkTest extends TestCase
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('CriticNetwork for DDPG');
+        $plt->title('ActorNetwork for SAC');
         $plt->show();
         $this->assertTrue(true);
     }
@@ -198,4 +203,52 @@ class CriticNetworkTest extends TestCase
 //
     //}
 
+    public function testGetQValues()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        $nn = $this->newBuilder($mo);
+
+        $actionMin = $la->array([-2,-2]);
+        $actionMax = $la->array([2,2]);
+        $network = new ActorNetwork(
+            builder:$nn,
+            stateShape:[1],
+            numActions:2,
+            fcLayers:[100],
+            actionMin:$actionMin,
+            actionMax:$actionMax,
+        );
+        $qValues = $network->getActionValues($la->array([[1.0]]));
+        $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
+        $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]));
+        $this->assertEquals([3,2],$qValues2->shape());
+        $qValues3 = $network->getActionValues($la->array([[1.0]]));
+        $this->assertEquals([1,2],$qValues3->shape());
+        $qValues4 = $network->getActionValues($la->array([[2.0]]));
+        $this->assertEquals([1,2],$qValues4->shape());
+        
+        $this->assertEquals($qValues->toArray(),$qValues3->toArray());
+        $this->assertNotEquals($qValues->toArray(),$qValues4->toArray());
+
+        // =============== with std =================
+        $qValues = $network->getActionValues($la->array([[1.0]]),std:true);
+        $this->assertEquals([1,2],$qValues[0]->shape());   // (batches,numActions)
+        $this->assertEquals([1,1],$qValues[1]->shape());   // (batches,1)
+        $qValues2 = $network->getActionValues($la->array([[1.0],[1.0],[1.0]]),std:true);
+        $this->assertEquals([3,2],$qValues2[0]->shape());
+        $this->assertEquals([3,1],$qValues2[1]->shape());
+        $qValues3 = $network->getActionValues($la->array([[1.0]]),std:true);
+        $this->assertEquals([1,2],$qValues3[0]->shape());
+        $this->assertEquals([1,1],$qValues3[1]->shape());
+        $qValues4 = $network->getActionValues($la->array([[2.0]]),std:true);
+        $this->assertEquals([1,2],$qValues4[0]->shape());
+        $this->assertEquals([1,1],$qValues4[1]->shape());
+        
+        $this->assertEquals($qValues[0]->toArray(),$qValues3[0]->toArray());
+        $this->assertEquals($qValues[1]->toArray(),$qValues3[1]->toArray());
+        $this->assertNotEquals($qValues[0]->toArray(),$qValues4[0]->toArray());
+        $this->assertNotEquals($qValues[1]->toArray(),$qValues4[1]->toArray()); // log_prob includes noise
+        
+    }
 }

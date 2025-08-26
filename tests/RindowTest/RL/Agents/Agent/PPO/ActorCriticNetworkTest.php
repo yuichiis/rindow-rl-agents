@@ -48,7 +48,7 @@ class ActorCriticNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $network = new ActorCriticNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
+        $network = new ActorCriticNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
         $trainableVariables = $network->trainableVariables();
@@ -81,7 +81,7 @@ class ActorCriticNetworkTest extends TestCase
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
 
-        $network = new ActorCriticNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
+        $network = new ActorCriticNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100]);
         $qValues = $network->getActionValues($la->array([[1.0]]));
         $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
 
@@ -106,7 +106,7 @@ class ActorCriticNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $network = new ActorCriticNetwork($la,$nn,$stateShape=[1],$numActions=2,fcLayers:[100],continuous:true);
+        $network = new ActorCriticNetwork($nn,$stateShape=[1],$numActions=2,fcLayers:[100],continuous:true);
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
         $trainableVariables = $network->trainableVariables();
@@ -140,7 +140,7 @@ class ActorCriticNetworkTest extends TestCase
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
 
-        $network = new ActorCriticNetwork($la,$nn,$stateShape=[1],numActions:2,fcLayers:[100],continuous:true);
+        $network = new ActorCriticNetwork($nn,$stateShape=[1],numActions:2,fcLayers:[100],continuous:true);
         $qValues = $network->getActionValues($la->array([[1.0]]));
         $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
 
