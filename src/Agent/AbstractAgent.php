@@ -313,6 +313,7 @@ abstract class AbstractAgent implements Agent
     public function collect(
         Env $env,
         ReplayBuffer $experience,
+        int $step,
         int $episodeSteps,
         NDArray|array $states,
         ?array $info,

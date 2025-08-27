@@ -105,7 +105,7 @@ class StepRunner extends AbstractRunner
                 //$nextState = $this->customState($env,$nextState,$done,$truncated,$info);
                 //$reward = $this->customReward($env,$episodeSteps,$states,$action,$nextState,$reward,$done,$truncated,$info);
                 //$experience->add([$states,$action,$nextState,$reward,$done,$truncated,$info]);
-                [$nextState,$reward,$done,$truncated,$info] = $agent->collect($env,$experience,$episodeSteps,$states,info:$info);
+                [$nextState,$reward,$done,$truncated,$info] = $agent->collect($env,$experience,$step,$episodeSteps,$states,info:$info);
                 $states = $nextState;
                 $episodeReward += $reward;
                 $episodeSteps++;

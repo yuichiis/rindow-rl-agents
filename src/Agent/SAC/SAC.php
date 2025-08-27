@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent\SAC;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\AI\RL\Spaces\Box;
 use Interop\Polite\AI\RL\Spaces\Space;
+use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Loss\Loss;
@@ -13,6 +14,7 @@ use Rindow\NeuralNetworks\Gradient\GraphFunction;
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
+use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Network;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Policy\NormalDistribution;
@@ -393,6 +395,31 @@ class SAC extends AbstractAgent
         $actions = $la->maximum($la->copy($actions),$this->lowerBound);
         $actions = $la->minimum($la->copy($actions),$this->upperBound);
         return $actions;
+    }
+
+    public function collect(
+        Env $env,
+        ReplayBuffer $experience,
+        int $step,
+        int $episodeSteps,
+        NDArray|array $states,
+        ?array $info,
+        ) : array
+    {
+        $la = $this->la;
+        if($step < $this->startSteps) {
+            $actions = $la->multiply(
+                $this->upperBound,
+                $la->randomUniform([$this->numActions],-1.0,1.0),
+            );
+        } else {
+            $actions = $this->action($states,training:true,info:$info);
+        }
+        [$nextState,$reward,$done,$truncated,$info] = $env->step($actions);
+        $nextState = $this->customState($env,$nextState,$done,$truncated,$info);
+        $reward = $this->customReward($env,$episodeSteps,$states,$actions,$nextState,$reward,$done,$truncated,$info);
+        $experience->add([$states,$actions,$nextState,$reward,$done,$truncated,$info]);
+        return [$nextState,$reward,$done,$truncated,$info];
     }
 
     public function update($experience) : float

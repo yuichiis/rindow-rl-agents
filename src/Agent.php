@@ -34,6 +34,7 @@ interface Agent
     public function collect(
         Env $env,
         ReplayBuffer $experience,
+        int $step,
         int $episodeSteps,
         NDArray $states,
         ?array $info,

@@ -155,6 +155,7 @@ class TestAgent implements Agent
     public function collect(
         Environment $env,
         ReplayBuffer $experience,
+        int $step,
         int $episodeSteps,
         NDArray $states,
         ?array $info,

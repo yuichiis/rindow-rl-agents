@@ -321,6 +321,7 @@ class A2C extends AbstractAgent
     public function collect(
         Env $env,
         ReplayBuffer $experience,
+        int $step,
         int $episodeSteps,
         array|NDArray $obs,
         ?array $info,

@@ -105,7 +105,7 @@ class ParallelStepRunner extends AbstractRunner
                 //$reward = $agent->customReward($env,$episodeSteps[$i],$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info);
                 //$infos[] = $info;
                 //$experiences[$i]->add([$states[$i],$action,$nextStates[$i],$reward,$done,$truncated,$info]);
-                [$nextState,$reward,$done,$truncated,$info] = $agent->collect($env,$experiences[$i],$episodeSteps[$i],$states[$i],$infos[$i]);
+                [$nextState,$reward,$done,$truncated,$info] = $agent->collect($env,$experiences[$i],$step,$episodeSteps[$i],$states[$i],$infos[$i]);
                 $loss = $agent->update($experiences[$i]);
                 if($loss!==null) {
                     $sumLoss += $loss;
