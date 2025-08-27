@@ -18,33 +18,6 @@ use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
-class TestPolicy implements Policy
-{
-    protected NDArray $fixedAction;
-
-    public function __construct($fixedAction)
-    {
-        $this->fixedAction = $fixedAction;
-    }
-
-    public function isContinuousActions() : bool
-    {
-        return false;
-    }
-
-    public function register(?EventManager $eventManager=null) : void
-    {}
-
-    public function initialize() : void // : Operation
-    {}
-
-    public function actions(Estimator $network, NDArray $values, bool $training, ?NDArray $masks) : NDArray
-    {
-        return $this->fixedAction;
-    }
-}
-
-
 class SACTest extends TestCase
 {
     public function newMatrixOperator()
@@ -109,7 +82,6 @@ class SACTest extends TestCase
             actorOptimizerOpts:['lr'=>$actor_lr],
         );
         $this->assertInstanceof(ActorNetwork::class,$agent->actorNetwork());
-        $this->assertInstanceof(ActorNetwork::class,$agent->targetActorNetwork());
         $this->assertInstanceof(CriticNetwork::class,$agent->criticNetwork());
         $this->assertInstanceof(CriticNetwork::class,$agent->targetcriticNetwork());
         //$agent->summary();
@@ -123,7 +95,7 @@ class SACTest extends TestCase
         $upper_bound=$la->array([2]);
 
         $agent = new SAC($la,$nn,
-            $stateShape,$numActions,$lower_bound,$upper_bound,
+            $stateShape,$numActions,lowerBound:$lower_bound,upperBound:$upper_bound,
         );
         //$agent->summary();
         $this->assertTrue(true);
@@ -145,8 +117,8 @@ class SACTest extends TestCase
                 $la,$nn,
                 $stateShape,
                 $numActions,
-                $lower_bound,
-                $upper_bound,
+                lowerBound:$lower_bound,
+                upperBound:$upper_bound,
             );
             for($i=0;$i<100;$i++) {
                 $state = $la->array([1]);
@@ -191,7 +163,7 @@ class SACTest extends TestCase
         $losses = $la->array($losses);
         $plt->plot($losses);
         $plt->legend(['losses']);
-        $plt->title('DDPG');
+        $plt->title('SAC');
         $plt->show();
         $this->assertTrue(true);
     }

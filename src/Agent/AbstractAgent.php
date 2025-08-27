@@ -327,6 +327,12 @@ abstract class AbstractAgent implements Agent
         return [$nextState,$reward,$done,$truncated,$info];
     }
 
+    protected function doPolicyActions(NDArray $states,bool $training,?NDArray $masks) : NDArray
+    {
+        $actions = $this->policy->actions($this->estimator(),$states,training:$training,masks:$masks);
+        return $actions;
+    }
+
     /**
      * obs  : (batches, ...statesDims)
      * actions : (batches, ...ActionsDims)
@@ -387,7 +393,7 @@ abstract class AbstractAgent implements Agent
 
         // NDArray $states  : (batches,stateDims ) typeof int32 or float32
         // NDArray $actions : (batches) typeof int32 or (batches,numActions) typeof float32
-        $actions = $this->policy->actions($this->estimator(),$states,training:$training,masks:$masks);
+        $actions = $this->doPolicyActions($states,training:$training,masks:$masks);
         if(!$parallel) {
             $actions = $la->squeeze($actions,axis:0);
         }

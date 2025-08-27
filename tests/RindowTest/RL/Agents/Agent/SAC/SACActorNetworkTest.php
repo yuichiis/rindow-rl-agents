@@ -47,15 +47,15 @@ class SACActorNetworkTest extends TestCase
         $g = $nn->gradient();
         $plt = new Plot($this->getPlotConfig(),$mo);
 
-        $actionMin = $la->array([-2,-2]);
-        $actionMax = $la->array([2,2]);
+        $lowerBound = $la->array([-2,-2]);
+        $upperBound = $la->array([2,2]);
         $network = new ActorNetwork(
             builder:$nn,
             stateShape:[1],
             numActions:2,
             fcLayers:[100],
-            actionMin:$actionMin,
-            actionMax:$actionMax,
+            lowerBound:$lowerBound,
+            upperBound:$upperBound,
         );
         $lossFn = $nn->losses->Huber();
         $optimizer = $nn->optimizers->Adam();
@@ -66,7 +66,7 @@ class SACActorNetworkTest extends TestCase
         for($i=0;$i<100;$i++) {
             $loss = $nn->with($tape=$g->GradientTape(), function()
                     use ($g,$network,$lossFn,$states,$targetActions,$targetLogStd) {
-                [$actorActions,$logStd] = $network($states,true);
+                [$actorActions,$logStd] = $network($states,training:true,deterministic:false);
                 $actorLoss = $lossFn->forward($targetActions,$actorActions);
                 $logStdLoss = $lossFn->forward($targetLogStd,$logStd);
                 $loss = $g->add($actorLoss,$logStdLoss);
@@ -209,15 +209,15 @@ class SACActorNetworkTest extends TestCase
         $la = $mo->la();
         $nn = $this->newBuilder($mo);
 
-        $actionMin = $la->array([-2,-2]);
-        $actionMax = $la->array([2,2]);
+        $lowerBound = $la->array([-2,-2]);
+        $upperBound = $la->array([2,2]);
         $network = new ActorNetwork(
             builder:$nn,
             stateShape:[1],
             numActions:2,
             fcLayers:[100],
-            actionMin:$actionMin,
-            actionMax:$actionMax,
+            lowerBound:$lowerBound,
+            upperBound:$upperBound,
         );
         $qValues = $network->getActionValues($la->array([[1.0]]));
         $this->assertEquals([1,2],$qValues->shape());   // (batches,numActions)
@@ -245,8 +245,8 @@ class SACActorNetworkTest extends TestCase
         $this->assertEquals([1,2],$qValues4[0]->shape());
         $this->assertEquals([1,1],$qValues4[1]->shape());
         
-        $this->assertEquals($qValues[0]->toArray(),$qValues3[0]->toArray());
-        $this->assertEquals($qValues[1]->toArray(),$qValues3[1]->toArray());
+        $this->assertNotEquals($qValues[0]->toArray(),$qValues3[0]->toArray());
+        $this->assertNotEquals($qValues[1]->toArray(),$qValues3[1]->toArray());
         $this->assertNotEquals($qValues[0]->toArray(),$qValues4[0]->toArray());
         $this->assertNotEquals($qValues[1]->toArray(),$qValues4[1]->toArray()); // log_prob includes noise
         

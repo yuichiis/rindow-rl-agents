@@ -21,8 +21,8 @@ class ActorNetwork extends AbstractNetwork implements Estimator
     protected Layer $logStdLayer; // <<< 変更点: 状態からlogStdを出力するレイヤーを追加
     protected Layer $criticLayer;
     protected bool $continuous;
-    protected ?NDArray $action_low_bound=null;
-    protected ?NDArray $action_high_bound=null;
+    protected ?NDArray $lowerBound=null;
+    protected ?NDArray $upperBound=null;
     protected ?NDArray $actionScale = null;
     protected ?NDArray $actionShift = null;
     protected float $epsilon = 1e-6;
@@ -37,15 +37,15 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         mixed $criticKernelInitializer=null,
         // <<< 変更点: logStdレイヤー用の初期化方法を追加（任意）
         mixed $logStdKernelInitializer=null,
-        ?NDArray $actionMin=null, ?NDArray $actionMax=null,
+        ?NDArray $lowerBound=null, ?NDArray $upperBound=null,
         //?float $initialStd=null, // <<< 変更点: initialStdは不要になるため削除
         ?bool $continuous=null,
         )
     {
         $continuous ??= false;
         $activation ??= 'relu';
-        $actionMin ??= -1.0;
-        $actionMax ??= 1.0;
+        $lowerBound ??= -1.0;
+        $upperBound ??= 1.0;
 
         if($convLayers===null && $fcLayers===null) {
             $fcLayers = [128, 128];
@@ -59,8 +59,8 @@ class ActorNetwork extends AbstractNetwork implements Estimator
 
         $this->numActions = $numActions;
         $this->continuous = $continuous;
-        $this->action_low_bound = $actionMin;
-        $this->action_high_bound = $actionMax;
+        $this->lowerBound = $lowerBound;
+        $this->upperBound = $upperBound;
 
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
@@ -78,12 +78,12 @@ class ActorNetwork extends AbstractNetwork implements Estimator
             kernel_initializer:$actionKernelInitializer,
             name:'Action'
         );
-        // actionMin と actionMax から scale と shift を計算
-        if($actionMin!==null && $actionMax!==null) {
+        // lowerBound と upperBound から scale と shift を計算
+        if($lowerBound!==null && $upperBound!==null) {
             // scale = (max - min) / 2.0
-            $scale = $la->scal(0.5, $la->axpy($actionMin, $la->copy($actionMax), -1.0));
+            $scale = $la->scal(0.5, $la->axpy($lowerBound, $la->copy($upperBound), -1.0));
             // shift = (max + min) / 2.0
-            $shift = $la->scal(0.5, $la->axpy($actionMin, $la->copy($actionMax), 1.0));
+            $shift = $la->scal(0.5, $la->axpy($lowerBound, $la->copy($upperBound), 1.0));
             
             // 計算グラフ内で使えるように定数として保持
             $this->actionScale = $nn->gradient()->constant($scale);
@@ -120,7 +120,7 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         NDArray $state_input,       // (batchSize,numState)
         mixed $training=null,       // bool
         ?bool $deterministic=null,  // bool
-        ) : array
+        ) : array|NDArray
     {
         $g = $this->g;
         $add_batch_dim = false;
@@ -132,8 +132,9 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         $state_out = $this->stateLayers->forward($state_input,$training);   // (batchSize,units)
         $mean = $this->actionLayer->forward($state_out,$training);          // (batchSize,numActions)
         $logStd = $this->logStdLayer->forward($state_out, $training);       // (batchSize,numActions)
+        $logStd = $g->clipByValue($logStd,-20,2);
 
-        if(!$deterministic) {
+        if($deterministic) {
             $z = $mean;     // (batchSize,numActions)
         } else {
             $z = $g->add(   // (batchSize,numActions)
@@ -145,8 +146,8 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         }
         $action = $g->tanh($z); // (batchSize,numActions)
         $log_prob = $g->add(    // (batchSize,numActions)
-            $g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon)),// (batchSize,numActions)
-            $g->scale(-1,$this->logProb($mean,$logStd,$z)),                 // (batchSize)
+            $g->scale(-1,$g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon))),// (batchSize,numActions)
+            $this->logProb($mean,$logStd,$z),                 // (batchSize)
             trans:true,
         );
         if($log_prob->ndim()>1) {
@@ -154,7 +155,7 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         } else {
             $log_prob = $g->reduceSum($log_prob, keepdims:true);            // (batchSize,1)
         }
-        $scaled_action = $g->mul($this->action_high_bound,$action);
+        $scaled_action = $g->mul($this->upperBound,$action);
         if($add_batch_dim) {
             $scaled_action = $g->squeeze($scaled_action, axis:0);           // (numActions)
             $log_prob = $g->squeeze($log_prob, axis:0);                     // (1)
@@ -183,10 +184,11 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         }
 
         // continuous
-        [$action_out,$logStd] = $this->forward($states,false);
         if($std) {
+            [$action_out,$logStd] = $this->forward($states,training:false,deterministic:!$std);
             return [$action_out,$logStd];
         } else {
+            $action_out = $this->forward($states,training:false,deterministic:!$std);
             return $action_out;
         }
     }

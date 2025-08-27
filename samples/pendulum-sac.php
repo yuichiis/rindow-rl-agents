@@ -26,14 +26,14 @@ $plt = new Plot(null,$mo);
 ##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
 
 
-$numIterations = 300000;# 100000; # 300; # 1000; #
+$numIterations = 30000;# 100000; # 300; # 1000; #
 $targetScore = null; # -250; #
 $numAchievements = null; # 10; #
-$logInterval =   null; # 1000;  # 10; #
-$evalInterval =  1024; # 10; #
+$logInterval =   32; # 1000;  # 10; #
+$evalInterval =  256; # 10; #
 $numEvalEpisodes = 10;
 $maxExperienceSize = 10000; # 100000;
-$rolloutSteps = 1024; # 2048;
+//$rolloutSteps = 1024; # 2048;
 $batchSize = 64;# 32;#
 $epochs = 10;
 $gamma = 0.99;
@@ -66,19 +66,18 @@ $evalEnv = new PendulumV1($la);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $agent = new SAC(
     $la,
-    continuous:true,
     nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
-    rolloutSteps:$rolloutSteps,epochs:$epochs,batchSize:$batchSize,
+    batchSize:$batchSize,
     fcLayers:$fcLayers,
     //initialStd:$initialStd,
-    actionKernelInitializer:$actionKernelInitializer,
     gamma:$gamma,
     initailAlpha:$initailAlpha,
     autoTuneAlpha:$autoTuneAlpha,
     targetEntropy:$targetEntropy,
     targetUpdatePeriod:$targetUpdatePeriod,
     targetUpdateTau:$targetUpdateTau,
-    optimizerOpts:['lr'=>$learningRate],mo:$mo,
+    //actorOptimizerOpts:['lr'=>$learningRate],
+    mo:$mo,
 );
 $agent->summary();
 
@@ -102,20 +101,24 @@ if(!$agent->fileExists($filename)) {
     $arts = [];
     //$driver->agent()->initialize();
     $driver->metrics()->format('reward','%7.1f');
-    $driver->metrics()->format('loss','%+5.2e');
+    $driver->metrics()->format('Ploss','%+5.2e');
+    $driver->metrics()->format('Vloss','%+5.2e');
+    $driver->metrics()->format('Aloss','%+5.2e');
+    $driver->metrics()->format('alpha','%+5.2e');
     $history = $driver->train(
         numIterations:$numIterations,maxSteps:null,
         //metrics:['steps','reward','Ploss','Vloss','entropy','std','valSteps','valRewards'],
-        metrics:['reward','loss','alpha','std','valRewards'],
+        metrics:['reward','Ploss','Vloss','Aloss','alpha','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
         logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
     $iter = $la->array($history['iter']);
     //$arts[] = $plt->plot($iter,$la->array($history['steps']))[0];
     $arts[] = $plt->plot($iter,$la->array($history['reward']))[0];
-    $arts[] = $plt->plot($iter,fitplot($la,$history['loss'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Ploss'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Vloss'],200,0))[0];
+    $arts[] = $plt->plot($iter,fitplot($la,$history['Aloss'],200,0))[0];
     $arts[] = $plt->plot($iter,fitplot($la,$history['alpha'],200,0))[0];
-    $arts[] = $plt->plot($iter,fitplot($la,$history['std'],200,0))[0];
     //$arts[] = $plt->plot($iter,$la->array($history['valSteps']))[0];
     $arts[] = $plt->plot($iter,$la->array($history['valRewards']))[0];
     $plt->xlabel('Iterations');
@@ -123,7 +126,7 @@ if(!$agent->fileExists($filename)) {
     //$plt->legend($arts,['Policy Gradient','Sarsa']);
     #$plt->legend($arts,['steps','reward','epsilon','loss','valSteps','valReward']);
     //$plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
-    $plt->legend($arts,['reward','loss','alpha','std','valRewards']);
+    $plt->legend($arts,['reward','Ploss','Vloss','Aloss','alpha','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
     $plt->show();
     $agent->saveWeightsToFile($filename);

@@ -36,11 +36,11 @@ class SAC extends AbstractAgent
     protected ?Builder $nn;
     protected Model $actorModel;
     protected Model $criticModel;
-    protected Model $targetActor;
     protected Model $targetCritic;
     protected Variable $logAlpha;
     protected float $targetEntropy;
     protected int $batchSize;
+    protected int $startSteps;
     protected NDArray $lowerBound;
     protected NDArray $upperBound;
     protected float $targetUpdateTau;
@@ -60,6 +60,7 @@ class SAC extends AbstractAgent
         ?NDArray $upperBound=null,
         ?Policy $policy=null,
         ?int $batchSize=null,
+        ?int $startSteps=null,
         ?float $gamma=null,
         ?float $initailAlpha=null,
         ?bool $autoTuneAlpha=null,
@@ -67,10 +68,10 @@ class SAC extends AbstractAgent
         ?int $targetUpdatePeriod=null,
         ?float $targetUpdateTau=null,
         ?float $learningRate=null,
-        ?Optimizer $criticOptimizer=null,
-        ?array $criticOptimizerOpts=null,
         ?Optimizer $actorOptimizer=null,
         ?array $actorOptimizerOpts=null,
+        ?Optimizer $criticOptimizer=null,
+        ?array $criticOptimizerOpts=null,
         ?Optimizer $alphaOptimizer=null,
         ?array $alphaOptimizerOpts=null,
         ?array $fcLayers=null,
@@ -99,6 +100,7 @@ class SAC extends AbstractAgent
         }
 
         $batchSize ??= 32;
+        $startSteps ??= $batchSize;
         $gamma ??= 0.99;
         $initailAlpha ??= 0.2;
         $autoTuneAlpha ??= true;
@@ -108,6 +110,10 @@ class SAC extends AbstractAgent
         $criticOptimizerOpts ??=  ['lr'=>$learningRate];
         $actorOptimizerOpts  ??=  ['lr'=>$learningRate];
         $alphaOptimizerOpts  ??=  ['lr'=>$learningRate];
+
+        if($batchSize > $startSteps) {
+            $startSteps = $batchSize; 
+        }
 
         if($numActions===null) {
             throw new InvalidArgumentException("Either numActions or actionSpace must be specified.");
@@ -130,20 +136,17 @@ class SAC extends AbstractAgent
 
         $this->mo = $mo;
         $this->actorModel   = $this->buildActorNetwork(
-            $nn, $stateShape, $numActions, $actorNetworkOptions,
+            $nn, $stateShape, $numActions,
+            $lowerBound, $upperBound,
+            $actorNetworkOptions,
         );
         $this->criticModel  = $this->buildCriticNetwork(
             $nn, $stateShape, $numActions, $criticNetworkOptions,
         );
         //$this->actorModel->compile(optimizer:$actorOptimizer);
         //$this->criticModel->compile(optimizer:$criticOptimizer);
-        $this->targetActor = clone $this->actorModel;
         $this->targetCritic = clone $this->criticModel;
 
-        $policy ??= $this->buildPolicy(
-            $la,
-            $lowerBound,$upperBound,
-        );
         $g = $nn->gradient();
         if($autoTuneAlpha) {
             $logAlpha = $g->Variable($la->array([log($initailAlpha)], dtype:NDArray::float32), trainable:true);
@@ -159,6 +162,7 @@ class SAC extends AbstractAgent
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
         $this->batchSize = $batchSize;
+        $this->startSteps = $startSteps;
         $this->gamma = $gamma;
         $this->targetEntropy = $targetEntropy;
         $this->lowerBound = $lowerBound;
@@ -177,13 +181,11 @@ class SAC extends AbstractAgent
 
         //$this->actorVariables = $this->actorModel->variables();
         //$this->criticVariables = $this->criticModel->variables();
-        //$this->targetActorVariables = $this->targetActor->variables();
         //$this->targetCriticVariables = $this->targetCritic->variables();
 
 
         //$this->actorModelGraph = $nn->gradient->function([$this->actorModel,'forward']);
         //$this->criticModelGraph = $nn->gradient->function([$this->criticModel,'forward']);
-        //$this->targetActorGraph = $nn->gradient->function([$this->targetActor,'forward']);
         //$this->targetCriticGraph = $nn->gradient->function([$this->targetCritic,'forward']);
         $this->initialize();
         //$this->actorModelGraph = null;
@@ -193,12 +195,17 @@ class SAC extends AbstractAgent
     protected function buildActorNetwork(
         Builder $nn,
         array $stateShape, int $numActions,
+        NDArray $lowerBound, NDArray $upperBound,
         ?array $actorNetworkOptions=null,
     )
     {
         $actorNetworkOptions ??= [];
-        $network = new ActorNetwork($nn,
-            $stateShape, $numActions,
+        $actorNetworkOptions['lowerBound'] ??= $lowerBound;
+        $actorNetworkOptions['upperBound'] ??= $upperBound;
+        $network = new ActorNetwork(
+            $nn,
+            $stateShape,
+            $numActions,
             ...$actorNetworkOptions,
         );
         $network->build(array_merge([1],$stateShape));
@@ -238,11 +245,6 @@ class SAC extends AbstractAgent
     public function actorNetwork()
     {
         return $this->actorModel;
-    }
-
-    public function targetActorNetwork()
-    {
-        return $this->targetActor;
     }
 
     public function criticNetwork()
@@ -297,24 +299,15 @@ class SAC extends AbstractAgent
     public function syncWeights($tau=null)
     {
         //$this->copyWeights(
-        //    $this->targetActorVariables,
-        //    $this->actorVariables,
-        //    $tau);
-        //$this->copyWeights(
         //    $this->targetCriticVariables,
         //    $this->criticVariables,
         //    $tau);
 
         //$this->copyWeights(
-        //    $this->targetActor->variables(),
-        //    $this->actorModel->variables(),
-        //    $tau);
-        //$this->copyWeights(
         //    $this->targetCritic->variables(),
         //    $this->criticModel->variables(),
         //    $tau);
 
-        $this->targetActor->copyWeights($this->actorModel,$tau);
         $this->targetCritic->copyWeights($this->criticModel,$tau);
     }
 
@@ -350,7 +343,7 @@ class SAC extends AbstractAgent
 
     public function subStepLength() : int
     {
-        return $this->batchSize;
+        return $this->startSteps;
     }
 
     public function numRolloutSteps() : int
@@ -388,27 +381,18 @@ class SAC extends AbstractAgent
         }
     }
 
-    public function action() : NDArray
+    protected function doPolicyActions(NDArray $states,bool $training,?NDArray $masks) : NDArray
     {
-        normal_dist = ds.Normal(mean, std)
-        if deterministic:
-            z = mean
-        else:
-            z = normal_dist.sample()
-        action = tf.tanh(z)
-        log_prob = normal_dist.log_prob(z) - tf.math.log(1 - tf.pow(action, 2) + EPSILON)
-        if len(log_prob.shape) > 1:
-            log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=True)
-        else:
-            log_prob = tf.reduce_sum(log_prob, keepdims=True)
-        scaled_action = action * self.action_high_bound
-        if add_batch_dim:
-            scaled_action = tf.squeeze(scaled_action, axis=0)
-            log_prob = tf.squeeze(log_prob, axis=0)
-        if deterministic:
-            return scaled_action
-        return scaled_action, log_prob
-
+        $la = $this->la;
+        $actorModel = $this->actorModel;
+        if($training) {
+            [$actions,$logProb] = $actorModel($states,training:false, deterministic:false);
+        } else {
+            $actions = $actorModel($states,training:false, deterministic:true);
+        }
+        $actions = $la->maximum($la->copy($actions),$this->lowerBound);
+        $actions = $la->minimum($la->copy($actions),$this->upperBound);
+        return $actions;
     }
 
     public function update($experience) : float
@@ -449,7 +433,6 @@ class SAC extends AbstractAgent
         $training = true;//$g->Variable(true);
         $targetEntropy = $g->Variable($this->targetEntropy);
 
-        $targetActor = $this->targetActor;
         $targetCritic = $this->targetCritic;
         $criticModel = $this->criticModel;
         $actorModel = $this->actorModel;
@@ -512,7 +495,6 @@ class SAC extends AbstractAgent
         }
 
         if($this->enabledShapeInspection) {
-            $this->targetActor->setShapeInspection(false);
             $this->targetCritic->setShapeInspection(false);
             $this->actorModel->setShapeInspection(false);
             $this->criticModel->setShapeInspection(false);
@@ -531,15 +513,11 @@ class SAC extends AbstractAgent
         }
         if($this->metrics->isAttracted('Aloss')) {
             $alpha_loss = $K->scalar($alpha_loss->value());
-            $this->metrics->update('Vloss',$alpha_loss);
+            $this->metrics->update('Aloss',$alpha_loss);
         }
         if($this->metrics->isAttracted('alpha')) {
-            $alpha = $K->scalar($alpha->value());
-            $this->metrics->update('Vloss',$alpha_loss);
-        }
-        if($this->metrics->isAttracted('alpha')) {
-            $alpha = $K->scalar($alpha->value());
-            $this->metrics->update('Vloss',$alpha_loss);
+            $alpha = $K->scalar($la->reduceMean($alpha));
+            $this->metrics->update('alpha',$alpha);
         }
         return $actor_loss;
     }
