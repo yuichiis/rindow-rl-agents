@@ -98,6 +98,8 @@ class StepRunner extends AbstractRunner
         }
         $step = 0;
         while($step<$numIterations) {
+            $this->onStartRollout();
+            //echo "begin rollout\n";
             $rollout = 0;
             while($rollout<$numRolloutSteps && $step<$numIterations) {
                 //$action = $agent->action($states,training:true,info:$info);
@@ -134,6 +136,8 @@ class StepRunner extends AbstractRunner
             if($step<$subStepLen) {
                 continue;
             }
+            //echo "end rollout\n";
+            $this->onEndRollout();
             $agent->update($experience);
             // Update Progress bar and Logging metrics for short time.
             if(($step)%$logInterval==0 || ($step)%$evalInterval==0) {

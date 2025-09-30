@@ -40,14 +40,14 @@ $driver1 = new EpisodeRunner($la,$env,$egreedy,1);
 $driver2 = new EpisodeRunner($la,$env,$aegreedy,1);
 $driver3 = new EpisodeRunner($la,$env,$aegreedy2,1);
 $driver4 = new EpisodeRunner($la,$env,$ucb1,1);
-$driver0->setCustomStateFunction($stateFunc);
-$driver1->setCustomStateFunction($stateFunc);
-$driver2->setCustomStateFunction($stateFunc);
-$driver3->setCustomStateFunction($stateFunc);
-$driver4->setCustomStateFunction($stateFunc);
+$boltzmann->setCustomStateFunction($stateFunc);
+$egreedy->setCustomStateFunction($stateFunc);
+$aegreedy->setCustomStateFunction($stateFunc);
+$aegreedy2->setCustomStateFunction($stateFunc);
+$ucb1->setCustomStateFunction($stateFunc);
 
 $episodes = 250;#1000;
-$epochs = 100;#1000;#50;
+$epochs = 1000;#1000;#50;
 $dot = 100;
 $arts = [];
 $drivers = [$driver0,$driver1,$driver2,$driver3,$driver4];
@@ -61,10 +61,13 @@ $drivers = [$driver0,$driver1,$driver2,$driver3,$driver4];
 foreach($drivers as $driver) {
     $avg = $la->zeros($la->alloc([$episodes]));
     for($i=0;$i<$epochs;$i++) {
+        $driver->initialize();
         $driver->agent()->initialize();
         $driver->agent()->resetData();
-        $history = $driver->train($episodes,metrics:$metrics=['reward'],
-        evalInterval:$evalInterval=1,numEvalEpisodes:$numEvalEpisodes=0,verbose:$verbose=0);
+        $history = $driver->train(
+            $episodes,metrics:$metrics=['reward'],
+            evalInterval:1,numEvalEpisodes:0,verbose:0
+        );
         $rewards = $la->array($history['reward'],NDArray::float32);
         $la->axpy($rewards,$avg);
 

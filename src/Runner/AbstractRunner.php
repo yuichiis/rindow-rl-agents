@@ -59,6 +59,16 @@ abstract class AbstractRunner implements Runner
         $this->eventManager->notify(Runner::EVENT_END_EPISODE);
     }
 
+    protected function onStartRollout() : void
+    {
+        $this->eventManager->notify(Runner::EVENT_START_ROLLOUT);
+    }
+
+    protected function onEndRollout() : void
+    {
+        $this->eventManager->notify(Runner::EVENT_END_ROLLOUT);
+    }
+
     //public function setCustomRewardFunction(callable $func) : void
     //{
     //    $this->customRewardFunction = $func;

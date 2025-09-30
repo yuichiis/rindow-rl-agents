@@ -4,12 +4,10 @@ namespace Rindow\RL\Agents\Agent\SAC;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\Estimator\AbstractNetwork;
-use Rindow\RL\Agents\Util\GSDENoise;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Layer\Layer;
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Builder\Builder;
-
 use InvalidArgumentException;
 use LogicException;
 
@@ -17,13 +15,10 @@ class ActorNetwork extends AbstractNetwork implements Estimator
 {
     protected object $g;
     protected int $numActions;
-    protected int $featureDim;
     protected Model $stateLayers;
-    protected Layer $phiLayer;
     protected Layer $actionLayer;
     // protected Variable $logStd; // <<< 変更点: 状態に依存しないlogStd変数を削除
-    //protected Layer $logStdLayer; // <<< 変更点: 状態からlogStdを出力するレイヤーを追加
-    protected Model $gSDENoise;
+    protected Layer $logStdLayer; // <<< 変更点: 状態からlogStdを出力するレイヤーを追加
     protected Layer $criticLayer;
     protected bool $continuous;
     protected ?NDArray $lowerBound=null;
@@ -40,7 +35,9 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         ?string $actionActivation=null,
         mixed $actionKernelInitializer=null,
         mixed $criticKernelInitializer=null,
-        ?float $logStdInit=null,
+        // <<< 変更点: logStdレイヤー用の初期化方法を追加（任意）
+        mixed $logStdKernelInitializer=null,
+        mixed $logStdBiasInitializer=null,
         ?NDArray $lowerBound=null, ?NDArray $upperBound=null,
         //?float $initialStd=null, // <<< 変更点: initialStdは不要になるため削除
         ?bool $continuous=null,
@@ -66,7 +63,6 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         $this->lowerBound = $lowerBound;
         $this->upperBound = $upperBound;
 
-        $featureDim = array_pop($fcLayers);
         $this->stateLayers = $this->buildMlpLayers(
             $stateShape,
             convLayers:$convLayers,
@@ -76,12 +72,7 @@ class ActorNetwork extends AbstractNetwork implements Estimator
             kernelInitializer:$kernelInitializer,
             name:'State'
         );
-        $this->phiLayer = $nn->layers()->Dense(
-            $featureDim,
-            kernel_initializer:$actionKernelInitializer,
-            name:'Phi'
-        );
-        //$actionActivation ??= 'tanh';
+        $actionActivation ??= 'tanh';
         $this->actionLayer = $nn->layers()->Dense(
             $numActions,
             activation:$actionActivation,
@@ -99,19 +90,20 @@ class ActorNetwork extends AbstractNetwork implements Estimator
             $this->actionScale = $nn->gradient()->constant($scale);
             $this->actionShift = $nn->gradient()->constant($shift);
         }
-        $this->gSDENoise = new GSDENoise($nn,$numActions,$featureDim,logStdInit:$logStdInit,name:'GSDENoise');
+
+        $logStdKernelInitializer ??= 'zeros'; // 学習初期の標準偏差をexp(0)=1.0にするため'zeros'で初期化
+        //$logStdBiasInitializer ??= 'zeros';
+        // --- ▲▲▲ 変更点 ▲▲▲ ---
+        $this->logStdLayer = $nn->layers()->Dense(
+            $numActions,
+            // 活性化関数はなし（線形出力）
+            kernel_initializer:$logStdKernelInitializer,
+            //bias_initializer:$logStdBiasInitializer,
+            use_bias:false,
+            name:'LogStd'
+        );
+        // --- ▲▲▲ 変更点 ▲▲▲ ---
         $this->numActions = $numActions;
-        $this->featureDim = $featureDim;
-    }
-
-    public function resetNoise() : void
-    {
-        $this->gSDENoise->resetNoise();
-    }
-
-    public function maybeResample(int $sdeSampleFreq) : void
-    {
-        $this->gSDENoise->maybeResample($sdeSampleFreq);
     }
 
     protected function logProb(NDArray $mean, NDArray $logStd, NDArray $value) : NDArray
@@ -136,35 +128,28 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         ) : array|NDArray
     {
         $g = $this->g;
-        $la = $this->builder->backend()->primaryLA();
         $add_batch_dim = false;
         if($state_input->ndim() == 1) {
             $state_input = $g->expanDims($state_input, axis:0); // if(batchSize=1) (1,numState)
             $add_batch_dim = true;
         }
 
-        //echo $la->shapeToString($state_input->shape()).":";
-        //echo sprintf("min=%5.3f",$la->min($state_input));
-        //echo sprintf(",max=%5.3f",$la->max($state_input))."\n";
         $state_out = $this->stateLayers->forward($state_input,$training);   // (batchSize,units)
-        $state_out = $this->phiLayer->forward($state_out,$training);
-        //echo $la->shapeToString($state_out->shape()).":";
-        //echo sprintf("min=%5.3f",$la->min($state_out));
-        //echo sprintf(",max=%5.3f",$la->max($state_out))."\n";
         $mean = $this->actionLayer->forward($state_out,$training);          // (batchSize,numActions)
-        //echo $la->shapeToString($mean->shape()).":";
-        //echo sprintf("min=%5.3f",$la->min($mean));
-        //echo sprintf(",max=%5.3f",$la->max($mean))."\n";
-        $z = $this->gSDENoise->sample(                                      // (batchSize,numActions)
-            $mean, $state_out, deterministic:$deterministic
-        );
-        //echo $la->shapeToString($z->shape()).":";
-        //echo sprintf("min=%5.3f",$la->min($z));
-        //echo sprintf(",max=%5.3f",$la->max($z))."\n";
-        $logStd = $this->gSDENoise->logStd();                               // (numActions)
+        $logStd = $this->logStdLayer->forward($state_out, $training);       // (batchSize,numActions)
         //$logStd = $g->clipByValue($logStd,-20,2);
-        //$logStd = $g->clipByValue($logStd,0,3);
+        $logStd = $g->clipByValue($logStd,0,3);
 
+        if($deterministic) {
+            $z = $mean;     // (batchSize,numActions)
+        } else {
+            $z = $g->add(   // (batchSize,numActions)
+                $mean,
+                $g->mul(
+                    $g->exp($logStd),
+                    $g->randomNormal($mean)
+            )); 
+        }
         $action = $g->tanh($z); // (batchSize,numActions)
         $log_prob = $g->add(    // (batchSize,numActions)
             $g->scale(-1,$g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon))),// (batchSize,numActions)
@@ -181,11 +166,6 @@ class ActorNetwork extends AbstractNetwork implements Estimator
             $scaled_action = $g->squeeze($scaled_action, axis:0);           // (numActions)
             $log_prob = $g->squeeze($log_prob, axis:0);                     // (1)
         }
-        //echo $la->shapeToString($scaled_action->shape()).":";
-        //echo sprintf("act:min=%+6.3f",$la->min($scaled_action));
-        //echo sprintf(",max=%+6.3f",$la->max($scaled_action));
-        //echo sprintf(",mean:min=%+6.3f",$la->min($mean));
-        //echo sprintf(",max=%+6.3f",$la->max($mean))."\n";
         if($deterministic) {
             return $scaled_action;                                          // (batchSize,numActions) or no-batchsize
         }

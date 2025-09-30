@@ -16,7 +16,6 @@ use Rindow\RL\Agents\Policy;
 use Rindow\RL\Agents\Estimator;
 use Rindow\RL\Agents\ReplayBuffer;
 use Rindow\RL\Agents\Network;
-use Rindow\RL\Agents\Runner;
 use Rindow\RL\Agents\EventManager;
 use Rindow\RL\Agents\Policy\NormalDistribution;
 use Rindow\RL\Agents\Agent\AbstractAgent;
@@ -42,11 +41,8 @@ class SAC extends AbstractAgent
     protected Model $targetCritic;
     protected Variable $logAlpha;
     protected float $targetEntropy;
-    protected int $rolloutSteps;
-    protected int $epochs;
     protected int $batchSize;
     protected int $startSteps;
-    protected bool $useSdeAtWarmup;
     protected NDArray $lowerBound;
     protected NDArray $upperBound;
     protected float $targetUpdateTau;
@@ -65,12 +61,8 @@ class SAC extends AbstractAgent
         ?NDArray $lowerBound=null,
         ?NDArray $upperBound=null,
         ?Policy $policy=null,
-        ?int $rolloutSteps=null,
-        ?int $epochs=null,
         ?int $batchSize=null,
         ?int $startSteps=null,
-        ?bool $useSdeAtWarmup=null,
-        ?float $logStdInit=null,
         ?float $gamma=null,
         ?float $initailAlpha=null,
         ?bool $autoTuneAlpha=null,
@@ -109,11 +101,8 @@ class SAC extends AbstractAgent
             $numActions ??= $shape[0];
         }
 
-        $rolloutSteps ??= 1;
-        $epochs ??= 1;
         $batchSize ??= 32;
         $startSteps ??= $batchSize;
-        $useSdeAtWarmup ??= false;
         $gamma ??= 0.99;
         $initailAlpha ??= 0.2;
         $autoTuneAlpha ??= true;
@@ -151,8 +140,7 @@ class SAC extends AbstractAgent
         $this->actorModel   = $this->buildActorNetwork(
             $nn, $stateShape, $numActions,
             $lowerBound, $upperBound,
-            logStdInit:$logStdInit,
-            actorNetworkOptions:$actorNetworkOptions,
+            $actorNetworkOptions,
         );
         $this->criticModel  = $this->buildCriticNetwork(
             $nn, $stateShape, $numActions, $criticNetworkOptions,
@@ -175,11 +163,8 @@ class SAC extends AbstractAgent
         $this->nn = $nn;
         $this->stateShape = $stateShape;
         $this->numActions = $numActions;
-        $this->rolloutSteps = $rolloutSteps;
-        $this->epochs = $epochs;
         $this->batchSize = $batchSize;
         $this->startSteps = $startSteps;
-        $this->useSdeAtWarmup = $useSdeAtWarmup;
         $this->gamma = $gamma;
         $this->targetEntropy = $targetEntropy;
         $this->lowerBound = $lowerBound;
@@ -209,37 +194,23 @@ class SAC extends AbstractAgent
         //$this->criticModelGraph = null;
     }
 
-    public function register(?EventManager $eventManager=null) : void
-    {
-        parent::register($eventManager);
-        //$eventManager->attach(Runner::EVENT_END_ROLLOUT,[$this->actorModel,'resetNoise']);
-        $eventManager->attach(Runner::EVENT_START_ROLLOUT,[$this->actorModel,'resetNoise']);
-    }
-
     protected function buildActorNetwork(
         Builder $nn,
         array $stateShape, int $numActions,
         NDArray $lowerBound, NDArray $upperBound,
-        ?float $logStdInit,
         ?array $actorNetworkOptions=null,
     )
     {
         $actorNetworkOptions ??= [];
         $actorNetworkOptions['lowerBound'] ??= $lowerBound;
         $actorNetworkOptions['upperBound'] ??= $upperBound;
-        if($logStdInit) {
-            $actorNetworkOptions['logStdInit'] ??= $logStdInit;
-        }
         $network = new ActorNetwork(
             $nn,
             $stateShape,
             $numActions,
             ...$actorNetworkOptions,
         );
-        //$network->build(array_merge([1],$stateShape));
-        $la = $nn->backend()->primaryLA();
-        $state = $la->zeros($la->alloc(array_merge([1],$stateShape)));
-        $network($state);
+        $network->build(array_merge([1],$stateShape));
         return $network;
     }
 
@@ -255,11 +226,7 @@ class SAC extends AbstractAgent
             $stateShape, $numActions,
             ...$criticNetworkOptions,
         );
-        //$network->build(array_merge([1],$stateShape),[1,$numActions]);
-        $la = $nn->backend()->primaryLA();
-        $state = $la->zeros($la->alloc(array_merge([1],$stateShape)));
-        $action = $la->zeros($la->alloc([1,$numActions]));
-        $network($state,$action);
+        $network->build(array_merge([1],$stateShape),[1,$numActions]);
         return $network;
     }
 
@@ -383,7 +350,7 @@ class SAC extends AbstractAgent
 
     public function numRolloutSteps() : int
     {
-        return $this->rolloutSteps;
+        return 1;
     }
 
     protected function estimator() : Estimator
@@ -422,13 +389,8 @@ class SAC extends AbstractAgent
         $actorModel = $this->actorModel;
         if($training) {
             [$actions,$logProb,$logStd] = $actorModel($states,training:false, deterministic:false);
-            //echo $la->shapeToString($actions->shape()).":";
-            //echo sprintf("min=%5.3f",$la->min($actions));
-            //echo sprintf(",max=%5.3f",$la->max($actions))."\n";
         } else {
             $actions = $actorModel($states,training:false, deterministic:true);
-            //echo sprintf("min=%5.3f",$la->min($actions));
-            //echo sprintf(",max=%5.3f",$la->max($actions))."\n";
         }
         $actions = $la->copy($actions);
         $actions = $la->maximum($actions,$this->lowerBound);
@@ -446,7 +408,7 @@ class SAC extends AbstractAgent
         ) : array
     {
         $la = $this->la;
-        if($step < $this->startSteps && !$this->useSdeAtWarmup) {
+        if($step < $this->startSteps) {
             $actions = $la->multiply(
                 $this->upperBound,
                 $la->randomUniform([$this->numActions],-1.0,1.0),
@@ -463,7 +425,6 @@ class SAC extends AbstractAgent
 
     public function update($experience) : float
     {
-        //echo "begin update\n";
         $la = $this->la;
         $nn = $this->nn; 
         $K = $nn->backend(); 
@@ -476,129 +437,121 @@ class SAC extends AbstractAgent
         if($experience->size()<$batchSize) {
             return 0.0;
         }
-        //echo "update\n";
+        $transition = $experience->last();
+        $endEpisode = $transition[4];  // done
 
-        for($epoch=0;$epoch<$this->epochs;$epoch++) {
-            $this->actorModel->resetNoise();
+        $batch = $experience->sample($batchSize);
+        [$obs,$actions,$nextObs,$rewards,$done,$truncated,$info] = $batch;
+        $state_batch = $this->extractStateList($obs);
+        $next_state_batch = $this->extractStateList($nextObs);
 
-            $transition = $experience->last();
-            $endEpisode = $transition[4];  // done
+        $state_batch = $la->stack($state_batch);
+        $action_batch = $la->stack($actions);
+        $next_state_batch = $la->stack($next_state_batch);
+        $reward_batch = $la->expandDims($la->array($rewards),axis:-1);
+        $done_batch = $la->array($done);
 
-            $batch = $experience->sample($batchSize);
-            [$obs,$actions,$nextObs,$rewards,$done,$truncated,$info] = $batch;
-            $state_batch = $this->extractStateList($obs);
-            $next_state_batch = $this->extractStateList($nextObs);
+        $gamma = $g->Variable($gamma);
+        $state_batch = $g->Variable($state_batch);
+        $action_batch = $g->Variable($action_batch);
+        $next_state_batch = $g->Variable($next_state_batch);
+        $reward_batch = $g->Variable($reward_batch);
+        //$done_batch = $g->Variable($done_batch);
+        $discount_batch = $la->expandDims($la->increment($la->copy($done_batch),beta:1,alpha:-1),axis:-1);
+        $training = true;//$g->Variable(true);
+        $targetEntropy = $g->Variable($this->targetEntropy);
 
-            $state_batch = $la->stack($state_batch);
-            $action_batch = $la->stack($actions);
-            $next_state_batch = $la->stack($next_state_batch);
-            $reward_batch = $la->expandDims($la->array($rewards),axis:-1);
-            $done_batch = $la->array($done);
+        $targetCritic = $this->targetCritic;
+        $criticModel = $this->criticModel;
+        $actorModel = $this->actorModel;
+        $logAlpha = $this->logAlpha;
 
-            $gamma = $g->Variable($gamma);
-            $state_batch = $g->Variable($state_batch);
-            $action_batch = $g->Variable($action_batch);
-            $next_state_batch = $g->Variable($next_state_batch);
-            $reward_batch = $g->Variable($reward_batch);
-            //$done_batch = $g->Variable($done_batch);
-            $discount_batch = $la->expandDims($la->increment($la->copy($done_batch),beta:1,alpha:-1),axis:-1);
-            $training = true;//$g->Variable(true);
-            $targetEntropy = $g->Variable($this->targetEntropy);
+        $alpha = $la->exp($la->copy($this->logAlpha));
+        $critic_loss = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$actorModel,$targetCritic,$criticModel,
+                $next_state_batch,$reward_batch,$gamma,
+                $state_batch,$action_batch,$training,$alpha,$discount_batch,
+            ) {
+                [$next_actions, $next_log_prob, $logStd] = $actorModel($next_state_batch, $training);
+                [$target_q1_value_next,$target_q2_value_next] = $targetCritic($next_state_batch, $next_actions, $training);
+                $target_q_next = $g->minimum($target_q1_value_next, $target_q2_value_next);
 
-            $targetCritic = $this->targetCritic;
-            $criticModel = $this->criticModel;
-            $actorModel = $this->actorModel;
-            $logAlpha = $this->logAlpha;
+                $soft_target = $g->sub($target_q_next, $g->mul($alpha,$next_log_prob));
+                $y = $g->add($reward_batch, $g->scale($gamma, $g->mul($discount_batch, $soft_target)));
+                [$q1_current, $q2_current] = $criticModel($state_batch, $action_batch);
 
-            $alpha = $la->exp($la->copy($this->logAlpha));
-            $critic_loss = $nn->with($tape=$g->GradientTape(),function () use (
-                    $g,$actorModel,$targetCritic,$criticModel,
-                    $next_state_batch,$reward_batch,$gamma,
-                    $state_batch,$action_batch,$training,$alpha,$discount_batch,
-                ) {
-                    [$next_actions, $next_log_prob, $logStd] = $actorModel($next_state_batch, training:$training, deterministic:false);
-                    [$target_q1_value_next,$target_q2_value_next] = $targetCritic($next_state_batch, $next_actions, $training);
-                    $target_q_next = $g->minimum($target_q1_value_next, $target_q2_value_next);
-
-                    $soft_target = $g->sub($target_q_next, $g->mul($alpha,$next_log_prob));
-                    $y = $g->add($reward_batch, $g->scale($gamma, $g->mul($discount_batch, $soft_target)));
-                    [$q1_current, $q2_current] = $criticModel($state_batch, $action_batch);
-
-                    $critic_loss = $g->add(
-                        $g->reduceMean($g->square($g->sub($y, $q1_current))),
-                        $g->reduceMean($g->square($g->sub($y, $q2_current))),
-                    );
-                    return $critic_loss;
-                }
-            );
-            $criticTrainableVariables = $this->criticModel->trainableVariables();
-            $critic_grad = $tape->gradient($critic_loss, $criticTrainableVariables);
-            $this->criticOptimizer->update($criticTrainableVariables,$critic_grad);
-            //echo $K->toString($actionValues,null,true)."\n";
-
-            [$actor_loss,$pi_log_prob,$logStd] = $nn->with($tape=$g->GradientTape(),function () use (
-                    $g,$actorModel,$criticModel,
-                    $gamma,
-                    $state_batch,$training,$alpha,
-                ) {
-                    [$pi_action, $pi_log_prob, $logStd] = $actorModel($state_batch, training:true, deterministic:false);
-                    [$q1_pi, $q2_pi] = $criticModel($state_batch, $pi_action);
-                    $min_q_pi = $g->minimum($q1_pi, $q2_pi);
-                    $actor_loss = $g->reduceMean($g->sub($g->mul($alpha, $pi_log_prob), $min_q_pi));
-
-                    return [$actor_loss,$pi_log_prob,$logStd];
-                }
-            );
-            $actorTrainableVariables = $this->actorModel->trainableVariables();
-            $actor_grad = $tape->gradient($actor_loss, $actorTrainableVariables);
-            $this->actorOptimizer->update($actorTrainableVariables,$actor_grad);
-
-
-            $alpha_loss = $nn->with($tape=$g->GradientTape(),function () use (
-                    $g,$logAlpha,$pi_log_prob,$targetEntropy,
-                ) {
-                    $alpha_loss = $g->scale(-1,$g->reduceMean($g->mul($logAlpha, $g->add($g->stopGradient($pi_log_prob), $targetEntropy))));
-                    return $alpha_loss;
-                }
-            );
-            if($this->alphaOptimizer) {
-                $alpha_grad = $tape->gradient($alpha_loss, [$logAlpha]);
-                $this->alphaOptimizer->update([$logAlpha],$alpha_grad);
+                $critic_loss = $g->add(
+                    $g->reduceMean($g->square($g->sub($y, $q1_current))),
+                    $g->reduceMean($g->square($g->sub($y, $q2_current))),
+                );
+                return $critic_loss;
             }
+        );
+        $criticTrainableVariables = $this->criticModel->trainableVariables();
+        $critic_grad = $tape->gradient($critic_loss, $criticTrainableVariables);
+        $this->criticOptimizer->update($criticTrainableVariables,$critic_grad);
+        //echo $K->toString($actionValues,null,true)."\n";
 
-            if($this->enabledShapeInspection) {
-                $this->targetCritic->setShapeInspection(false);
-                $this->actorModel->setShapeInspection(false);
-                $this->criticModel->setShapeInspection(false);
-                $this->enabledShapeInspection = false;
-            }
+        [$actor_loss,$pi_log_prob,$logStd] = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$actorModel,$criticModel,
+                $gamma,
+                $state_batch,$training,$alpha,
+            ) {
+                [$pi_action, $pi_log_prob, $logStd] = $actorModel($state_batch);
+                [$q1_pi, $q2_pi] = $criticModel($state_batch, $pi_action);
+                $min_q_pi = $g->minimum($q1_pi, $q2_pi);
+                $actor_loss = $g->reduceMean($g->sub($g->mul($alpha, $pi_log_prob), $min_q_pi));
 
-            $this->updateTarget($endEpisode);
+                return [$actor_loss,$pi_log_prob,$logStd];
+            }
+        );
+        $actorTrainableVariables = $this->actorModel->trainableVariables();
+        $actor_grad = $tape->gradient($actor_loss, $actorTrainableVariables);
+        $this->actorOptimizer->update($actorTrainableVariables,$actor_grad);
 
-            $actor_loss = $K->scalar($actor_loss->value());
-            if($this->metrics->isAttracted('Ploss')) {
-                $this->metrics->update('Ploss',$actor_loss);
-            }
-            if($this->metrics->isAttracted('Vloss')) {
-                $critic_loss = $K->scalar($critic_loss->value());
-                $this->metrics->update('Vloss',$critic_loss);
-            }
-            if($this->metrics->isAttracted('Aloss')) {
-                $alpha_loss = $K->scalar($alpha_loss->value());
-                $this->metrics->update('Aloss',$alpha_loss);
-            }
-            if($this->metrics->isAttracted('alpha')) {
-                $alpha = $K->scalar($la->reduceMean($alpha));
-                $this->metrics->update('alpha',$alpha);
-            }
-            if($this->metrics->isAttracted('std')) {
-                $std = $la->sum($la->exp($la->copy($logStd)))/$logStd->size();
-                $std = $la->scalar($std);
-                $this->metrics->update('std',$std);
-            }
 
+        $alpha_loss = $nn->with($tape=$g->GradientTape(),function () use (
+                $g,$logAlpha,$pi_log_prob,$targetEntropy,
+            ) {
+                $alpha_loss = $g->scale(-1,$g->reduceMean($g->mul($logAlpha, $g->add($g->stopGradient($pi_log_prob), $targetEntropy))));
+                return $alpha_loss;
+            }
+        );
+        if($this->alphaOptimizer) {
+            $alpha_grad = $tape->gradient($alpha_loss, [$logAlpha]);
+            $this->alphaOptimizer->update([$logAlpha],$alpha_grad);
         }
-        //echo "end update\n";
+
+        if($this->enabledShapeInspection) {
+            $this->targetCritic->setShapeInspection(false);
+            $this->actorModel->setShapeInspection(false);
+            $this->criticModel->setShapeInspection(false);
+            $this->enabledShapeInspection = false;
+        }
+        
+        $this->updateTarget($endEpisode);
+
+        $actor_loss = $K->scalar($actor_loss->value());
+        if($this->metrics->isAttracted('Ploss')) {
+            $this->metrics->update('Ploss',$actor_loss);
+        }
+        if($this->metrics->isAttracted('Vloss')) {
+            $critic_loss = $K->scalar($critic_loss->value());
+            $this->metrics->update('Vloss',$critic_loss);
+        }
+        if($this->metrics->isAttracted('Aloss')) {
+            $alpha_loss = $K->scalar($alpha_loss->value());
+            $this->metrics->update('Aloss',$alpha_loss);
+        }
+        if($this->metrics->isAttracted('alpha')) {
+            $alpha = $K->scalar($la->reduceMean($alpha));
+            $this->metrics->update('alpha',$alpha);
+        }
+        if($this->metrics->isAttracted('std')) {
+            $std = $la->sum($la->exp($la->copy($logStd)))/$logStd->size();
+            $std = $la->scalar($std);
+            $this->metrics->update('std',$std);
+        }
         return $actor_loss;
     }
 }

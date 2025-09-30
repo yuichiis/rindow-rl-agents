@@ -11,6 +11,8 @@ interface Runner
     const EVENT_END_EPISODE   = 'end-episode';
     const EVENT_START_STEP    = 'start-step';
     const EVENT_END_STEP      = 'end-step';
+    const EVENT_START_ROLLOUT = 'start-rollout';
+    const EVENT_END_ROLLOUT   = 'end-rollout';
 
     public function agent() : Agent;
 
