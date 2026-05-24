@@ -30,17 +30,20 @@ $numIterations = 50000;# 100000; # 300; # 1000; #
 $targetScore = null; # -250; #
 $numAchievements = null; # 10; #
 $logInterval =   10; #32; # 1000;  # 10; #
-$evalInterval =  1000;# 256; # 10; #
+$evalInterval =  1024;# 256; # 10; #
 $numEvalEpisodes = 10; # 100;
 $maxExperienceSize = 50000; # 100000;
-//$rolloutSteps = 1024; # 2048;
+$rolloutSteps = 32;
+$epochs = 32;
 $batchSize = 512; # 100;# 32;#
 $startSteps = 0; # 5000; # $batchSize;
+$useSdeAtWarmup = true;
+$logStdInit = -3.67;
 $gamma = 0.9999;
 //$gamma = 0.9;#  # <= continuousmountaincar 0.9;# 0.99;
-$initailAlpha = 2.0; # 0.2;
+$initailAlpha = 0.2;
 $autoTuneAlpha = true; #true;
-$targetEntropy = -2; // -numActions
+$targetEntropy = -1.0; // -numActions
 $targetUpdatePeriod = 1;    #1;    #5;    # 200;#5;    #5;   #5;   # 200;#
 $targetUpdateTau = 1e-2; #1e-3;#0.005;#0.005;#0.005;#1.0;#0.025;#0.01;#0.05;#1.0;#
 $fcLayers = [64,64];
@@ -56,13 +59,14 @@ $learningRate = 3e-4;# 1e-3;#1e-5;#
 //$std = 2.7; #2.7;
 //$minval = log($std-0.003);
 //$maxval = log($std+0.003);
-$minval = 0.05;
-$maxval = 0.05;
-$logStdInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
-$actorNetworkOptions = [
-    'logStdKernelInitializer' => $logStdInitializer,
-    //'logStdBiasInitializer' => $logStdInitializer,
-];
+//$minval = 0.05;
+//$maxval = 0.05;
+//$logStdInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
+//$actorNetworkOptions = [
+//    'logStdKernelInitializer' => $logStdInitializer,
+//    //'logStdBiasInitializer' => $logStdInitializer,
+//];
+$logStdInitializer = null;
 
 $env = new ContinuousMountainCarV0($la);
 $stateShape = $env->observationSpace()->shape();
@@ -121,7 +125,10 @@ $agent = new SAC(
     $la,
     nn:$nn,stateShape:$stateShape,actionSpace:$actionSpace,
     batchSize:$batchSize,
+    rolloutSteps:$rolloutSteps,
+    epochs:$epochs,
     startSteps:$startSteps,
+    useSdeAtWarmup:$useSdeAtWarmup,
     fcLayers:$fcLayers,
     //initialStd:$initialStd,
     gamma:$gamma,
@@ -133,7 +140,8 @@ $agent = new SAC(
     learningRate:$learningRate,
     //actorOptimizerOpts:$actorOptimizerOpts,
     //criticOptimizerOpts:$criticOptimizerOpts,
-    actorNetworkOptions:$actorNetworkOptions,
+    logStdInit:$logStdInit,
+    //actorNetworkOptions:$actorNetworkOptions,
     mo:$mo,
 );
 $agent->summary();
@@ -165,6 +173,7 @@ if(!$agent->fileExists($filename)) {
     $driver->metrics()->format('Vloss','%+5.2e');
     $driver->metrics()->format('Aloss','%+5.2e');
     $driver->metrics()->format('alpha','%+5.2e');
+    $driver->metrics()->format('std','%6.4f');
     $driver->metrics()->format('valSteps', '%5.1f');
     $driver->metrics()->format('valRewards', '%5.1f');
     $history = $driver->train(
@@ -172,7 +181,7 @@ if(!$agent->fileExists($filename)) {
         //metrics:['steps','reward','Ploss','Vloss','Aloss','alpha','std','valSteps','valRewards'],
         metrics:['steps','reward','Ploss','Vloss','alpha','std','valSteps','valRewards'],
         evalInterval:$evalInterval,numEvalEpisodes:$numEvalEpisodes,
-        logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:2,
+        logInterval:$logInterval,targetScore:$targetScore,numAchievements:$numAchievements,verbose:1,
     );
     $iter = $la->array($history['iter']);
     $arts[] = $plt->plot($iter,fitplot($la,$history['steps'],100,200))[0];
