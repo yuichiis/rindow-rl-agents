@@ -1,12 +1,12 @@
 <?php
-namespace Rindow\RL\Agents\Distribution;
+namespace Rindow\RL\Agents\DistPolicy;
 
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Agents\Distribution;
+use Rindow\RL\Agents\DistPolicy;
 use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Gradient\Variable;
 
-abstract class AbstractDistribution implements Distribution
+abstract class AbstractDistPolicy implements DistPolicy
 {
     protected Builder $nn;
     protected object $g;

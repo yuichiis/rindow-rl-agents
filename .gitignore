@@ -1,5 +1,6 @@
 vendor/
 .vscode/
+.env/
 *.log
 composer.lock
 composer.phar

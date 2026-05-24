@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Distribution;
+namespace Rindow\RL\Agents\DistPolicy;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;

@@ -1,11 +1,11 @@
 <?php
-namespace RindowTest\RL\Agents\Distribution\TanhBijectorTest;
+namespace RindowTest\RL\Agents\DistPolicy\TanhBijectorTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Distribution\TanhBijector;
+use Rindow\RL\Agents\DistPolicy\TanhBijector;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;

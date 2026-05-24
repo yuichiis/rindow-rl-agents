@@ -1,18 +1,18 @@
 <?php
-namespace RindowTest\RL\Agents\Distribution\StateDependentNoiseDistributionTest;
+namespace RindowTest\RL\Agents\DistPolicy\StateDependentNoiseDistPolicyTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\NeuralNetworks\Gradient\Module;
-use Rindow\RL\Agents\Distribution\StateDependentNoiseDistribution;
+use Rindow\RL\Agents\DistPolicy\StateDependentNoiseDistPolicy;
 use Rindow\Math\Plot\Plot;
 use LogicException;
 use InvalidArgumentException;
 use Throwable;
 
-class StateDependentNoiseDistributionTest extends TestCase
+class StateDependentNoiseDistPolicyTest extends TestCase
 {
     public function newMatrixOperator()
     {
@@ -62,8 +62,8 @@ class StateDependentNoiseDistributionTest extends TestCase
         echo "state:".$la->shapeToString($state->shape())."\n";
 
         echo "==================================================\n";
-        echo "new StateDependentNoiseDistribution(n_actions)\n";
-        $dist = new StateDependentNoiseDistribution($nn, $n_actions, full_std:true, squash_output:false);
+        echo "new StateDependentNoiseDistPolicy(n_actions)\n";
+        $dist = new StateDependentNoiseDistPolicy($nn, $n_actions, full_std:true, squash_output:false);
 
         echo "==================================================\n";
         echo "[actorModel, log_std] = probaDistributionNet(numStates)\n";

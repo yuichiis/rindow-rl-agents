@@ -1,9 +1,9 @@
 <?php
-namespace Rindow\RL\Agents\Distribution;
+namespace Rindow\RL\Agents\DistPolicy;
 
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Builder\Builder;
-use Rindow\NeuralNetworks\Distribution\Distribution as NNDistribution;
+use Rindow\RL\Agents\Distribution;
 
 /**
  *   Distribution class for using generalized State Dependent Exploration (gSDE).
@@ -26,7 +26,7 @@ use Rindow\NeuralNetworks\Distribution\Distribution as NNDistribution;
  *   :param epsilon: small value to avoid NaN due to numerical imprecision.
  * 
  */
-class StateDependentNoiseDistribution extends AbstractDistribution
+class StateDependentNoiseDistPolicy extends AbstractDistPolicy
 {
     public ?TanhBijector $bijector;
     public ?int $latent_sde_dim = null;
@@ -38,8 +38,8 @@ class StateDependentNoiseDistribution extends AbstractDistribution
     public float $epsilon;
     public bool $learn_features;
 
-    public NNDistribution $distribution;
-    public NNDistribution $weights_dist;
+    public Distribution $distribution;
+    public Distribution $weights_dist;
     protected Variable $latent_sde;
     public Variable $exploration_mat;
     public Variable $exploration_matrices;
@@ -75,7 +75,7 @@ class StateDependentNoiseDistribution extends AbstractDistribution
         }
     }
 
-    public function distribution() : NNDistribution
+    public function distribution() : Distribution
     {
         return $this->distribution;
     }
@@ -133,7 +133,7 @@ class StateDependentNoiseDistribution extends AbstractDistribution
         //echo "log_std:(".implode(',',$log_std->shape()).")\n";
         $std = $this->get_std($log_std);
         //echo "std:(".implode(',',$std->shape()).")\n";
-        $this->weights_dist = $this->nn->distributions->Normal($g->zerosLike($std), $std);
+        $this->weights_dist = new Distribution\Normal($this->nn,$g->zerosLike($std), $std);
         echo "save weights_dist\n";
         # Reparametrization trick to pass gradients
         $this->exploration_mat = $this->weights_dist->sample();
@@ -196,7 +196,7 @@ class StateDependentNoiseDistribution extends AbstractDistribution
         Variable $mean_actions,  // from the action layer output
         Variable $log_std,       // from trainable variable in the policy network
         Variable $latent_sde,    // from the layer before the action 
-    ) : StateDependentNoiseDistribution
+    ) : StateDependentNoiseDistPolicy
     {
         echo "func probaDistribution()\n";
         $g = $this->g;
@@ -204,7 +204,7 @@ class StateDependentNoiseDistribution extends AbstractDistribution
         $this->latent_sde = ($this->learn_features) ? $latent_sde : $g->stopGradient($latent_sde);
         echo "save latent_sde\n";
         $variance = $g->matmul($g->square($this->latent_sde), $g->square($this->get_std($log_std)));
-        $this->distribution = $this->nn->distributions->Normal($mean_actions, $g->sqrt($g->add($variance, $this->epsilon)));
+        $this->distribution = new Distribution\Normal($this->nn, $mean_actions, $g->sqrt($g->add($variance, $this->epsilon)));
         echo "save distribution\n";
         return $this;
     }
