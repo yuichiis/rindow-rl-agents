@@ -162,19 +162,15 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         //echo sprintf("min=%5.3f",$la->min($z));
         //echo sprintf(",max=%5.3f",$la->max($z))."\n";
         $logStd = $this->gSDENoise->logStd();                               // (numActions)
-        //$logStd = $g->clipByValue($logStd,-20,2);
-        //$logStd = $g->clipByValue($logStd,0,3);
+        $logStd = $g->clipByValue($logStd,-20,2);
 
         $action = $g->tanh($z); // (batchSize,numActions)
-        $log_prob = $g->add(    // (batchSize,numActions)
-            $g->scale(-1,$g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon))),// (batchSize,numActions)
-            $this->logProb($mean,$logStd,$z),                 // (batchSize)
-            trans:true,
+        $log_prob = $g->add(
+            $this->logProb($mean, $logStd, $z),
+            $g->scale(-1, $g->reduceSum($g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon)), axis:-1))
         );
-        if($log_prob->ndim()>1) {
-            $log_prob = $g->reduceSum($log_prob, axis:1, keepdims:true);    // (batchSize,1)
-        } else {
-            $log_prob = $g->reduceSum($log_prob, keepdims:true);            // (batchSize,1)
+        if ($log_prob->ndim() >= 1) {
+            $log_prob = $g->expandDims($log_prob, axis:-1); // (batchSize,1)
         }
         $scaled_action = $g->mul($this->upperBound,$action);
         if($add_batch_dim) {

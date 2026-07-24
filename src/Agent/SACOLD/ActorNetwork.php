@@ -137,8 +137,7 @@ class ActorNetwork extends AbstractNetwork implements Estimator
         $state_out = $this->stateLayers->forward($state_input,$training);   // (batchSize,units)
         $mean = $this->actionLayer->forward($state_out,$training);          // (batchSize,numActions)
         $logStd = $this->logStdLayer->forward($state_out, $training);       // (batchSize,numActions)
-        //$logStd = $g->clipByValue($logStd,-20,2);
-        $logStd = $g->clipByValue($logStd,0,3);
+        $logStd = $g->clipByValue($logStd,-20,2);
 
         if($deterministic) {
             $z = $mean;     // (batchSize,numActions)
@@ -151,15 +150,12 @@ class ActorNetwork extends AbstractNetwork implements Estimator
             )); 
         }
         $action = $g->tanh($z); // (batchSize,numActions)
-        $log_prob = $g->add(    // (batchSize,numActions)
-            $g->scale(-1,$g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon))),// (batchSize,numActions)
-            $this->logProb($mean,$logStd,$z),                 // (batchSize)
-            trans:true,
+        $log_prob = $g->add(
+            $this->logProb($mean, $logStd, $z),
+            $g->scale(-1, $g->reduceSum($g->log($g->add($g->sub(1, $g->square($action)), $this->epsilon)), axis:-1))
         );
-        if($log_prob->ndim()>1) {
-            $log_prob = $g->reduceSum($log_prob, axis:1, keepdims:true);    // (batchSize,1)
-        } else {
-            $log_prob = $g->reduceSum($log_prob, keepdims:true);            // (batchSize,1)
+        if ($log_prob->ndim() >= 1) {
+            $log_prob = $g->expandDims($log_prob, axis:-1); // (batchSize,1)
         }
         $scaled_action = $g->mul($this->upperBound,$action);
         if($add_batch_dim) {

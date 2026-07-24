@@ -495,7 +495,8 @@ class SAC extends AbstractAgent
             $reward_batch = $la->expandDims($la->array($rewards),axis:-1);
             $done_batch = $la->array($done);
 
-            $gamma = $g->Variable($gamma);
+            //$gamma = $g->Variable($gamma);
+
             $state_batch = $g->Variable($state_batch);
             $action_batch = $g->Variable($action_batch);
             $next_state_batch = $g->Variable($next_state_batch);
@@ -521,8 +522,8 @@ class SAC extends AbstractAgent
                     $target_q_next = $g->minimum($target_q1_value_next, $target_q2_value_next);
 
                     $soft_target = $g->sub($target_q_next, $g->mul($alpha,$next_log_prob));
-                    $y = $g->add($reward_batch, $g->scale($gamma, $g->mul($discount_batch, $soft_target)));
-                    [$q1_current, $q2_current] = $criticModel($state_batch, $action_batch);
+                    $y = $g->stopGradient($g->add($reward_batch, $g->scale($gamma, $g->mul($discount_batch, $soft_target))));
+                    [$q1_current, $q2_current] = $criticModel($state_batch, $action_batch, $training);
 
                     $critic_loss = $g->add(
                         $g->reduceMean($g->square($g->sub($y, $q1_current))),
@@ -542,7 +543,7 @@ class SAC extends AbstractAgent
                     $state_batch,$training,$alpha,
                 ) {
                     [$pi_action, $pi_log_prob, $logStd] = $actorModel($state_batch, training:true, deterministic:false);
-                    [$q1_pi, $q2_pi] = $criticModel($state_batch, $pi_action);
+                    [$q1_pi, $q2_pi] = $criticModel($state_batch, $pi_action, training:true);
                     $min_q_pi = $g->minimum($q1_pi, $q2_pi);
                     $actor_loss = $g->reduceMean($g->sub($g->mul($alpha, $pi_log_prob), $min_q_pi));
 
