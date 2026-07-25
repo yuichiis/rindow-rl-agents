@@ -56,8 +56,8 @@ const ALPHA_INIT      = 1.0;
 const GSDE_LATENT_DIM = 64;
 const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
-const EVAL_EVERY      = 1_000;
-const EVAL_EPISODES   = 3;
+const EVAL_EVERY      = 5_000;
+const EVAL_EPISODES   = 5;
 
 //print(f"TensorFlow version: {tf.__version__}")
 //print(f"GPUs: {tf.config.list_physical_devices('GPU')}")
@@ -621,8 +621,6 @@ function main()
     $episode_step   = 0;
     $episode_count  = 0;
     $best_eval      = -INF;
-    $eval_history   = [];
-    $consecutive_high_scores = 0;
 
     for ($step = 1; $step <= TOTAL_STEPS; $step++) {
 
@@ -658,72 +656,24 @@ function main()
 
         if ($step % EVAL_EVERY == 0) {
             $mean_reward = evaluate($nn, $agent);
-            $eval_history[] = $mean_reward;
-            if (count($eval_history) > 10) {
-                array_shift($eval_history);
-            }
             $marker = ($mean_reward > $best_eval) ? " ← best" : "";
             $best_eval = max($best_eval, $mean_reward);
-            
-            if ($mean_reward >= 80.0) {
-                $consecutive_high_scores++;
-            } else {
-                $consecutive_high_scores = 0;
-            }
-            
-            $history_str = implode(", ", array_map(fn($v) => sprintf("%+.2f", $v), $eval_history));
-            
             printf(
-                "Step %7d | EvalReward=%+8.2f | Best=%+8.2f | Alpha=%0.4f | Consecutive80+=%d | History=[%s]%s\n",
+                "Step %7d | EvalReward=%+8.2f | Alpha=%0.4f | Episodes=%d%s\n",
                 $step,
                 $mean_reward,
-                $best_eval,
                 $agent->alpha()->value()->toArray()[0],
-                $consecutive_high_scores,
-                $history_str,
+                $episode_count,
                 $marker
             );
-            
             if ($mean_reward >= 90.0) {
-                echo "🎉 Solved! (Single evaluation mean reward >= 90)\n";
-                break;
-            }
-            if ($consecutive_high_scores >= 3) {
-                echo "🎉 Solved! (Consecutive 3 evaluations mean reward >= 80)\n";
+                echo "🎉 Solved! (mean reward >= 90)\n";
                 break;
             }
         }
     }
 
     echo "\nTraining finished. Best eval reward: {$best_eval}\n";
-
-    echo "\n─────────────────────────────────────────────\n";
-    echo "Testing trained model (5 episodes)\n";
-    echo "─────────────────────────────────────────────\n";
-    $test_episodes = 5;
-    $test_rewards = [];
-    for ($i = 1; $i <= $test_episodes; $i++) {
-        [$obs, $info] = $env->reset();
-        $W_noise = $agent->sample_noise();
-        $done = false;
-        $step = 0;
-        $ep_reward = 0.0;
-        while (!$done) {
-            if ($step % GSDE_RESET_FREQ == 0) {
-                $W_noise = $agent->sample_noise();
-            }
-            $action = $agent->select_action($obs, $W_noise);
-            [$next_obs, $reward, $terminated, $truncated, $info] = $env->step($action);
-            $done = $terminated || $truncated;
-            $obs = $next_obs;
-            $ep_reward += $reward;
-            $step += 1;
-        }
-        $test_rewards[] = $ep_reward;
-        printf("Test Episode %d: Reward = %+8.2f (Steps: %d)\n", $i, $ep_reward, $step);
-    }
-    $avg_test_reward = array_sum($test_rewards) / count($test_rewards);
-    printf("Average Test Reward: %+8.2f\n", $avg_test_reward);
 }
 
 main();
