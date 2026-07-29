@@ -1,14 +1,16 @@
 <?php
 namespace Rindow\RL\Agents\Agent\SAC;
 
+use Rindow\NeuralNetworks\Builder\Builder;
+use Interop\Polite\Math\Matrix\NDArray;
+
+
 # ─────────────────────────────────────────────
 # リプレイバッファ  (numpy のまま、変更なし)
 # ─────────────────────────────────────────────
 class ReplayBuffer
 {
-    private Builder $nn;
     private object $la;
-    private object $g;
     private int $capacity;
     private int $obs_dim;
     private int $act_dim;
@@ -21,16 +23,13 @@ class ReplayBuffer
     private NDArray $actions;
 
     public function __construct(
-        Builder $nn,
+        object $la,
         int $capacity,
         int $obs_dim,
         int $act_dim
         )
     {
-        $la = $nn->backend()->primaryLA();
-        $this->nn = $nn;
         $this->la = $la;
-        $this->g = $this->nn->gradient();
         $this->capacity = $capacity;
         $this->ptr = 0;
         $this->size = 0;
@@ -60,7 +59,16 @@ class ReplayBuffer
 
     public function sample(int $batch_size) : array
     {
-        $idx = $this->la->randomSequence($this->size, $batch_size);
+        // PyTorch/NumPy版の np.random.randint と同じく復元抽出にする。
+        // randomSequence は非復元抽出なので、SACの更新分布が変わってしまう。
+        // randomUniformの整数出力を使う。上限はsize未満で、各要素が独立に
+        // 生成されるため、np.random.randintと同じ復元抽出になる。
+        $idx = $this->la->randomUniform(
+            [$batch_size],
+            0,
+            $this->size-1,
+            dtype:NDArray::int32,
+        );
         return [
             $this->la->gather($this->obs,$idx),
             $this->la->gather($this->actions,$idx),

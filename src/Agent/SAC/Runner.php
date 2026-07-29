@@ -1,6 +1,9 @@
 <?php
 namespace Rindow\RL\Agents\Agent\SAC;
 
+use Interop\Polite\AI\RL\Environment as Env;
+use Rindow\NeuralNetworks\Builder\Builder;
+
 class Runner
 {
     private object $mo;
@@ -9,52 +12,61 @@ class Runner
     private Env $env;
     private Env $evalEnv;
     private SACGSDEAgent $agent;
+    private int $act_dim;
+    private int $act_limit;
     private ReplayBuffer $buffer;
+
+
     public function __construct(
+        object $la,
+        Builder $nn,
+        Env $env,
+        Env $evalEnv,
+        SACGSDEAgent $agent,
+        int $obs_dim,
+        int $act_dim,
+        int $act_limit,
+        int $buffer_size,
     )
     {
-        $this->mo = new MatrixOperator();
-        $this->la = $mo->laRawMode();
-        $this->nn = new NeuralNetworks($mo);
-        $this->env = new Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0($la);
-        $this->evalEnv = new Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0($la);
+        $this->la = $la;
+        $this->env = $env;
+        $this->evalEnv = $evalEnv;
+        $this->agent = $agent;
+        $this->act_dim = $act_dim;
+        $this->act_limit = $act_limit;
 
-        $stateShape = $env->observationSpace()->shape();
-        $obs_dim = $stateShape[0];
-
-        $actionSpace = $env->actionSpace();
-        $act_dim = $actionSpace->shape()[0];
-
-        $act_limit = 1.0; 
-
-        echo "Env: MountainCarContinuous-v0  obs_dim={$obs_dim}  act_dim={$act_dim}  act_limit={$act_limit}\n";
-        echo "gSDE latent_dim=" . GSDE_LATENT_DIM . "  reset_freq=" . GSDE_RESET_FREQ . "\n";
-
-        $this->agent  = new SACGSDEAgent($nn, $obs_dim, $act_dim, $act_limit);
-        $this->buffer = new ReplayBuffer($nn, BUFFER_SIZE, $obs_dim, $act_dim);
-
+        $this->buffer = new ReplayBuffer($la, $buffer_size, $obs_dim, $act_dim);
     }
 
     # ─────────────────────────────────────────────
     # 評価ループ
     # ─────────────────────────────────────────────
-    private function evaluate(
-        Env $env,
-        int $n_episodes = EVAL_EPISODES
+    public function evaluate(
+        SACGSDEAgent $agent,
+        int $n_episodes,
+        int $gsde_reset_freq,
+        bool $with_exploration_noise = false,
     ) : float
     {
-        $la = $nn->backend()->primaryLA();
+        $la = $this->la;
+        // 評価用の開始状態列は学習用の乱数列から独立させる。
+        $env = $this->evalEnv;
         $total = 0.0;
         for ($i = 0; $i < $n_episodes; $i++) {
             [$obs, $info] = $env->reset();
-            $W_noise = $agent->sample_noise();
+            $W_noise = $with_exploration_noise ? $agent->sample_noise() : null;
             $done = false;
             $step = 0;
             while (!$done) {
-                if ($step % GSDE_RESET_FREQ == 0) {
+                if ($with_exploration_noise && $step % $gsde_reset_freq == 0) {
                     $W_noise = $agent->sample_noise();
                 }
-                $action = $agent->select_action($obs, $W_noise);
+                if ($with_exploration_noise) {
+                    $action = $agent->select_action($obs, $W_noise);
+                } else {
+                    $action = $agent->select_action_deterministic($obs);
+                }
                 [$next_obs, $reward, $terminated, $truncated, $info] = $env->step($action);
                 $done = $terminated || $truncated;
                 $obs = $next_obs;
@@ -69,23 +81,19 @@ class Runner
     # メインループ
     # ─────────────────────────────────────────────
     public function train(
-        ?int $numIterations=null, ?int $numRolloutSteps=null, ?int $maxSteps=null, ?array $metrics=null,
-        ?int $evalInterval=null, ?int $numEvalEpisodes=null, ?int $logInterval=null,
-        ?int $targetScore=null, ?int $numAchievements=null,
-        ?int $verbose=null
-    ) : array
+        int $total_steps,
+        int $start_steps,
+        int $update_every,
+        int $gsde_reset_freq,
+        int $eval_every,
+        int $eval_episodes,
+    )
     {
-        $numIterations ??= 1000;
-        $evalInterval ??= 100;
-        $numEvalEpisodes ??= 0;
-        $logInterval ??= 100;
-        $verbose ??= 0;
+        $la = $this->la;
         $env = $this->env;
         $agent = $this->agent;
-        $metrics ??= [];
-        $numAchievements ??= 5;
-
-
+        $buffer = $this->buffer;
+        
         [$obs,$info] = $env->reset();
         $W_noise = $agent->sample_noise();
 
@@ -93,17 +101,15 @@ class Runner
         $episode_step   = 0;
         $episode_count  = 0;
         $best_eval      = -INF;
-        $eval_history   = [];
-        $consecutive_high_scores = 0;
 
-        for ($step = 1; $step <= $numIterations; $step++) {
+        for ($step = 1; $step <= $total_steps; $step++) {
 
-            if ($episode_step % GSDE_RESET_FREQ == 0) {
+            if ($episode_step % $gsde_reset_freq == 0) {
                 $W_noise = $agent->sample_noise();
             }
 
-            if ($step < START_STEPS) {
-                $action = $actionSpace->sample();
+            if ($step < $start_steps) {
+                $action = $la->randomUniform([$this->act_dim], -$this->act_limit, $this->act_limit);
             } else {
                 $action = $agent->select_action($obs, $W_noise);
             }
@@ -124,77 +130,40 @@ class Runner
                 $episode_step   = 0;
             }
 
-            if ($step >= START_STEPS && $step % UPDATE_EVERY == 0) {
+            if ($step >= $start_steps && $step % $update_every == 0) {
                 $agent->update($buffer);
             }
 
-            if ($step % EVAL_EVERY == 0) {
-                $mean_reward = $this->evaluate($this->evalEnv);
-                $eval_history[] = $mean_reward;
-                if (count($eval_history) > 10) {
-                    array_shift($eval_history);
-                }
-                $marker = ($mean_reward > $best_eval) ? " ← best" : "";
-                $best_eval = max($best_eval, $mean_reward);
-
-                if ($mean_reward >= 80.0) {
-                    $consecutive_high_scores++;
-                } else {
-                    $consecutive_high_scores = 0;
-                }
-
-                $history_str = implode(", ", array_map(fn($v) => sprintf("%+.2f", $v), $eval_history));
-
+            if ($step % $eval_every == 0) {
+                $deterministic_reward = $this->evaluate($agent, $eval_episodes, $gsde_reset_freq, with_exploration_noise: false);
+                $noisy_reward = $this->evaluate($agent, $eval_episodes, $gsde_reset_freq, with_exploration_noise: true);
+                $diag = $agent->diagnostics();
+                $marker = ($deterministic_reward > $best_eval) ? " ← best" : "";
+                $best_eval = max($best_eval, $deterministic_reward);
                 printf(
-                    "Step %7d | EvalReward=%+8.2f | Best=%+8.2f | Alpha=%0.4f | Consecutive80+=%d | History=[%s]%s\n",
+                    "Step %7d | EvalDet=%+8.2f | EvalgSDE=%+8.2f | Alpha=%0.4f | Episodes=%d%s\n",
                     $step,
-                    $mean_reward,
-                    $best_eval,
+                    $deterministic_reward,
+                    $noisy_reward,
                     $agent->alpha()->value()->toArray()[0],
-                    $consecutive_high_scores,
-                    $history_str,
+                    $episode_count,
                     $marker
                 );
-
-                if ($mean_reward >= 90.0) {
-                    echo "🎉 Solved! (Single evaluation mean reward >= 90)\n";
-                    break;
-                }
-                if ($consecutive_high_scores >= 3) {
-                    echo "🎉 Solved! (Consecutive 3 evaluations mean reward >= 80)\n";
+                printf(
+                    "  Diag: mu=[%+.4f,%+.4f,%+.4f] log_std=[%+.4f,%+.4f,%+.4f] gradRMS(actor/critic)=[%.3e/%.3e] Q(data/pi/target)=[%+.4f/%+.4f/%+.4f]\n",
+                    $diag['mu_mean'], $diag['mu_min'], $diag['mu_max'],
+                    $diag['log_std_mean'], $diag['log_std_min'], $diag['log_std_max'],
+                    $diag['actor_grad_rms'], $diag['critic_grad_rms'],
+                    $diag['q_data_mean'], $diag['q_pi_mean'], $diag['target_q_mean']
+                );
+                printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actor_grad_rms_by_var']));
+                if ($deterministic_reward >= 90.0) {
+                    echo "🎉 Solved! (deterministic mean reward >= 90)\n";
                     break;
                 }
             }
         }
 
         echo "\nTraining finished. Best eval reward: {$best_eval}\n";
-
-        echo "\n─────────────────────────────────────────────\n";
-        echo "Testing trained model (5 episodes)\n";
-        echo "─────────────────────────────────────────────\n";
-        $test_episodes = 5;
-        $test_rewards = [];
-        for ($i = 1; $i <= $test_episodes; $i++) {
-            [$obs, $info] = $env->reset();
-            $W_noise = $agent->sample_noise();
-            $done = false;
-            $step = 0;
-            $ep_reward = 0.0;
-            while (!$done) {
-                if ($step % GSDE_RESET_FREQ == 0) {
-                    $W_noise = $agent->sample_noise();
-                }
-                $action = $agent->select_action($obs, $W_noise);
-                [$next_obs, $reward, $terminated, $truncated, $info] = $env->step($action);
-                $done = $terminated || $truncated;
-                $obs = $next_obs;
-                $ep_reward += $reward;
-                $step += 1;
-            }
-            $test_rewards[] = $ep_reward;
-            printf("Test Episode %d: Reward = %+8.2f (Steps: %d)\n", $i, $ep_reward, $step);
-        }
-        $avg_test_reward = array_sum($test_rewards) / count($test_rewards);
-        printf("Average Test Reward: %+8.2f\n", $avg_test_reward);
     }
 }

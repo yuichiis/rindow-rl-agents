@@ -1,9 +1,10 @@
 <?php
 namespace Rindow\RL\Agents\Agent\SAC;
 
-# ─────────────────────────────────────────────
-# Critic (Double Q)
-# ─────────────────────────────────────────────
+use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Gradient\Variable;
+use Rindow\NeuralNetworks\Model\AbstractModel;
+
 class QNetwork extends AbstractModel
 {
     private object $g;
@@ -24,5 +25,12 @@ class QNetwork extends AbstractModel
     {
         $x = $this->g->concat([$obs, $action], axis: -1);
         return $this->model->forward($x, $training);
+    }
+
+    public function sync_weight_caches() : void
+    {
+        foreach ($this->model->submodules() as $module) {
+            $module->reverseSyncWeightVariables();
+        }
     }
 }

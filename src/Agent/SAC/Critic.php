@@ -1,6 +1,14 @@
 <?php
 namespace Rindow\RL\Agents\Agent\SAC;
 
+use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Gradient\Variable;
+use Rindow\NeuralNetworks\Model\AbstractModel;
+
+# ─────────────────────────────────────────────
+# Critic (Double Q)
+# ─────────────────────────────────────────────
+
 #   PyTorch の Critic(q1, q2) に対応。
 #   TF では Functional API で 2 つの独立したサブモデルを保持する。
 class Critic extends AbstractModel
@@ -18,6 +26,12 @@ class Critic extends AbstractModel
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array
     {
         return [$this->q1->forward($obs, $action, $training), $this->q2->forward($obs, $action, $training)];
+    }
+
+    public function sync_weight_caches() : void
+    {
+        $this->q1->sync_weight_caches();
+        $this->q2->sync_weight_caches();
     }
 }
 

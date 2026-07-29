@@ -1,6 +1,13 @@
 <?php
 namespace Rindow\RL\Agents\Agent\SAC;
 
+use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Gradient\Variable;
+use Rindow\NeuralNetworks\Model\AbstractModel;
+use Rindow\NeuralNetworks\Model\Model;
+use Rindow\NeuralNetworks\Layer\Layer;
+
 # ─────────────────────────────────────────────
 # gSDE Actor
 # ─────────────────────────────────────────────
@@ -12,6 +19,7 @@ namespace Rindow\RL\Agents\Agent\SAC;
 #        sample_noise()                    → そのまま同名メソッド
 class GSDEActor extends AbstractModel
 {
+    private ?Variable $last_sigma_z = null;
     private object $la;
     private object $g;
     private int $act_dim;
@@ -22,7 +30,7 @@ class GSDEActor extends AbstractModel
     
     public function __construct(
         Builder $nn,
-        int $obs_dim, int $act_dim, int $latent_dim = GSDE_LATENT_DIM)
+        int $obs_dim, int $act_dim, int $latent_dim, int $hidden_dim)
     {
         parent::__construct($nn);
         $this->la = $nn->backend()->primaryLA();
@@ -33,7 +41,7 @@ class GSDEActor extends AbstractModel
 
         # 共有特徴抽出器  (PyTorch: phi_net)
         $this->phi_net = $nn->models->Sequential([
-            $nn->layers->Dense(HIDDEN_DIM, activation:"relu",
+            $nn->layers->Dense($hidden_dim, activation:"relu",
                                   input_shape:[$obs_dim]),
             $nn->layers->Dense($latent_dim, activation:"relu"),
         ]);
@@ -88,6 +96,48 @@ class GSDEActor extends AbstractModel
         return $this->g->tanh($this->g->add($mu, $noise));
     }
 
+    public function forward_deterministic(Variable $obs) : Variable
+    {
+        # 評価用: gSDE の探索ノイズを使わず、tanh(mu(s)) を返す。
+        [, $mu] = $this->phi_and_mu($obs);
+        return $this->g->tanh($mu);
+    }
+
+    public function diagnostic_mu(Variable $obs) : Variable
+    {
+        [, $mu] = $this->phi_and_mu($obs);
+        return $mu;
+    }
+
+    public function diagnostic_phi(Variable $obs) : Variable
+    {
+        [$phi,] = $this->phi_and_mu($obs);
+        return $phi;
+    }
+
+    public function diagnostic_log_std() : Variable
+    {
+        return $this->log_std;
+    }
+
+    public function reset_log_std(float $value = -1.0) : void
+    {
+        $this->log_std->assign($this->la->fill($value, $this->la->alloc($this->log_std->shape(), dtype:NDArray::float32)));
+    }
+
+    public function sync_weight_caches() : void
+    {
+        foreach ($this->phi_net->submodules() as $module) {
+            $module->reverseSyncWeightVariables();
+        }
+        $this->mu_head->reverseSyncWeightVariables();
+    }
+
+    public function diagnostic_sigma_z() : ?Variable
+    {
+        return $this->last_sigma_z;
+    }
+
     # ── ③ 学習パス（GradientTape 内で呼ぶ） ─────
     # """
     # 外部状態に依存しない自己完結パス。
@@ -129,6 +179,7 @@ class GSDEActor extends AbstractModel
         $sqrt = $g->sqrt($matmul_sq);
         $sigma_z = $g->transpose($sqrt);
         $sigma_z = $g->maximum($sigma_z,$g->constant(1e-6));
+        $this->last_sigma_z = $sigma_z;
 
         $log_sigma = $g->log($sigma_z);
         $diff = $g->sub($x_t, $mu);
