@@ -5,14 +5,15 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0;
+use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
+
 use Rindow\RL\Agents\Agent\SAC\SACGSDEAgent;
 use Rindow\RL\Agents\Agent\SAC\Runner;
 
 # ─────────────────────────────────────────────
 # ハイパーパラメータ
 # ─────────────────────────────────────────────
-const ENV_ID          = "MountainCarContinuous-v0";
+const ENV_ID          = "Pendulum-v1";
 const SEED            = 42;
 const TOTAL_STEPS     = 100000;
 const START_STEPS     = 1000;
@@ -41,8 +42,8 @@ $plt = new Plot(null,$mo);
 $total_steps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
 $eval_every = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
 
-$env = new ContinuousMountainCarV0($la);
-$evalEnv = new ContinuousMountainCarV0($la);
+$env = new PendulumV1($la);
+$evalEnv = new PendulumV1($la);
 $stateShape = $env->observationSpace()->shape();
 $obs_dim = $stateShape[0];
 $actionSpace = $env->actionSpace();
@@ -114,5 +115,5 @@ for($i=0;$i<5;$i++) {
     echo "Test Episode {$i}, Steps: {$step}, Total Reward: {$total}\n";
 }
 echo "\n";
-$filename = $env->show(path:__DIR__.'\\mountaincarcontinuous-sac-gsde-trained.gif');
+$filename = $env->show(path:__DIR__.'\\pendulum-sac-gsde-trained.gif');
 echo "filename: {$filename}\n";
