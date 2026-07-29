@@ -56,60 +56,8 @@ const ALPHA_INIT      = 1.0;
 const GSDE_LATENT_DIM = 64;
 const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
-const EVAL_EVERY      = 5_000;
-const EVAL_EPISODES   = 5;
-
-// Rindow の乱数APIは seed 未指定時に random_int() を使う。
-// 実行ごとに同じ乱数列を渡すための軽量なシード列。
-class SeedSequence
-{
-    private int $state;
-
-    public function __construct(int $seed)
-    {
-        $this->state = $seed & 0x7fffffff;
-    }
-
-    public function next() : int
-    {
-        $this->state = (int)(($this->state * 1664525 + 1013904223) & 0x7fffffff);
-        return $this->state;
-    }
-
-    public function uniform() : float
-    {
-        return $this->next() / 2147483647.0;
-    }
-}
-
-function glorot_uniform_initializer(object $la, SeedSequence $rng) : callable
-{
-    return function(array $shape, array $fan_in_out) use ($la, $rng) : NDArray {
-        [$fan_in, $fan_out] = $fan_in_out;
-        $limit = sqrt(6.0 / ($fan_in + $fan_out));
-        return $la->randomUniform($shape, -$limit, $limit);
-    };
-}
-
-// Rindow Gym の標準 reset() は内部で random_int() を使うため、
-// 同じ開始状態列を得られるようにここだけ明示的な乱数列へ置き換える。
-class SeededContinuousMountainCarV0 extends Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0
-{
-    private SeedSequence $rng;
-
-    public function __construct(object $la, SeedSequence $rng)
-    {
-        $this->rng = $rng;
-        parent::__construct($la);
-    }
-
-    protected function doReset() : array
-    {
-        $position = -0.6 + 0.2 * $this->rng->uniform();
-        $this->state = $this->la->array([$position, 0]);
-        return [$this->state, []];
-    }
-}
+const EVAL_EVERY      = 1_000;
+const EVAL_EPISODES   = 3;
 
 //print(f"TensorFlow version: {tf.__version__}")
 //print(f"GPUs: {tf.config.list_physical_devices('GPU')}")
@@ -123,7 +71,6 @@ class ReplayBuffer
     private Builder $nn;
     private object $la;
     private object $g;
-    private SeedSequence $rng;
     private int $capacity;
     private int $obs_dim;
     private int $act_dim;
@@ -139,15 +86,13 @@ class ReplayBuffer
         Builder $nn,
         int $capacity,
         int $obs_dim,
-        int $act_dim,
-        SeedSequence $rng,
+        int $act_dim
         )
     {
         $la = $nn->backend()->primaryLA();
         $this->nn = $nn;
         $this->la = $la;
         $this->g = $this->nn->gradient();
-        $this->rng = $rng;
         $this->capacity = $capacity;
         $this->ptr = 0;
         $this->size = 0;
@@ -177,16 +122,7 @@ class ReplayBuffer
 
     public function sample(int $batch_size) : array
     {
-        // PyTorch/NumPy版の np.random.randint と同じく復元抽出にする。
-        // randomSequence は非復元抽出なので、SACの更新分布が変わってしまう。
-        // randomUniformの整数出力を使う。上限はsize未満で、各要素が独立に
-        // 生成されるため、np.random.randintと同じ復元抽出になる。
-        $idx = $this->la->randomUniform(
-            [$batch_size],
-            0,
-            $this->size,
-            dtype:NDArray::int32
-        );
+        $idx = $this->la->randomSequence($this->size, $batch_size);
         return [
             $this->la->gather($this->obs,$idx),
             $this->la->gather($this->actions,$idx),
@@ -208,24 +144,21 @@ class ReplayBuffer
 #        sample_noise()                    → そのまま同名メソッド
 class GSDEActor extends AbstractModel
 {
-    private ?Variable $last_sigma_z = null;
     private object $la;
     private object $g;
     private int $act_dim;
     private int $latents_dim;
-    private SeedSequence $rng;
     protected Model $phi_net;  // must be protected or public to be found by trainable variables
     protected Layer $mu_head;    // must be protected or public
     protected Variable $log_std; // must be protected of public
     
     public function __construct(
         Builder $nn,
-        int $obs_dim, int $act_dim, SeedSequence $rng, int $latent_dim = GSDE_LATENT_DIM)
+        int $obs_dim, int $act_dim, int $latent_dim = GSDE_LATENT_DIM)
     {
         parent::__construct($nn);
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
-        $this->rng = $rng;
         
         $this->act_dim    = $act_dim;
         $this->latents_dim = $latent_dim;
@@ -233,15 +166,12 @@ class GSDEActor extends AbstractModel
         # 共有特徴抽出器  (PyTorch: phi_net)
         $this->phi_net = $nn->models->Sequential([
             $nn->layers->Dense(HIDDEN_DIM, activation:"relu",
-                input_shape:[$obs_dim],
-                kernel_initializer:glorot_uniform_initializer($this->la, $rng)),
-            $nn->layers->Dense($latent_dim, activation:"relu",
-                kernel_initializer:glorot_uniform_initializer($this->la, $rng)),
+                                  input_shape:[$obs_dim]),
+            $nn->layers->Dense($latent_dim, activation:"relu"),
         ]);
 
         # 平均ヘッド  (PyTorch: mu_head = nn.Linear)
-        $this->mu_head = $nn->layers->Dense($act_dim, input_shape:[$latent_dim],
-            kernel_initializer:glorot_uniform_initializer($this->la, $rng));
+        $this->mu_head = $nn->layers->Dense($act_dim, input_shape:[$latent_dim]);
 
         # gSDE 対数標準偏差  (PyTorch: nn.Parameter)
         $this->log_std = $this->g->Variable(
@@ -290,48 +220,6 @@ class GSDEActor extends AbstractModel
         return $this->g->tanh($this->g->add($mu, $noise));
     }
 
-    public function forward_deterministic(Variable $obs) : Variable
-    {
-        # 評価用: gSDE の探索ノイズを使わず、tanh(mu(s)) を返す。
-        [, $mu] = $this->phi_and_mu($obs);
-        return $this->g->tanh($mu);
-    }
-
-    public function diagnostic_mu(Variable $obs) : Variable
-    {
-        [, $mu] = $this->phi_and_mu($obs);
-        return $mu;
-    }
-
-    public function diagnostic_phi(Variable $obs) : Variable
-    {
-        [$phi,] = $this->phi_and_mu($obs);
-        return $phi;
-    }
-
-    public function diagnostic_log_std() : Variable
-    {
-        return $this->log_std;
-    }
-
-    public function reset_log_std(float $value = -1.0) : void
-    {
-        $this->log_std->assign($this->la->fill($value, $this->la->alloc($this->log_std->shape(), dtype:NDArray::float32)));
-    }
-
-    public function sync_weight_caches() : void
-    {
-        foreach ($this->phi_net->submodules() as $module) {
-            $module->reverseSyncWeightVariables();
-        }
-        $this->mu_head->reverseSyncWeightVariables();
-    }
-
-    public function diagnostic_sigma_z() : ?Variable
-    {
-        return $this->last_sigma_z;
-    }
-
     # ── ③ 学習パス（GradientTape 内で呼ぶ） ─────
     # """
     # 外部状態に依存しない自己完結パス。
@@ -353,7 +241,7 @@ class GSDEActor extends AbstractModel
         $std_W   = $this->std_W();                      # (act_dim, latent_dim)
 
         $B     = $obs->shape()[0];
-        $eps   = $g->randomNormal($std_W, batchShape:[$B]);
+        $eps   = $g->randomNormal($std_W,batchShape:[$B]);
         $W     = $g->mul($eps, $std_W);  # (B, act_dim, latent_dim) eps <- broadcast $std_W
         
         $phi_reshaped = $g->reshape($phi, [$B, $this->latents_dim, 1]);
@@ -373,7 +261,6 @@ class GSDEActor extends AbstractModel
         $sqrt = $g->sqrt($matmul_sq);
         $sigma_z = $g->transpose($sqrt);
         $sigma_z = $g->maximum($sigma_z,$g->constant(1e-6));
-        $this->last_sigma_z = $sigma_z;
 
         $log_sigma = $g->log($sigma_z);
         $diff = $g->sub($x_t, $mu);
@@ -411,17 +298,14 @@ class QNetwork extends AbstractModel
     private object $g;
     protected AbstractModel $model; // must be protected or public to be found by trainable variables
 
-    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim, SeedSequence $rng)
+    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim)
     {
         parent::__construct($nn);
         $this->g = $nn->gradient();
         $this->model = $nn->models->Sequential([
-            $nn->layers->Dense($hidden_dim, activation: 'relu', input_shape: [$obs_dim + $act_dim],
-                kernel_initializer:glorot_uniform_initializer($nn->backend()->primaryLA(), $rng)),
-            $nn->layers->Dense($hidden_dim, activation: 'relu',
-                kernel_initializer:glorot_uniform_initializer($nn->backend()->primaryLA(), $rng)),
-            $nn->layers->Dense(1,
-                kernel_initializer:glorot_uniform_initializer($nn->backend()->primaryLA(), $rng)),
+            $nn->layers->Dense($hidden_dim, activation: 'relu', input_shape: [$obs_dim + $act_dim]),
+            $nn->layers->Dense($hidden_dim, activation: 'relu'),
+            $nn->layers->Dense(1),
         ]);
     }
 
@@ -429,13 +313,6 @@ class QNetwork extends AbstractModel
     {
         $x = $this->g->concat([$obs, $action], axis: -1);
         return $this->model->forward($x, $training);
-    }
-
-    public function sync_weight_caches() : void
-    {
-        foreach ($this->model->submodules() as $module) {
-            $module->reverseSyncWeightVariables();
-        }
     }
 }
 
@@ -446,22 +323,16 @@ class Critic extends AbstractModel
     public QNetwork $q1;
     public QNetwork $q2;
 
-    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim, SeedSequence $rng)
+    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim)
     {
         parent::__construct($nn);
-        $this->q1 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim, $rng);
-        $this->q2 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim, $rng);
+        $this->q1 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim);
+        $this->q2 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim);
     }
 
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array
     {
         return [$this->q1->forward($obs, $action, $training), $this->q2->forward($obs, $action, $training)];
-    }
-
-    public function sync_weight_caches() : void
-    {
-        $this->q1->sync_weight_caches();
-        $this->q2->sync_weight_caches();
     }
 }
 
@@ -496,7 +367,6 @@ class SACGSDEAgent
     private object $g;
     private int $act_dim;
     private float $act_limit;
-    private SeedSequence $rng;
     public GSDEActor $actor;
     public Critic $critic;
     public Critic $critic_target;
@@ -505,19 +375,12 @@ class SACGSDEAgent
     private object $actor_opt;
     private object $critic_opt;
     private object $alpha_opt;
-    private array $last_actor_grads = [];
-    private array $last_critic_grads = [];
-    private ?Variable $last_log_pi = null;
-    private ?Variable $last_q_data = null;
-    private ?Variable $last_q_pi = null;
-    private ?Variable $last_target_q = null;
 
     public function __construct(
         Builder $nn,
         int $obs_dim,
         int $act_dim,
-        float $act_limit,
-        SeedSequence $rng,
+        float $act_limit
     )
     {
         $this->nn = $nn;
@@ -525,12 +388,11 @@ class SACGSDEAgent
         $this->g = $nn->gradient();
         $this->act_dim   = $act_dim;
         $this->act_limit = $act_limit;
-        $this->rng = $rng;
         $la = $this->la; 
 
-        $this->actor         = new GSDEActor($nn, $obs_dim, $act_dim, $rng);
-        $this->critic        = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM, $rng);
-        $this->critic_target = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM, $rng);
+        $this->actor         = new GSDEActor($nn, $obs_dim, $act_dim);
+        $this->critic        = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM);
+        $this->critic_target = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM);
 
         # ダミー入力で build してから weights をコピー
         $dummy_obs = $this->g->Variable($la->zeros($la->alloc([1, $obs_dim])));
@@ -566,60 +428,6 @@ class SACGSDEAgent
         return $this->g->exp($this->log_alpha);
     }
 
-    private function rms(array $values) : float
-    {
-        $sum = 0.0;
-        $count = 0;
-        array_walk_recursive($values, function($v) use (&$sum, &$count) {
-            $sum += (float)$v * (float)$v;
-            $count++;
-        });
-        return $count ? sqrt($sum / $count) : 0.0;
-    }
-
-    private function gradient_rms_list(array $grads) : array
-    {
-        return array_map(fn($v) => $this->rms($v->toArray()), $grads);
-    }
-
-    private function range(array $values) : array
-    {
-        $flat = [];
-        array_walk_recursive($values, function($v) use (&$flat) { $flat[] = (float)$v; });
-        return [min($flat), max($flat), count($flat) ? array_sum($flat) / count($flat) : 0.0];
-    }
-
-    public function diagnostics() : array
-    {
-        $obs = $this->g->Variable($this->la->array(
-            [[0.0, 0.0], [-0.5, 0.0], [0.0, 0.02], [0.4, 0.0]],
-            dtype:NDArray::float32
-        ));
-        $mu = $this->actor->diagnostic_mu($obs)->value()->toArray();
-        [$mu_min, $mu_max, $mu_mean] = $this->range($mu);
-        [$ls_min, $ls_max, $ls_mean] = $this->range($this->actor->diagnostic_log_std()->value()->toArray());
-        [$lp_min, $lp_max, $lp_mean] = $this->last_log_pi
-            ? $this->range($this->last_log_pi->value()->toArray())
-            : [0.0, 0.0, 0.0];
-        $sigma_z = $this->actor->diagnostic_sigma_z();
-        [$sz_min, $sz_max, $sz_mean] = $sigma_z
-            ? $this->range($sigma_z->value()->toArray())
-            : [0.0, 0.0, 0.0];
-        $q_data_mean = $this->last_q_data ? $this->range($this->last_q_data->value()->toArray())[2] : 0.0;
-        $q_pi_mean = $this->last_q_pi ? $this->range($this->last_q_pi->value()->toArray())[2] : 0.0;
-        $target_q_mean = $this->last_target_q ? $this->range($this->last_target_q->value()->toArray())[2] : 0.0;
-        return [
-            'mu_mean' => $mu_mean, 'mu_min' => $mu_min, 'mu_max' => $mu_max,
-            'log_std_mean' => $ls_mean, 'log_std_min' => $ls_min, 'log_std_max' => $ls_max,
-            'log_pi_mean' => $lp_mean, 'log_pi_min' => $lp_min, 'log_pi_max' => $lp_max,
-            'sigma_z_mean' => $sz_mean, 'sigma_z_min' => $sz_min, 'sigma_z_max' => $sz_max,
-            'q_data_mean' => $q_data_mean, 'q_pi_mean' => $q_pi_mean, 'target_q_mean' => $target_q_mean,
-            'actor_grad_rms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->last_actor_grads)),
-            'actor_grad_rms_by_var' => $this->gradient_rms_list($this->last_actor_grads),
-            'critic_grad_rms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->last_critic_grads)),
-        ];
-    }
-
 
     # ── 行動選択 ────────────────────────────────
     public function sample_noise() : Variable
@@ -637,19 +445,6 @@ class SACGSDEAgent
         $action_flat = $action->reshape([$this->act_dim]);
         $action_sc = $this->la->scal($this->act_limit, $action_flat);
         
-        return $this->clip_ndarray($action_sc, -$this->act_limit, $this->act_limit);
-    }
-
-    public function select_action_deterministic(NDArray $obs) : NDArray
-    {
-        # 評価用: 探索ノイズなしで行動を選ぶ。
-        $obs_t  = $this->g->Variable($this->la->expandDims($obs, 0));
-        $action_var = $this->actor->forward_deterministic($obs_t);
-        $action = $action_var->value();
-
-        $action_flat = $action->reshape([$this->act_dim]);
-        $action_sc = $this->la->scal($this->act_limit, $action_flat);
-
         return $this->clip_ndarray($action_sc, -$this->act_limit, $this->act_limit);
     }
     
@@ -699,17 +494,14 @@ class SACGSDEAgent
         $one_minus_dones = $g->sub(1.0, $dones_v);
         $gamma_dones_q_next = $g->mul(GAMMA, $g->mul($one_minus_dones, $q_next));
         $target_q = $g->stopGradient($g->add($rewards_v, $gamma_dones_q_next));
-        $this->last_target_q = $target_q;
 
         # ── [B] Critic 更新 ──────────────────────
         # PyTorch: critic_loss.backward(); critic_opt.step()
         $critic = $this->critic;
-        $agent = $this;
         $critic_loss = $this->nn->with($tape = $g->GradientTape(), function()
-        use ($g, $critic, $obs_v, $actions_v, $target_q, $agent)
+        use ($g, $critic, $obs_v, $actions_v, $target_q)
         {
             [$q1, $q2] = $critic->forward($obs_v, $actions_v);
-            $agent->last_q_data = $g->minimum($q1, $q2);
             $critic_loss = $g->add(
                 $g->reduceMean($g->square($g->sub($q1, $target_q))),
                 $g->reduceMean($g->square($g->sub($q2, $target_q)))
@@ -719,9 +511,7 @@ class SACGSDEAgent
 
         $critic_vars = $critic->trainableVariables();
         $critic_grads = $tape->gradient($critic_loss, $critic_vars);
-        $this->last_critic_grads = $critic_grads;
         $this->critic_opt->update($critic_vars, $critic_grads);
-        $this->critic->sync_weight_caches();
 
         # ── [C] Actor 更新 ───────────────────────
         $act_limit = $this->act_limit;
@@ -734,20 +524,13 @@ class SACGSDEAgent
             [$new_actions, $log_pi] = $actor->forward_train($obs_v);
             $new_actions_sc = $g->mul($new_actions, $act_limit);
             [$q1_pi, $q2_pi] = $critic->forward($obs_v, $new_actions_sc);
-            $agent->last_q_pi = $g->minimum($q1_pi, $q2_pi);
             $actor_loss = $g->reduceMean($g->sub($g->mul($g->stopGradient($agent->alpha()), $log_pi), $g->minimum($q1_pi, $q2_pi)));
             return [$actor_loss,$log_pi];
         });
         
         $actor_vars = $this->actor->trainableVariables();
         $actor_grads = $tape->gradient($actor_loss, $actor_vars);
-        $this->last_log_pi = $log_pi;
-        $this->last_actor_grads = $actor_grads;
         $this->actor_opt->update($actor_vars, $actor_grads);
-        $this->actor->sync_weight_caches();
-        if (getenv('RL_FREEZE_LOG_STD') === '1') {
-            $this->actor->reset_log_std();
-        }
 
         # ── [D] Alpha 更新 ───────────────────────
         $log_alpha = $this->log_alpha;
@@ -764,7 +547,6 @@ class SACGSDEAgent
 
         # ── [E] Critic ソフトアップデート ────────
         soft_update($this->g, $this->critic, $this->critic_target, TAU);
-        $this->critic_target->sync_weight_caches();
 
         return [
             "critic_loss" => $critic_loss->value()->toArray(),
@@ -780,28 +562,22 @@ class SACGSDEAgent
 function evaluate(
     Builder $nn,
     SACGSDEAgent $agent,
-    int $n_episodes = EVAL_EPISODES,
-    bool $with_exploration_noise = false,
+    int $n_episodes = EVAL_EPISODES
 ) : float
 {
     $la = $nn->backend()->primaryLA();
-    // 評価用の開始状態列は学習用の乱数列から独立させる。
-    $env = new SeededContinuousMountainCarV0($la, new SeedSequence(SEED + 10_000));
+    $env = new Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0($la);
     $total = 0.0;
     for ($i = 0; $i < $n_episodes; $i++) {
         [$obs, $info] = $env->reset();
-        $W_noise = $with_exploration_noise ? $agent->sample_noise() : null;
+        $W_noise = $agent->sample_noise();
         $done = false;
         $step = 0;
         while (!$done) {
-            if ($with_exploration_noise && $step % GSDE_RESET_FREQ == 0) {
+            if ($step % GSDE_RESET_FREQ == 0) {
                 $W_noise = $agent->sample_noise();
             }
-            if ($with_exploration_noise) {
-                $action = $agent->select_action($obs, $W_noise);
-            } else {
-                $action = $agent->select_action_deterministic($obs);
-            }
+            $action = $agent->select_action($obs, $W_noise);
             [$next_obs, $reward, $terminated, $truncated, $info] = $env->step($action);
             $done = $terminated || $truncated;
             $obs = $next_obs;
@@ -818,21 +594,14 @@ function evaluate(
 # ─────────────────────────────────────────────
 function main()
 {
-    // 短縮診断用。未指定時は従来の定数を使用する。
-    $total_steps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-    $eval_every = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-    mt_srand(SEED);
     $mo = new MatrixOperator();
     $la = $mo->laRawMode();
-    $la->setSeed(SEED);
     $nn = new NeuralNetworks($mo);
-    $rng = new SeedSequence(SEED);
 
-    $env = new SeededContinuousMountainCarV0($la, $rng);
+    $env = new Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0($la);
     
     $stateShape = $env->observationSpace()->shape();
     $obs_dim = $stateShape[0];
-
     
     $actionSpace = $env->actionSpace();
     $act_dim = $actionSpace->shape()[0];
@@ -842,8 +611,8 @@ function main()
     echo "Env: MountainCarContinuous-v0  obs_dim={$obs_dim}  act_dim={$act_dim}  act_limit={$act_limit}\n";
     echo "gSDE latent_dim=" . GSDE_LATENT_DIM . "  reset_freq=" . GSDE_RESET_FREQ . "\n";
 
-    $agent  = new SACGSDEAgent($nn, $obs_dim, $act_dim, $act_limit, $rng);
-    $buffer = new ReplayBuffer($nn, BUFFER_SIZE, $obs_dim, $act_dim, $rng);
+    $agent  = new SACGSDEAgent($nn, $obs_dim, $act_dim, $act_limit);
+    $buffer = new ReplayBuffer($nn, BUFFER_SIZE, $obs_dim, $act_dim);
 
     [$obs,$info] = $env->reset();
     $W_noise = $agent->sample_noise();
@@ -852,15 +621,17 @@ function main()
     $episode_step   = 0;
     $episode_count  = 0;
     $best_eval      = -INF;
+    $eval_history   = [];
+    $consecutive_high_scores = 0;
 
-    for ($step = 1; $step <= $total_steps; $step++) {
+    for ($step = 1; $step <= TOTAL_STEPS; $step++) {
 
         if ($episode_step % GSDE_RESET_FREQ == 0) {
             $W_noise = $agent->sample_noise();
         }
 
         if ($step < START_STEPS) {
-            $action = $la->randomUniform([$act_dim], -$act_limit, $act_limit);
+            $action = $actionSpace->sample();
         } else {
             $action = $agent->select_action($obs, $W_noise);
         }
@@ -885,37 +656,74 @@ function main()
             $agent->update($buffer);
         }
 
-        if ($step % $eval_every == 0) {
-            $deterministic_reward = evaluate($nn, $agent, with_exploration_noise: false);
-            $noisy_reward = evaluate($nn, $agent, with_exploration_noise: true);
-            $diag = $agent->diagnostics();
-            $marker = ($deterministic_reward > $best_eval) ? " ← best" : "";
-            $best_eval = max($best_eval, $deterministic_reward);
+        if ($step % EVAL_EVERY == 0) {
+            $mean_reward = evaluate($nn, $agent);
+            $eval_history[] = $mean_reward;
+            if (count($eval_history) > 10) {
+                array_shift($eval_history);
+            }
+            $marker = ($mean_reward > $best_eval) ? " ← best" : "";
+            $best_eval = max($best_eval, $mean_reward);
+            
+            if ($mean_reward >= 80.0) {
+                $consecutive_high_scores++;
+            } else {
+                $consecutive_high_scores = 0;
+            }
+            
+            $history_str = implode(", ", array_map(fn($v) => sprintf("%+.2f", $v), $eval_history));
+            
             printf(
-                "Step %7d | EvalDet=%+8.2f | EvalgSDE=%+8.2f | Alpha=%0.4f | Episodes=%d%s\n",
+                "Step %7d | EvalReward=%+8.2f | Best=%+8.2f | Alpha=%0.4f | Consecutive80+=%d | History=[%s]%s\n",
                 $step,
-                $deterministic_reward,
-                $noisy_reward,
+                $mean_reward,
+                $best_eval,
                 $agent->alpha()->value()->toArray()[0],
-                $episode_count,
+                $consecutive_high_scores,
+                $history_str,
                 $marker
             );
-            printf(
-                "  Diag: mu=[%+.4f,%+.4f,%+.4f] log_std=[%+.4f,%+.4f,%+.4f] gradRMS(actor/critic)=[%.3e/%.3e] Q(data/pi/target)=[%+.4f/%+.4f/%+.4f]\n",
-                $diag['mu_mean'], $diag['mu_min'], $diag['mu_max'],
-                $diag['log_std_mean'], $diag['log_std_min'], $diag['log_std_max'],
-                $diag['actor_grad_rms'], $diag['critic_grad_rms'],
-                $diag['q_data_mean'], $diag['q_pi_mean'], $diag['target_q_mean']
-            );
-            printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actor_grad_rms_by_var']));
-            if ($deterministic_reward >= 90.0) {
-                echo "🎉 Solved! (deterministic mean reward >= 90)\n";
+            
+            if ($mean_reward >= 90.0) {
+                echo "🎉 Solved! (Single evaluation mean reward >= 90)\n";
+                break;
+            }
+            if ($consecutive_high_scores >= 3) {
+                echo "🎉 Solved! (Consecutive 3 evaluations mean reward >= 80)\n";
                 break;
             }
         }
     }
 
     echo "\nTraining finished. Best eval reward: {$best_eval}\n";
+
+    echo "\n─────────────────────────────────────────────\n";
+    echo "Testing trained model (5 episodes)\n";
+    echo "─────────────────────────────────────────────\n";
+    $test_episodes = 5;
+    $test_rewards = [];
+    for ($i = 1; $i <= $test_episodes; $i++) {
+        [$obs, $info] = $env->reset();
+        $W_noise = $agent->sample_noise();
+        $done = false;
+        $step = 0;
+        $ep_reward = 0.0;
+        while (!$done) {
+            if ($step % GSDE_RESET_FREQ == 0) {
+                $W_noise = $agent->sample_noise();
+            }
+            $action = $agent->select_action($obs, $W_noise);
+            [$next_obs, $reward, $terminated, $truncated, $info] = $env->step($action);
+            $done = $terminated || $truncated;
+            $obs = $next_obs;
+            $ep_reward += $reward;
+            $step += 1;
+        }
+        $test_rewards[] = $ep_reward;
+        printf("Test Episode %d: Reward = %+8.2f (Steps: %d)\n", $i, $ep_reward, $step);
+    }
+    $avg_test_reward = array_sum($test_rewards) / count($test_rewards);
+    printf("Average Test Reward: %+8.2f\n", $avg_test_reward);
 }
 
 main();

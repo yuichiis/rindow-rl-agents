@@ -87,7 +87,7 @@ function glorot_uniform_initializer(object $la, SeedSequence $rng) : callable
     return function(array $shape, array $fan_in_out) use ($la, $rng) : NDArray {
         [$fan_in, $fan_out] = $fan_in_out;
         $limit = sqrt(6.0 / ($fan_in + $fan_out));
-        return $la->randomUniform($shape, -$limit, $limit);
+        return $la->randomUniform($shape, -$limit, $limit, seed:$rng->next());
     };
 }
 
@@ -185,7 +185,8 @@ class ReplayBuffer
             [$batch_size],
             0,
             $this->size,
-            dtype:NDArray::int32
+            dtype:NDArray::int32,
+            seed:$this->rng->next()
         );
         return [
             $this->la->gather($this->obs,$idx),
@@ -273,7 +274,7 @@ class GSDEActor extends AbstractModel
     {
         $g = $this->g;
         $std = $this->std_W();
-        $eps = $g->randomNormal($std);
+        $eps = $g->randomNormal($std, seed:$this->rng->next());
         return $g->mul($eps, $std);  # (act_dim, latent_dim)
     }
 
@@ -353,7 +354,7 @@ class GSDEActor extends AbstractModel
         $std_W   = $this->std_W();                      # (act_dim, latent_dim)
 
         $B     = $obs->shape()[0];
-        $eps   = $g->randomNormal($std_W, batchShape:[$B]);
+        $eps   = $g->randomNormal($std_W, batchShape:[$B], seed:$this->rng->next());
         $W     = $g->mul($eps, $std_W);  # (B, act_dim, latent_dim) eps <- broadcast $std_W
         
         $phi_reshaped = $g->reshape($phi, [$B, $this->latents_dim, 1]);
@@ -824,7 +825,6 @@ function main()
     mt_srand(SEED);
     $mo = new MatrixOperator();
     $la = $mo->laRawMode();
-    $la->setSeed(SEED);
     $nn = new NeuralNetworks($mo);
     $rng = new SeedSequence(SEED);
 
@@ -832,7 +832,6 @@ function main()
     
     $stateShape = $env->observationSpace()->shape();
     $obs_dim = $stateShape[0];
-
     
     $actionSpace = $env->actionSpace();
     $act_dim = $actionSpace->shape()[0];
@@ -860,7 +859,7 @@ function main()
         }
 
         if ($step < START_STEPS) {
-            $action = $la->randomUniform([$act_dim], -$act_limit, $act_limit);
+            $action = $la->randomUniform([$act_dim], -$act_limit, $act_limit, seed:$rng->next());
         } else {
             $action = $agent->select_action($obs, $W_noise);
         }

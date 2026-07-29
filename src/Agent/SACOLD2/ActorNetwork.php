@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\SAC;
+namespace Rindow\RL\Agents\Agent\SACOLD2;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Estimator;

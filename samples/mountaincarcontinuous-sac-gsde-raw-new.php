@@ -36,6 +36,7 @@ use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Layer\Layer;
+use Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0;
 
 # ─────────────────────────────────────────────
 # ハイパーパラメータ
@@ -56,60 +57,8 @@ const ALPHA_INIT      = 1.0;
 const GSDE_LATENT_DIM = 64;
 const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
-const EVAL_EVERY      = 5_000;
+const EVAL_EVERY      = 2_000; #5_000;
 const EVAL_EPISODES   = 5;
-
-// Rindow の乱数APIは seed 未指定時に random_int() を使う。
-// 実行ごとに同じ乱数列を渡すための軽量なシード列。
-class SeedSequence
-{
-    private int $state;
-
-    public function __construct(int $seed)
-    {
-        $this->state = $seed & 0x7fffffff;
-    }
-
-    public function next() : int
-    {
-        $this->state = (int)(($this->state * 1664525 + 1013904223) & 0x7fffffff);
-        return $this->state;
-    }
-
-    public function uniform() : float
-    {
-        return $this->next() / 2147483647.0;
-    }
-}
-
-function glorot_uniform_initializer(object $la, SeedSequence $rng) : callable
-{
-    return function(array $shape, array $fan_in_out) use ($la, $rng) : NDArray {
-        [$fan_in, $fan_out] = $fan_in_out;
-        $limit = sqrt(6.0 / ($fan_in + $fan_out));
-        return $la->randomUniform($shape, -$limit, $limit);
-    };
-}
-
-// Rindow Gym の標準 reset() は内部で random_int() を使うため、
-// 同じ開始状態列を得られるようにここだけ明示的な乱数列へ置き換える。
-class SeededContinuousMountainCarV0 extends Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0
-{
-    private SeedSequence $rng;
-
-    public function __construct(object $la, SeedSequence $rng)
-    {
-        $this->rng = $rng;
-        parent::__construct($la);
-    }
-
-    protected function doReset() : array
-    {
-        $position = -0.6 + 0.2 * $this->rng->uniform();
-        $this->state = $this->la->array([$position, 0]);
-        return [$this->state, []];
-    }
-}
 
 //print(f"TensorFlow version: {tf.__version__}")
 //print(f"GPUs: {tf.config.list_physical_devices('GPU')}")
@@ -123,7 +72,6 @@ class ReplayBuffer
     private Builder $nn;
     private object $la;
     private object $g;
-    private SeedSequence $rng;
     private int $capacity;
     private int $obs_dim;
     private int $act_dim;
@@ -139,15 +87,13 @@ class ReplayBuffer
         Builder $nn,
         int $capacity,
         int $obs_dim,
-        int $act_dim,
-        SeedSequence $rng,
+        int $act_dim
         )
     {
         $la = $nn->backend()->primaryLA();
         $this->nn = $nn;
         $this->la = $la;
         $this->g = $this->nn->gradient();
-        $this->rng = $rng;
         $this->capacity = $capacity;
         $this->ptr = 0;
         $this->size = 0;
@@ -184,8 +130,8 @@ class ReplayBuffer
         $idx = $this->la->randomUniform(
             [$batch_size],
             0,
-            $this->size,
-            dtype:NDArray::int32
+            $this->size-1,
+            dtype:NDArray::int32,
         );
         return [
             $this->la->gather($this->obs,$idx),
@@ -213,19 +159,17 @@ class GSDEActor extends AbstractModel
     private object $g;
     private int $act_dim;
     private int $latents_dim;
-    private SeedSequence $rng;
     protected Model $phi_net;  // must be protected or public to be found by trainable variables
     protected Layer $mu_head;    // must be protected or public
     protected Variable $log_std; // must be protected of public
     
     public function __construct(
         Builder $nn,
-        int $obs_dim, int $act_dim, SeedSequence $rng, int $latent_dim = GSDE_LATENT_DIM)
+        int $obs_dim, int $act_dim, int $latent_dim = GSDE_LATENT_DIM)
     {
         parent::__construct($nn);
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
-        $this->rng = $rng;
         
         $this->act_dim    = $act_dim;
         $this->latents_dim = $latent_dim;
@@ -233,15 +177,12 @@ class GSDEActor extends AbstractModel
         # 共有特徴抽出器  (PyTorch: phi_net)
         $this->phi_net = $nn->models->Sequential([
             $nn->layers->Dense(HIDDEN_DIM, activation:"relu",
-                input_shape:[$obs_dim],
-                kernel_initializer:glorot_uniform_initializer($this->la, $rng)),
-            $nn->layers->Dense($latent_dim, activation:"relu",
-                kernel_initializer:glorot_uniform_initializer($this->la, $rng)),
+                                  input_shape:[$obs_dim]),
+            $nn->layers->Dense($latent_dim, activation:"relu"),
         ]);
 
         # 平均ヘッド  (PyTorch: mu_head = nn.Linear)
-        $this->mu_head = $nn->layers->Dense($act_dim, input_shape:[$latent_dim],
-            kernel_initializer:glorot_uniform_initializer($this->la, $rng));
+        $this->mu_head = $nn->layers->Dense($act_dim, input_shape:[$latent_dim]);
 
         # gSDE 対数標準偏差  (PyTorch: nn.Parameter)
         $this->log_std = $this->g->Variable(
@@ -353,7 +294,7 @@ class GSDEActor extends AbstractModel
         $std_W   = $this->std_W();                      # (act_dim, latent_dim)
 
         $B     = $obs->shape()[0];
-        $eps   = $g->randomNormal($std_W, batchShape:[$B]);
+        $eps   = $g->randomNormal($std_W,batchShape:[$B]);
         $W     = $g->mul($eps, $std_W);  # (B, act_dim, latent_dim) eps <- broadcast $std_W
         
         $phi_reshaped = $g->reshape($phi, [$B, $this->latents_dim, 1]);
@@ -411,17 +352,14 @@ class QNetwork extends AbstractModel
     private object $g;
     protected AbstractModel $model; // must be protected or public to be found by trainable variables
 
-    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim, SeedSequence $rng)
+    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim)
     {
         parent::__construct($nn);
         $this->g = $nn->gradient();
         $this->model = $nn->models->Sequential([
-            $nn->layers->Dense($hidden_dim, activation: 'relu', input_shape: [$obs_dim + $act_dim],
-                kernel_initializer:glorot_uniform_initializer($nn->backend()->primaryLA(), $rng)),
-            $nn->layers->Dense($hidden_dim, activation: 'relu',
-                kernel_initializer:glorot_uniform_initializer($nn->backend()->primaryLA(), $rng)),
-            $nn->layers->Dense(1,
-                kernel_initializer:glorot_uniform_initializer($nn->backend()->primaryLA(), $rng)),
+            $nn->layers->Dense($hidden_dim, activation: 'relu', input_shape: [$obs_dim + $act_dim]),
+            $nn->layers->Dense($hidden_dim, activation: 'relu'),
+            $nn->layers->Dense(1),
         ]);
     }
 
@@ -446,11 +384,11 @@ class Critic extends AbstractModel
     public QNetwork $q1;
     public QNetwork $q2;
 
-    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim, SeedSequence $rng)
+    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim)
     {
         parent::__construct($nn);
-        $this->q1 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim, $rng);
-        $this->q2 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim, $rng);
+        $this->q1 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim);
+        $this->q2 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim);
     }
 
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array
@@ -496,7 +434,6 @@ class SACGSDEAgent
     private object $g;
     private int $act_dim;
     private float $act_limit;
-    private SeedSequence $rng;
     public GSDEActor $actor;
     public Critic $critic;
     public Critic $critic_target;
@@ -517,7 +454,6 @@ class SACGSDEAgent
         int $obs_dim,
         int $act_dim,
         float $act_limit,
-        SeedSequence $rng,
     )
     {
         $this->nn = $nn;
@@ -525,12 +461,11 @@ class SACGSDEAgent
         $this->g = $nn->gradient();
         $this->act_dim   = $act_dim;
         $this->act_limit = $act_limit;
-        $this->rng = $rng;
         $la = $this->la; 
 
-        $this->actor         = new GSDEActor($nn, $obs_dim, $act_dim, $rng);
-        $this->critic        = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM, $rng);
-        $this->critic_target = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM, $rng);
+        $this->actor         = new GSDEActor($nn, $obs_dim, $act_dim);
+        $this->critic        = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM);
+        $this->critic_target = new Critic($nn, $obs_dim, $act_dim, HIDDEN_DIM);
 
         # ダミー入力で build してから weights をコピー
         $dummy_obs = $this->g->Variable($la->zeros($la->alloc([1, $obs_dim])));
@@ -786,7 +721,7 @@ function evaluate(
 {
     $la = $nn->backend()->primaryLA();
     // 評価用の開始状態列は学習用の乱数列から独立させる。
-    $env = new SeededContinuousMountainCarV0($la, new SeedSequence(SEED + 10_000));
+    $env = new ContinuousMountainCarV0($la);
     $total = 0.0;
     for ($i = 0; $i < $n_episodes; $i++) {
         [$obs, $info] = $env->reset();
@@ -821,19 +756,19 @@ function main()
     // 短縮診断用。未指定時は従来の定数を使用する。
     $total_steps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
     $eval_every = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-    mt_srand(SEED);
     $mo = new MatrixOperator();
-    $la = $mo->laRawMode();
+    $la = $mo->la();
     $la->setSeed(SEED);
     $nn = new NeuralNetworks($mo);
-    $rng = new SeedSequence(SEED);
 
-    $env = new SeededContinuousMountainCarV0($la, $rng);
+    $env = new ContinuousMountainCarV0($la);
     
     $stateShape = $env->observationSpace()->shape();
     $obs_dim = $stateShape[0];
-
     
+    $env->actionSpace()->seed(SEED);
+    $env->observationSpace()->seed(SEED);
+
     $actionSpace = $env->actionSpace();
     $act_dim = $actionSpace->shape()[0];
     
@@ -842,10 +777,10 @@ function main()
     echo "Env: MountainCarContinuous-v0  obs_dim={$obs_dim}  act_dim={$act_dim}  act_limit={$act_limit}\n";
     echo "gSDE latent_dim=" . GSDE_LATENT_DIM . "  reset_freq=" . GSDE_RESET_FREQ . "\n";
 
-    $agent  = new SACGSDEAgent($nn, $obs_dim, $act_dim, $act_limit, $rng);
-    $buffer = new ReplayBuffer($nn, BUFFER_SIZE, $obs_dim, $act_dim, $rng);
+    $agent  = new SACGSDEAgent($nn, $obs_dim, $act_dim, $act_limit);
+    $buffer = new ReplayBuffer($nn, BUFFER_SIZE, $obs_dim, $act_dim);
 
-    [$obs,$info] = $env->reset();
+    [$obs,$info] = $env->reset(seed: SEED);
     $W_noise = $agent->sample_noise();
 
     $episode_reward = 0.0;
