@@ -16,6 +16,7 @@ class SACGSDEAgent
     private object $la;
     private object $g;
     private int $act_dim;
+    private int $obs_dim;
     private float $act_limit;
     public GSDEActor $actor;
     public Critic $critic;
@@ -55,6 +56,7 @@ class SACGSDEAgent
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
         $this->act_dim   = $act_dim;
+        $this->obs_dim   = $obs_dim;
         $this->act_limit = $act_limit;
         $this->gamma = $gamma;
         $this->tau = $tau;
@@ -145,9 +147,11 @@ class SACGSDEAgent
 
     public function diagnostics() : array
     {
-        $obs = $this->g->Variable($this->la->array(
-            [[0.0, 0.0], [-0.5, 0.0], [0.0, 0.02], [0.4, 0.0]],
-            dtype:NDArray::float32
+        // Keep diagnostics independent of a particular Gym environment.
+        // The old implementation used a MountainCar-shaped (B, 2) tensor,
+        // which made any environment with another observation size fail.
+        $obs = $this->g->Variable($this->la->zeros(
+            $this->la->alloc([4, $this->obs_dim], dtype:NDArray::float32)
         ));
         $mu = $this->actor->diagnostic_mu($obs)->value()->toArray();
         [$mu_min, $mu_max, $mu_mean] = $this->range($mu);

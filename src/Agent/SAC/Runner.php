@@ -13,8 +13,9 @@ class Runner
     private Env $evalEnv;
     private SACGSDEAgent $agent;
     private int $act_dim;
-    private int $act_limit;
+    private float $act_limit;
     private ReplayBuffer $buffer;
+    private ?float $solved_reward;
 
 
     public function __construct(
@@ -25,8 +26,9 @@ class Runner
         SACGSDEAgent $agent,
         int $obs_dim,
         int $act_dim,
-        int $act_limit,
+        float $act_limit,
         int $buffer_size,
+        ?float $solved_reward = null,
     )
     {
         $this->la = $la;
@@ -37,6 +39,7 @@ class Runner
         $this->act_limit = $act_limit;
 
         $this->buffer = new ReplayBuffer($la, $buffer_size, $obs_dim, $act_dim);
+        $this->solved_reward = $solved_reward;
     }
 
     # ─────────────────────────────────────────────
@@ -157,8 +160,8 @@ class Runner
                     $diag['q_data_mean'], $diag['q_pi_mean'], $diag['target_q_mean']
                 );
                 printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actor_grad_rms_by_var']));
-                if ($deterministic_reward >= 90.0) {
-                    echo "🎉 Solved! (deterministic mean reward >= 90)\n";
+                if ($this->solved_reward !== null && $deterministic_reward >= $this->solved_reward) {
+                    echo "🎉 Solved! (deterministic mean reward >= {$this->solved_reward})\n";
                     break;
                 }
             }

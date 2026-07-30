@@ -81,6 +81,7 @@ $runner = new Runner(
     $act_dim,
     $act_limit,
     BUFFER_SIZE,
+    solved_reward: 90.0,
 );
 
 
@@ -111,7 +112,7 @@ for($i=0;$i<5;$i++) {
         $env->render();
     }
     $ep = $i+1;
-    echo "Test Episode {$i}, Steps: {$step}, Total Reward: {$total}\n";
+    echo "Test Episode {$ep}, Steps: {$step}, Total Reward: {$total}\n";
 }
 echo "\n";
 $filename = $env->show(path:__DIR__.'\\mountaincarcontinuous-sac-gsde-trained.gif');

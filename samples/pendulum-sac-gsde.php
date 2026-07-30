@@ -15,21 +15,21 @@ use Rindow\RL\Agents\Agent\SAC\Runner;
 # ─────────────────────────────────────────────
 const ENV_ID          = "Pendulum-v1";
 const SEED            = 42;
-const TOTAL_STEPS     = 100000;
-const START_STEPS     = 1000;
+const TOTAL_STEPS     = 30000; # 200000;
+const START_STEPS     = 0;
 const BATCH_SIZE      = 256;
-const BUFFER_SIZE     = 100000;
+const BUFFER_SIZE     = 30000; # 200000;
 const LR_ACTOR        = 3e-4;
 const LR_CRITIC       = 3e-4;
 const LR_ALPHA        = 3e-4;
 const GAMMA           = 0.99;
 const TAU             = 0.005;
 const HIDDEN_DIM      = 256;
-const ALPHA_INIT      = 1.0;
-const GSDE_LATENT_DIM = 64;
+const ALPHA_INIT      = 0.2;
+const GSDE_LATENT_DIM = 32;
 const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
-const EVAL_EVERY      = 2_000;
+const EVAL_EVERY      = 256; # 5_000;
 const EVAL_EPISODES   = 5;
 
 $mo = new MatrixOperator();
@@ -82,6 +82,7 @@ $runner = new Runner(
     $act_dim,
     $act_limit,
     BUFFER_SIZE,
+    solved_reward: -200.0,
 );
 
 
@@ -112,7 +113,7 @@ for($i=0;$i<5;$i++) {
         $env->render();
     }
     $ep = $i+1;
-    echo "Test Episode {$i}, Steps: {$step}, Total Reward: {$total}\n";
+    echo "Test Episode {$ep}, Steps: {$step}, Total Reward: {$total}\n";
 }
 echo "\n";
 $filename = $env->show(path:__DIR__.'\\pendulum-sac-gsde-trained.gif');
