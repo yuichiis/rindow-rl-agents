@@ -42,9 +42,9 @@ class Runner
         $this->solvedReward = $solvedReward;
     }
 
-    # ─────────────────────────────────────────────
-    # 評価ループ
-    # ─────────────────────────────────────────────
+    /**
+     * 評価ループ
+     */
     public function evaluate(
         SACGSDEAgent $agent,
         int $nEpisodes,
@@ -80,9 +80,9 @@ class Runner
         return $total / $nEpisodes;
     }
 
-    # ─────────────────────────────────────────────
-    # メインループ
-    # ─────────────────────────────────────────────
+    /**
+     * メインループ
+     */
     public function train(
         int $totalSteps,
         int $startSteps,
@@ -90,12 +90,14 @@ class Runner
         int $gsdeResetFreq,
         int $evalEvery,
         int $evalEpisodes,
+        ?bool $evalgSDE=null,
     )
     {
         $la = $this->la;
         $env = $this->env;
         $agent = $this->agent;
         $buffer = $this->buffer;
+        $evalgSDE ??= false;
         
         [$obs,$info] = $env->reset();
         $wNoise = $agent->sampleNoise();
@@ -139,34 +141,38 @@ class Runner
 
             if ($step % $evalEvery == 0) {
                 $deterministicReward = $this->evaluate($agent, $evalEpisodes, $gsdeResetFreq, withExplorationNoise: false);
-                $noisyReward = $this->evaluate($agent, $evalEpisodes, $gsdeResetFreq, withExplorationNoise: true);
+                $strEvalgSDE = "";
+                if($evalgSDE) {
+                    $noisyReward = $this->evaluate($agent, $evalEpisodes, $gsdeResetFreq, withExplorationNoise: true);
+                    $strEvalgSDE = sprintf("| EvalgSDE=%+8.2f ",$noisyReward);
+                }
                 $diag = $agent->diagnostics();
                 $marker = ($deterministicReward > $bestEval) ? " ← best" : "";
                 $bestEval = max($bestEval, $deterministicReward);
                 printf(
-                    "Step %7d | EvalDet=%+8.2f | EvalgSDE=%+8.2f | Alpha=%0.4f | Episodes=%d%s\n",
+                    "Step %7d | EvalDet=%+8.2f %s| Alpha=%0.4f | Episodes=%d%s\n",
                     $step,
                     $deterministicReward,
-                    $noisyReward,
+                    $strEvalgSDE,
                     $agent->alpha()->value()->toArray()[0],
                     $episodeCount,
                     $marker
                 );
-                printf(
-                    "  Diag: mu=[%+.4f,%+.4f,%+.4f] log_std=[%+.4f,%+.4f,%+.4f] gradRMS(actor/critic)=[%.3e/%.3e] Q(data/pi/target)=[%+.4f/%+.4f/%+.4f]\n",
-                    $diag['muMean'], $diag['muMin'], $diag['muMax'],
-                    $diag['logStdMean'], $diag['logStdMin'], $diag['logStdMax'],
-                    $diag['actorGradRms'], $diag['criticGradRms'],
-                    $diag['qDataMean'], $diag['qPiMean'], $diag['targetQMean']
-                );
-                printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actorGradRmsByVar']));
+                // printf(
+                //     "  Diag: mu=[%+.4f,%+.4f,%+.4f] log_std=[%+.4f,%+.4f,%+.4f] gradRMS(actor/critic)=[%.3e/%.3e] Q(data/pi/target)=[%+.4f/%+.4f/%+.4f]\n",
+                //     $diag['muMean'], $diag['muMin'], $diag['muMax'],
+                //     $diag['logStdMean'], $diag['logStdMin'], $diag['logStdMax'],
+                //     $diag['actorGradRms'], $diag['criticGradRms'],
+                //     $diag['qDataMean'], $diag['qPiMean'], $diag['targetQMean']
+                // );
+                // printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actorGradRmsByVar']));
                 if ($this->solvedReward !== null && $deterministicReward >= $this->solvedReward) {
-                    echo "🎉 Solved! (deterministic mean reward >= {$this->solvedReward})\n";
+                //     echo "🎉 Solved! (deterministic mean reward >= {$this->solvedReward})\n";
                     break;
                 }
             }
         }
 
-        echo "\nTraining finished. Best eval reward: {$bestEval}\n";
+        //echo "\nTraining finished. Best eval reward: {$bestEval}\n";
     }
 }

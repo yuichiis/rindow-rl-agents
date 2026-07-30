@@ -8,15 +8,14 @@ use Rindow\NeuralNetworks\Model\AbstractModel;
 use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Layer\Layer;
 
-# ─────────────────────────────────────────────
-# gSDE Actor
-# ─────────────────────────────────────────────
-#    PyTorch 版との対応:
-#        nn.Sequential(Linear, ReLU, ...)  → tf.keras.Sequential([Dense(...), ...])
-#        nn.Parameter(tensor)              → tf.Variable(..., trainable=True)
-#        forward_inference(obs, W_noise)   → そのまま同名メソッド
-#        forward_train(obs)                → そのまま同名メソッド
-#        sample_noise()                    → そのまま同名メソッド
+/**
+ * gSDE Actor
+ * 
+ *    PyTorch 版との対応:
+ *        nn.Sequential(Linear, ReLU, ...)  → tf.keras.Sequential([Dense(...), ...])
+ *        nn.Parameter(tensor)              → tf.Variable(..., trainable=True)
+ * 
+ */
 class GSDEActor extends AbstractModel
 {
     private ?Variable $lastSigmaZ = null;
@@ -46,17 +45,17 @@ class GSDEActor extends AbstractModel
             $nn->layers->Dense($latentDim, activation:"relu"),
         ]);
 
-        # 平均ヘッド  (PyTorch: mu_head = nn.Linear)
+        // 平均ヘッド  (PyTorch: mu_head = nn.Linear)
         $this->muHead = $nn->layers->Dense($actDim, input_shape:[$latentDim]);
 
-        # gSDE 対数標準偏差  (PyTorch: nn.Parameter)
+        // gSDE 対数標準偏差  (PyTorch: nn.Parameter)
         $this->logStd = $this->g->Variable(
             $this->la->fill(-1.0,$this->la->alloc([$actDim, $latentDim],dtype:NDArray::float32)),
             trainable:True, name:"log_std"
         );
     }
 
-    # ── 共通特徴抽出 ────────────────────────────
+    // ── 共通特徴抽出 ────────────────────────────
     private function phiAndMu(Variable $obs) : array
     {
         $phi = $this->phiNet->forward($obs);    # (B, latent_dim)
@@ -69,12 +68,14 @@ class GSDEActor extends AbstractModel
         return $this->g->exp($this->logStd);   # (act_dim, latent_dim)
     }
 
-    # ── ① ノイズサンプル ────────────────────────
-    #    W_noise ~ N(0, std_W²) をサンプルして返す。
-    #    ループ変数として保持し、GSDE_RESET_FREQ ごとに再呼び出し。
-    #
-    #    PyTorch: torch.randn_like(std) * std
-    #    TF:      tf.random.normal(tf.shape(std)) * std
+    /**
+     * ── ① ノイズサンプル ────────────────────────
+     *    W_noise ~ N(0, std_W²) をサンプルして返す。
+     *    ループ変数として保持し、GSDE_RESET_FREQ ごとに再呼び出し。
+     *
+     *    PyTorch: torch.randn_like(std) * std
+     *    TF:      tf.random.normal(tf.shape(std)) * std
+     */
     public function sampleNoise() : Variable
     {
         $g = $this->g;
@@ -83,9 +84,11 @@ class GSDEActor extends AbstractModel
         return $g->mul($eps, $std);  # (act_dim, latent_dim)
     }
 
-    # ── ② 推論パス（勾配なし） ──────────────────
-    #   PyTorch: with torch.no_grad(): ...
-    #   TF: tape 外から呼ぶことで自動的に勾配追跡なし
+    /**
+     * ── ② 推論パス（勾配なし） ──────────────────
+     *   PyTorch: with torch.no_grad(): ...
+     *   TF: tape 外から呼ぶことで自動的に勾配追跡なし
+     */
     public function forwardInference(Variable $obs, Variable $wNoise) : Variable
     {
         [$phi, $mu] = $this->phiAndMu($obs);
@@ -98,7 +101,7 @@ class GSDEActor extends AbstractModel
 
     public function forwardDeterministic(Variable $obs) : Variable
     {
-        # 評価用: gSDE の探索ノイズを使わず、tanh(mu(s)) を返す。
+        // 評価用: gSDE の探索ノイズを使わず、tanh(mu(s)) を返す。
         [, $mu] = $this->phiAndMu($obs);
         return $this->g->tanh($mu);
     }
@@ -138,20 +141,21 @@ class GSDEActor extends AbstractModel
         return $this->lastSigmaZ;
     }
 
-    # ── ③ 学習パス（GradientTape 内で呼ぶ） ─────
-    # """
-    # 外部状態に依存しない自己完結パス。
-    # GradientTape スコープ内で呼ぶことで log_std への勾配が流れる。
-    #
-    # PyTorch の reparameterization:
-    #     eps   = torch.randn(B, act_dim, latent_dim)
-    #     W     = eps * std_W.unsqueeze(0)
-    #     noise = torch.einsum("bl,bal->ba", phi, W)
-    #
-    # TF の reparameterization:
-    #     eps   = tf.random.normal([B, act_dim, latent_dim])
-    #     W     = eps * std_W[tf.newaxis, :, :]
-    #     noise = tf.einsum("bl,bal->ba", phi, W)
+    /**
+     * ── ③ 学習パス（GradientTape 内で呼ぶ） ─────
+     * 外部状態に依存しない自己完結パス。
+     * GradientTape スコープ内で呼ぶことで log_std への勾配が流れる。
+     *
+     * PyTorch の reparameterization:
+     *     eps   = torch.randn(B, act_dim, latent_dim)
+     *     W     = eps * std_W.unsqueeze(0)
+     *     noise = torch.einsum("bl,bal->ba", phi, W)
+     *
+     * TF の reparameterization:
+     *     eps   = tf.random.normal([B, act_dim, latent_dim])
+     *     W     = eps * std_W[tf.newaxis, :, :]
+     *     noise = tf.einsum("bl,bal->ba", phi, W)
+     */
     public function forwardTrain(Variable $obs) : array
     {
         $g = $this->g;
@@ -162,6 +166,7 @@ class GSDEActor extends AbstractModel
         $eps   = $g->randomNormal($stdW,batchShape:[$B]);
         $W     = $g->mul($eps, $stdW);  # (B, act_dim, latent_dim) eps <- broadcast $std_W
         
+        // noise = einsum("bl,bal->ba", phi, W)
         $phiReshaped = $g->reshape($phi, [$B, $this->latentsDim, 1]);
         $matmul = $g->matmul($W, $phiReshaped);
         $noise = $g->squeeze($matmul, 2);         # (B, act_dim)
@@ -169,9 +174,9 @@ class GSDEActor extends AbstractModel
         $xT = $g->add($mu, $noise);
         $yT = $g->tanh($xT);
 
-        # sigma_z(s) = sqrt( std_W² @ phi² )
-        # PyTorch: (std_W.pow(2) @ phi.T.pow(2)).sqrt().T
-        # TF:      tf.transpose( tf.sqrt(std_W**2 @ tf.transpose(phi**2)) )
+        // sigma_z(s) = sqrt( std_W² @ phi² )
+        // PyTorch: (std_W.pow(2) @ phi.T.pow(2)).sqrt().T
+        // TF:      tf.transpose( tf.sqrt(std_W**2 @ tf.transpose(phi**2)) )
         $stdWSq = $g->square($stdW);
         $phiSq = $g->square($phi);
         $phiSqT = $g->transpose($phiSq);
@@ -201,7 +206,9 @@ class GSDEActor extends AbstractModel
         return [$yT, $logProb];
     }
 
-    # tf.keras.Model の call は forward_train を使う
+    /**
+     * tf.keras.Model の call は forward_train を使う
+     */
     public function call(Variable $obs) : array
     {
         return $this->forwardTrain($obs);

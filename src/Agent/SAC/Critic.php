@@ -5,12 +5,14 @@ use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Model\AbstractModel;
 
-# ─────────────────────────────────────────────
-# Critic (Double Q)
-# ─────────────────────────────────────────────
-
-#   PyTorch の Critic(q1, q2) に対応。
-#   TF では Functional API で 2 つの独立したサブモデルを保持する。
+/**
+ * ─────────────────────────────────────────────
+ * Critic (Double Q)
+ * ─────────────────────────────────────────────
+ *   PyTorch の Critic(q1, q2) に対応。
+ *   TF では Functional API で 2 つの独立したサブモデルを保持する。
+ * 
+ */
 class Critic extends AbstractModel
 {
     public QNetwork $q1;

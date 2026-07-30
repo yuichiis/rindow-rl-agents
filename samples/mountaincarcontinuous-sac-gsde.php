@@ -93,6 +93,7 @@ $runner->train(
     GSDE_RESET_FREQ,
     $evalEvery,
     EVAL_EPISODES,
+    evalgSDE: true,
 );
 
 

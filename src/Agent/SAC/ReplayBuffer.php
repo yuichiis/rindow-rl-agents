@@ -5,9 +5,9 @@ use Rindow\NeuralNetworks\Builder\Builder;
 use Interop\Polite\Math\Matrix\NDArray;
 
 
-# ─────────────────────────────────────────────
-# リプレイバッファ  (numpy のまま、変更なし)
-# ─────────────────────────────────────────────
+/**
+ * リプレイバッファ
+ */
 class ReplayBuffer
 {
     private object $la;

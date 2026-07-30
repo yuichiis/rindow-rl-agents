@@ -7,9 +7,11 @@ use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Model\AbstractModel;
 
 
-# ─────────────────────────────────────────────
-# SAC + gSDE エージェント
-# ─────────────────────────────────────────────
+/** 
+ *
+ * SAC + gSDE エージェント
+ *
+ */
 class SACGSDEAgent
 {
     private Builder $nn;
@@ -67,7 +69,7 @@ class SACGSDEAgent
         $this->critic        = new Critic($nn, $obsDim, $actDim, $hiddenDim);
         $this->criticTarget = new Critic($nn, $obsDim, $actDim, $hiddenDim);
 
-        # ダミー入力で build してから weights をコピー
+        // ダミー入力で build してから weights をコピー
         $dummyObs = $this->g->Variable($la->zeros($la->alloc([1, $obsDim])));
         $dummyAct = $this->g->Variable($la->zeros($la->alloc([1, $actDim])));
         
@@ -79,15 +81,15 @@ class SACGSDEAgent
         $criticVars = $this->critic->variables();
 
 
-        $this->softUpdate($this->g, $this->critic, $this->criticTarget, 1.0);   # 完全コピー
+        $this->softUpdate($this->g, $this->critic, $this->criticTarget, 1.0);  // 完全コピー
 
         $this->actorOpt  = $nn->optimizers->Adam(lr: $lrActor);
         $this->criticOpt = $nn->optimizers->Adam(lr: $lrCritic);
         $this->alphaOpt  = $nn->optimizers->Adam(lr: $lrAlpha);
 
-        # 自動エントロピー調整
-        # PyTorch: torch.tensor(log(ALPHA_INIT), requires_grad=True)
-        # TF:      tf.Variable(..., trainable=True)
+        // 自動エントロピー調整
+        // PyTorch: torch.tensor(log(ALPHA_INIT), requires_grad=True)
+        // TF:      tf.Variable(..., trainable=True)
         $this->targetEntropy = -(float)$actDim;
         $this->logAlpha = $this->g->Variable(
             $this->la->array([log($alphaInit)]),
@@ -95,14 +97,15 @@ class SACGSDEAgent
         );
     }
 
-    # ─────────────────────────────────────────────
-    # ソフトアップデートユーティリティ
-    # ─────────────────────────────────────────────
-    #   PyTorch:
-    #       for p, p_tgt in zip(src.parameters(), tgt.parameters()):
-    #           p_tgt.data.copy_(tau * p + (1-tau) * p_tgt)
-    #   TF:
-    #       source.weights / target.weights をペアで assign
+    /**
+     * ソフトアップデートユーティリティ
+     * 
+     * PyTorch:
+     *     for p, p_tgt in zip(src.parameters(), tgt.parameters()):
+     *         p_tgt.data.copy_(tau * p + (1-tau) * p_tgt)
+     * TF:
+     *     source.weights / target.weights をペアで assign
+     */
     public function softUpdate(object $g, AbstractModel $source, AbstractModel $target, float $tau) : void
     {
         $srcVars = $source->trainableVariables();
@@ -116,7 +119,6 @@ class SACGSDEAgent
         }
     }
 
-    # @property
     public function alpha() : Variable
     {
         return $this->g->exp($this->logAlpha);
@@ -179,12 +181,13 @@ class SACGSDEAgent
     }
 
 
-    # ── 行動選択 ────────────────────────────────
+    /**
+     * 行動選択
+     */
     public function sampleNoise() : Variable
     {
         return $this->actor->sampleNoise();
     }
-
 
     public function selectAction(NDArray $obs, Variable $wNoise) : NDArray
     {
@@ -200,7 +203,7 @@ class SACGSDEAgent
 
     public function selectActionDeterministic(NDArray $obs) : NDArray
     {
-        # 評価用: 探索ノイズなしで行動を選ぶ。
+        // 評価用: 探索ノイズなしで行動を選ぶ。
         $obsT  = $this->g->Variable($this->la->expandDims($obs, 0));
         $actionVar = $this->actor->forwardDeterministic($obsT);
         $action = $actionVar->value();
@@ -220,17 +223,19 @@ class SACGSDEAgent
         return $this->la->array($arr);
     }
 
-    
-    # ── 学習 ────────────────────────────────────
-    #   各ブロックが独立した GradientTape を持つ。
-    #
-    #   PyTorch → TF 対応:
-    #       optimizer.zero_grad()           (不要: TF は毎回新しい tape)
-    #       loss.backward()              →  grads = tape.gradient(loss, vars)
-    #       optimizer.step()             →  opt.apply_gradients(zip(grads, vars))
-    #       with torch.no_grad():        →  tape 外 + tf.stop_gradient()
-    #
-    #   Rindow-NN への移植時も同じ構造で書ける。
+
+    /**
+     * ** 学習 **********************************
+     * 
+     *   各ブロックが独立した GradientTape を持つ。
+     *
+     *   PyTorch → TF 対応:
+     *       optimizer.zero_grad()           (不要: TF は毎回新しい tape)
+     *       loss.backward()              →  grads = tape.gradient(loss, vars)
+     *       optimizer.step()             →  opt.apply_gradients(zip(grads, vars))
+     *       with torch.no_grad():        →  tape 外 + tf.stop_gradient()
+     *
+     */
     public function update(ReplayBuffer $buffer) : array
     {
         $g = $this->g;
@@ -242,9 +247,9 @@ class SACGSDEAgent
         $nextObsV = $g->Variable($nextObs);
         $donesV    = $g->Variable($dones);
 
-        # ── [A] target_q (勾配不要) ──────────────
-        # tape 外で計算 → 自動的に勾配追跡なし
-        # tf.stop_gradient で念のため勾配を遮断
+        // ── [A] target_q (勾配不要) ──────────────
+        // tape 外で計算 → 自動的に勾配追跡なし
+        // tf.stop_gradient で念のため勾配を遮断
         [$nextActions, $nextLogPi] = $this->actor->forwardTrain($nextObsV);
         $nextActionsSc = $g->mul($nextActions, $this->actLimit);
         
@@ -259,8 +264,8 @@ class SACGSDEAgent
         $targetQ = $g->stopGradient($g->add($rewardsV, $gammaDonesQNext));
         $this->lastTargetQ = $targetQ;
 
-        # ── [B] Critic 更新 ──────────────────────
-        # PyTorch: critic_loss.backward(); critic_opt.step()
+        // ── [B] Critic 更新 ──────────────────────
+        // PyTorch: critic_loss.backward(); critic_opt.step()
         $critic = $this->critic;
         $agent = $this;
         $criticLoss = $this->nn->with($tape = $g->GradientTape(), function()
@@ -281,7 +286,7 @@ class SACGSDEAgent
         $this->criticOpt->update($criticVars, $criticGrads);
         $this->critic->syncWeightCaches();
 
-        # ── [C] Actor 更新 ───────────────────────
+        // ── [C] Actor 更新 ───────────────────────
         $actLimit = $this->actLimit;
         $actor = $this->actor;
         $critic = $this->critic;
@@ -307,7 +312,7 @@ class SACGSDEAgent
             $this->actor->resetLogStd();
         }
 
-        # ── [D] Alpha 更新 ───────────────────────
+        // ── [D] Alpha 更新 ───────────────────────
         $logAlpha = $this->logAlpha;
         $targetEntropy = $this->targetEntropy;
         $alphaLoss = $this->nn->with($tape = $g->GradientTape(), function()
@@ -320,7 +325,7 @@ class SACGSDEAgent
         $alphaGrads = $tape->gradient($alphaLoss, $alphaVars);
         $this->alphaOpt->update($alphaVars, $alphaGrads);
 
-        # ── [E] Critic ソフトアップデート ────────
+        // ── [E] Critic ソフトアップデート ────────
         $this->softUpdate($this->g, $this->critic, $this->criticTarget, $this->tau);
         $this->criticTarget->syncWeightCaches();
 

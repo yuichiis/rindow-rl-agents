@@ -29,7 +29,7 @@ const ALPHA_INIT      = 0.2;
 const GSDE_LATENT_DIM = 32;
 const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
-const EVAL_EVERY      = 256; # 5_000;
+const EVAL_EVERY      = 1000; # 5_000;
 const EVAL_EPISODES   = 5;
 const SOLVED_REWARD   = -200.0;
 
@@ -94,6 +94,7 @@ $runner->train(
     GSDE_RESET_FREQ,
     $evalEvery,
     EVAL_EPISODES,
+    evalgSDE: false,
 );
 
 
