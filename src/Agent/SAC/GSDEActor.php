@@ -19,54 +19,54 @@ use Rindow\NeuralNetworks\Layer\Layer;
 #        sample_noise()                    → そのまま同名メソッド
 class GSDEActor extends AbstractModel
 {
-    private ?Variable $last_sigma_z = null;
+    private ?Variable $lastSigmaZ = null;
     private object $la;
     private object $g;
-    private int $act_dim;
-    private int $latents_dim;
-    protected Model $phi_net;  // must be protected or public to be found by trainable variables
-    protected Layer $mu_head;    // must be protected or public
-    protected Variable $log_std; // must be protected of public
+    private int $actDim;
+    private int $latentsDim;
+    protected Model $phiNet;  // must be protected or public to be found by trainable variables
+    protected Layer $muHead;    // must be protected or public
+    protected Variable $logStd; // must be protected of public
     
     public function __construct(
         Builder $nn,
-        int $obs_dim, int $act_dim, int $latent_dim, int $hidden_dim)
+        int $obsDim, int $actDim, int $latentDim, int $hiddenDim)
     {
         parent::__construct($nn);
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
         
-        $this->act_dim    = $act_dim;
-        $this->latents_dim = $latent_dim;
+        $this->actDim    = $actDim;
+        $this->latentsDim = $latentDim;
 
         # 共有特徴抽出器  (PyTorch: phi_net)
-        $this->phi_net = $nn->models->Sequential([
-            $nn->layers->Dense($hidden_dim, activation:"relu",
-                                  input_shape:[$obs_dim]),
-            $nn->layers->Dense($latent_dim, activation:"relu"),
+        $this->phiNet = $nn->models->Sequential([
+            $nn->layers->Dense($hiddenDim, activation:"relu",
+                                  input_shape:[$obsDim]),
+            $nn->layers->Dense($latentDim, activation:"relu"),
         ]);
 
         # 平均ヘッド  (PyTorch: mu_head = nn.Linear)
-        $this->mu_head = $nn->layers->Dense($act_dim, input_shape:[$latent_dim]);
+        $this->muHead = $nn->layers->Dense($actDim, input_shape:[$latentDim]);
 
         # gSDE 対数標準偏差  (PyTorch: nn.Parameter)
-        $this->log_std = $this->g->Variable(
-            $this->la->fill(-1.0,$this->la->alloc([$act_dim, $latent_dim],dtype:NDArray::float32)),
+        $this->logStd = $this->g->Variable(
+            $this->la->fill(-1.0,$this->la->alloc([$actDim, $latentDim],dtype:NDArray::float32)),
             trainable:True, name:"log_std"
         );
     }
 
     # ── 共通特徴抽出 ────────────────────────────
-    private function phi_and_mu(Variable $obs) : array
+    private function phiAndMu(Variable $obs) : array
     {
-        $phi = $this->phi_net->forward($obs);    # (B, latent_dim)
-        $mu  = $this->mu_head->forward($phi);    # (B, act_dim)
+        $phi = $this->phiNet->forward($obs);    # (B, latent_dim)
+        $mu  = $this->muHead->forward($phi);    # (B, act_dim)
         return [$phi, $mu];
     }
 
-    private function std_W() : Variable
+    private function stdW() : Variable
     {
-        return $this->g->exp($this->log_std);   # (act_dim, latent_dim)
+        return $this->g->exp($this->logStd);   # (act_dim, latent_dim)
     }
 
     # ── ① ノイズサンプル ────────────────────────
@@ -75,10 +75,10 @@ class GSDEActor extends AbstractModel
     #
     #    PyTorch: torch.randn_like(std) * std
     #    TF:      tf.random.normal(tf.shape(std)) * std
-    public function sample_noise() : Variable
+    public function sampleNoise() : Variable
     {
         $g = $this->g;
-        $std = $this->std_W();
+        $std = $this->stdW();
         $eps = $g->randomNormal($std);
         return $g->mul($eps, $std);  # (act_dim, latent_dim)
     }
@@ -86,56 +86,56 @@ class GSDEActor extends AbstractModel
     # ── ② 推論パス（勾配なし） ──────────────────
     #   PyTorch: with torch.no_grad(): ...
     #   TF: tape 外から呼ぶことで自動的に勾配追跡なし
-    public function forward_inference(Variable $obs, Variable $W_noise) : Variable
+    public function forwardInference(Variable $obs, Variable $wNoise) : Variable
     {
-        [$phi, $mu] = $this->phi_and_mu($obs);
+        [$phi, $mu] = $this->phiAndMu($obs);
         # (act_dim, latent_dim) @ (latent_dim, 1) → (act_dim, 1) → (1, act_dim)
-        $phi_T = $this->g->transpose($phi);
-        $matmul = $this->g->matmul($W_noise, $phi_T);
+        $phiT = $this->g->transpose($phi);
+        $matmul = $this->g->matmul($wNoise, $phiT);
         $noise = $this->g->transpose($matmul); # (1, act_dim)
         return $this->g->tanh($this->g->add($mu, $noise));
     }
 
-    public function forward_deterministic(Variable $obs) : Variable
+    public function forwardDeterministic(Variable $obs) : Variable
     {
         # 評価用: gSDE の探索ノイズを使わず、tanh(mu(s)) を返す。
-        [, $mu] = $this->phi_and_mu($obs);
+        [, $mu] = $this->phiAndMu($obs);
         return $this->g->tanh($mu);
     }
 
-    public function diagnostic_mu(Variable $obs) : Variable
+    public function diagnosticMu(Variable $obs) : Variable
     {
-        [, $mu] = $this->phi_and_mu($obs);
+        [, $mu] = $this->phiAndMu($obs);
         return $mu;
     }
 
-    public function diagnostic_phi(Variable $obs) : Variable
+    public function diagnosticPhi(Variable $obs) : Variable
     {
-        [$phi,] = $this->phi_and_mu($obs);
+        [$phi,] = $this->phiAndMu($obs);
         return $phi;
     }
 
-    public function diagnostic_log_std() : Variable
+    public function diagnosticLogStd() : Variable
     {
-        return $this->log_std;
+        return $this->logStd;
     }
 
-    public function reset_log_std(float $value = -1.0) : void
+    public function resetLogStd(float $value = -1.0) : void
     {
-        $this->log_std->assign($this->la->fill($value, $this->la->alloc($this->log_std->shape(), dtype:NDArray::float32)));
+        $this->logStd->assign($this->la->fill($value, $this->la->alloc($this->logStd->shape(), dtype:NDArray::float32)));
     }
 
-    public function sync_weight_caches() : void
+    public function syncWeightCaches() : void
     {
-        foreach ($this->phi_net->submodules() as $module) {
+        foreach ($this->phiNet->submodules() as $module) {
             $module->reverseSyncWeightVariables();
         }
-        $this->mu_head->reverseSyncWeightVariables();
+        $this->muHead->reverseSyncWeightVariables();
     }
 
-    public function diagnostic_sigma_z() : ?Variable
+    public function diagnosticSigmaZ() : ?Variable
     {
-        return $this->last_sigma_z;
+        return $this->lastSigmaZ;
     }
 
     # ── ③ 学習パス（GradientTape 内で呼ぶ） ─────
@@ -152,59 +152,59 @@ class GSDEActor extends AbstractModel
     #     eps   = tf.random.normal([B, act_dim, latent_dim])
     #     W     = eps * std_W[tf.newaxis, :, :]
     #     noise = tf.einsum("bl,bal->ba", phi, W)
-    public function forward_train(Variable $obs) : array
+    public function forwardTrain(Variable $obs) : array
     {
         $g = $this->g;
-        [$phi, $mu] = $this->phi_and_mu($obs);
-        $std_W   = $this->std_W();                      # (act_dim, latent_dim)
+        [$phi, $mu] = $this->phiAndMu($obs);
+        $stdW   = $this->stdW();                      # (act_dim, latent_dim)
 
         $B     = $obs->shape()[0];
-        $eps   = $g->randomNormal($std_W,batchShape:[$B]);
-        $W     = $g->mul($eps, $std_W);  # (B, act_dim, latent_dim) eps <- broadcast $std_W
+        $eps   = $g->randomNormal($stdW,batchShape:[$B]);
+        $W     = $g->mul($eps, $stdW);  # (B, act_dim, latent_dim) eps <- broadcast $std_W
         
-        $phi_reshaped = $g->reshape($phi, [$B, $this->latents_dim, 1]);
-        $matmul = $g->matmul($W, $phi_reshaped);
+        $phiReshaped = $g->reshape($phi, [$B, $this->latentsDim, 1]);
+        $matmul = $g->matmul($W, $phiReshaped);
         $noise = $g->squeeze($matmul, 2);         # (B, act_dim)
 
-        $x_t = $g->add($mu, $noise);
-        $y_t = $g->tanh($x_t);
+        $xT = $g->add($mu, $noise);
+        $yT = $g->tanh($xT);
 
         # sigma_z(s) = sqrt( std_W² @ phi² )
         # PyTorch: (std_W.pow(2) @ phi.T.pow(2)).sqrt().T
         # TF:      tf.transpose( tf.sqrt(std_W**2 @ tf.transpose(phi**2)) )
-        $std_W_sq = $g->square($std_W);
-        $phi_sq = $g->square($phi);
-        $phi_sq_T = $g->transpose($phi_sq);
-        $matmul_sq = $g->matmul($std_W_sq, $phi_sq_T);
-        $sqrt = $g->sqrt($matmul_sq);
-        $sigma_z = $g->transpose($sqrt);
-        $sigma_z = $g->maximum($sigma_z,$g->constant(1e-6));
-        $this->last_sigma_z = $sigma_z;
+        $stdWSq = $g->square($stdW);
+        $phiSq = $g->square($phi);
+        $phiSqT = $g->transpose($phiSq);
+        $matmulSq = $g->matmul($stdWSq, $phiSqT);
+        $sqrt = $g->sqrt($matmulSq);
+        $sigmaZ = $g->transpose($sqrt);
+        $sigmaZ = $g->maximum($sigmaZ,$g->constant(1e-6));
+        $this->lastSigmaZ = $sigmaZ;
 
-        $log_sigma = $g->log($sigma_z);
-        $diff = $g->sub($x_t, $mu);
-        $diff_sq = $g->square($diff);
-        $sigma_z_sq = $g->square($sigma_z);
-        $two_sigma_z_sq = $g->mul(2.0, $sigma_z_sq);
-        $term3 = $g->div($diff_sq, $two_sigma_z_sq);
+        $logSigma = $g->log($sigmaZ);
+        $diff = $g->sub($xT, $mu);
+        $diffSq = $g->square($diff);
+        $sigmaZSq = $g->square($sigmaZ);
+        $twoSigmaZSq = $g->mul(2.0, $sigmaZSq);
+        $term3 = $g->div($diffSq, $twoSigmaZSq);
         
-        $log_prob = $g->sub(-0.91893853320467, $log_sigma);
-        $log_prob = $g->sub($log_prob, $term3);
+        $logProb = $g->sub(-0.91893853320467, $logSigma);
+        $logProb = $g->sub($logProb, $term3);
 
-        $y_t_sq = $g->square($y_t);
-        $tanh_corr_inner = $g->add($g->sub(1.0, $y_t_sq), 1e-6); # tanh 補正
-        $tanh_corr = $g->log($tanh_corr_inner);
-        $log_prob = $g->sub($log_prob, $tanh_corr);
+        $yTSq = $g->square($yT);
+        $tanhCorrInner = $g->add($g->sub(1.0, $yTSq), 1e-6); # tanh 補正
+        $tanhCorr = $g->log($tanhCorrInner);
+        $logProb = $g->sub($logProb, $tanhCorr);
         
-        $log_prob = $g->reduceSum($log_prob, axis: -1, keepdims: true);
+        $logProb = $g->reduceSum($logProb, axis: -1, keepdims: true);
 
-        return [$y_t, $log_prob];
+        return [$yT, $logProb];
     }
 
     # tf.keras.Model の call は forward_train を使う
     public function call(Variable $obs) : array
     {
-        return $this->forward_train($obs);
+        return $this->forwardTrain($obs);
     }
 
 }

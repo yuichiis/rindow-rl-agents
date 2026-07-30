@@ -38,27 +38,27 @@ $nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 
 // 短縮診断用。未指定時は従来の定数を使用する。
-$total_steps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$eval_every = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
+$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
 
 $env = new ContinuousMountainCarV0($la);
 $evalEnv = new ContinuousMountainCarV0($la);
 $stateShape = $env->observationSpace()->shape();
-$obs_dim = $stateShape[0];
+$obsDim = $stateShape[0];
 $actionSpace = $env->actionSpace();
-$act_dim = $actionSpace->shape()[0];
+$actDim = $actionSpace->shape()[0];
 $env->observationSpace()->seed(SEED);
 $env->actionSpace()->seed(SEED);
-$act_limit = 1.0; 
+$actLimit = 1.0; 
 
 echo "gSDE latent_dim=" . GSDE_LATENT_DIM . "  reset_freq=" . GSDE_RESET_FREQ . "\n";
-echo "Env: ".ENV_ID."  obs_dim={$obs_dim}  act_dim={$act_dim}  act_limit={$act_limit}\n";
+echo "Env: ".ENV_ID."  obs_dim={$obsDim}  act_dim={$actDim}  act_limit={$actLimit}\n";
 
 $agent  = new SACGSDEAgent(
     $nn,
-    $obs_dim,
-    $act_dim,
-    $act_limit,
+    $obsDim,
+    $actDim,
+    $actLimit,
     GSDE_LATENT_DIM,
     HIDDEN_DIM,
     LR_ACTOR,
@@ -77,20 +77,20 @@ $runner = new Runner(
     $env,
     $evalEnv,
     $agent,
-    $obs_dim,
-    $act_dim,
-    $act_limit,
+    $obsDim,
+    $actDim,
+    $actLimit,
     BUFFER_SIZE,
-    solved_reward: 90.0,
+    solvedReward: 90.0,
 );
 
 
 $runner->train(
-    $total_steps,
+    $totalSteps,
     START_STEPS,
     UPDATE_EVERY,
     GSDE_RESET_FREQ,
-    $eval_every,
+    $evalEvery,
     EVAL_EPISODES,
 );
 
@@ -103,10 +103,10 @@ for($i=0;$i<5;$i++) {
     $step = 0;
     $total = 0.0;
     while (!$done) {
-        $action = $agent->select_action_deterministic($obs);
-        [$next_obs, $reward, $terminated, $truncated, $info] = $env->step($action);
+        $action = $agent->selectActionDeterministic($obs);
+        [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
         $done = $terminated || $truncated;
-        $obs = $next_obs;
+        $obs = $nextObs;
         $total += $reward;
         $step  += 1;
         $env->render();

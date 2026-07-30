@@ -15,82 +15,82 @@ class SACGSDEAgent
     private Builder $nn;
     private object $la;
     private object $g;
-    private int $act_dim;
-    private int $obs_dim;
-    private float $act_limit;
+    private int $actDim;
+    private int $obsDim;
+    private float $actLimit;
     public GSDEActor $actor;
     public Critic $critic;
-    public Critic $critic_target;
-    private float $target_entropy;
-    private Variable $log_alpha;
-    private object $actor_opt;
-    private object $critic_opt;
-    private object $alpha_opt;
-    private array $last_actor_grads = [];
-    private array $last_critic_grads = [];
-    private ?Variable $last_log_pi = null;
-    private ?Variable $last_q_data = null;
-    private ?Variable $last_q_pi = null;
-    private ?Variable $last_target_q = null;
+    public Critic $criticTarget;
+    private float $targetEntropy;
+    private Variable $logAlpha;
+    private object $actorOpt;
+    private object $criticOpt;
+    private object $alphaOpt;
+    private array $lastActorGrads = [];
+    private array $lastCriticGrads = [];
+    private ?Variable $lastLogPi = null;
+    private ?Variable $lastQData = null;
+    private ?Variable $lastQPi = null;
+    private ?Variable $lastTargetQ = null;
     private float $gamma;
     private float $tau;
-    private int $batch_size;
+    private int $batchSize;
 
     public function __construct(
         Builder $nn,
-        int $obs_dim,
-        int $act_dim,
-        float $act_limit,
-        int $gsde_latent_dim,
-        int $hidden_dim,
-        float $lr_actor,
-        float $lr_critic,
-        float $lr_alpha,
-        float $alpha_init,
+        int $obsDim,
+        int $actDim,
+        float $actLimit,
+        int $gsdeLatentDim,
+        int $hiddenDim,
+        float $lrActor,
+        float $lrCritic,
+        float $lrAlpha,
+        float $alphaInit,
         float $gamma,
         float $tau,
-        int $batch_size,
+        int $batchSize,
     )
     {
         $this->nn = $nn;
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
-        $this->act_dim   = $act_dim;
-        $this->obs_dim   = $obs_dim;
-        $this->act_limit = $act_limit;
+        $this->actDim   = $actDim;
+        $this->obsDim   = $obsDim;
+        $this->actLimit = $actLimit;
         $this->gamma = $gamma;
         $this->tau = $tau;
-        $this->batch_size = $batch_size;
+        $this->batchSize = $batchSize;
         $la = $this->la; 
 
-        $this->actor         = new GSDEActor($nn, $obs_dim, $act_dim, $gsde_latent_dim, $hidden_dim);
-        $this->critic        = new Critic($nn, $obs_dim, $act_dim, $hidden_dim);
-        $this->critic_target = new Critic($nn, $obs_dim, $act_dim, $hidden_dim);
+        $this->actor         = new GSDEActor($nn, $obsDim, $actDim, $gsdeLatentDim, $hiddenDim);
+        $this->critic        = new Critic($nn, $obsDim, $actDim, $hiddenDim);
+        $this->criticTarget = new Critic($nn, $obsDim, $actDim, $hiddenDim);
 
         # ダミー入力で build してから weights をコピー
-        $dummy_obs = $this->g->Variable($la->zeros($la->alloc([1, $obs_dim])));
-        $dummy_act = $this->g->Variable($la->zeros($la->alloc([1, $act_dim])));
+        $dummyObs = $this->g->Variable($la->zeros($la->alloc([1, $obsDim])));
+        $dummyAct = $this->g->Variable($la->zeros($la->alloc([1, $actDim])));
         
-        $this->actor->forward_train($dummy_obs);
-        $this->critic->forward($dummy_obs, $dummy_act);
-        $this->critic_target->forward($dummy_obs, $dummy_act);
+        $this->actor->forwardTrain($dummyObs);
+        $this->critic->forward($dummyObs, $dummyAct);
+        $this->criticTarget->forward($dummyObs, $dummyAct);
         
-        $critic_vars = $this->critic->trainableVariables();
-        $critic_vars = $this->critic->variables();
+        $criticVars = $this->critic->trainableVariables();
+        $criticVars = $this->critic->variables();
 
 
-        $this->soft_update($this->g, $this->critic, $this->critic_target, 1.0);   # 完全コピー
+        $this->softUpdate($this->g, $this->critic, $this->criticTarget, 1.0);   # 完全コピー
 
-        $this->actor_opt  = $nn->optimizers->Adam(lr: $lr_actor);
-        $this->critic_opt = $nn->optimizers->Adam(lr: $lr_critic);
-        $this->alpha_opt  = $nn->optimizers->Adam(lr: $lr_alpha);
+        $this->actorOpt  = $nn->optimizers->Adam(lr: $lrActor);
+        $this->criticOpt = $nn->optimizers->Adam(lr: $lrCritic);
+        $this->alphaOpt  = $nn->optimizers->Adam(lr: $lrAlpha);
 
         # 自動エントロピー調整
         # PyTorch: torch.tensor(log(ALPHA_INIT), requires_grad=True)
         # TF:      tf.Variable(..., trainable=True)
-        $this->target_entropy = -(float)$act_dim;
-        $this->log_alpha = $this->g->Variable(
-            $this->la->array([log($alpha_init)]),
+        $this->targetEntropy = -(float)$actDim;
+        $this->logAlpha = $this->g->Variable(
+            $this->la->array([log($alphaInit)]),
             trainable:true, name:"log_alpha"
         );
     }
@@ -103,23 +103,23 @@ class SACGSDEAgent
     #           p_tgt.data.copy_(tau * p + (1-tau) * p_tgt)
     #   TF:
     #       source.weights / target.weights をペアで assign
-    public function soft_update(object $g, AbstractModel $source, AbstractModel $target, float $tau) : void
+    public function softUpdate(object $g, AbstractModel $source, AbstractModel $target, float $tau) : void
     {
-        $src_vars = $source->trainableVariables();
-        $tgt_vars = $target->trainableVariables();
-        foreach($src_vars as $i => $src_w) {
-            $tgt_w = $tgt_vars[$i];
-            $scaled_src = $g->scale($tau, $src_w);
-            $scaled_tgt = $g->scale(1.0 - $tau, $tgt_w);
-            $new_val = $g->add($scaled_src, $scaled_tgt);
-            $tgt_w->assign($new_val);
+        $srcVars = $source->trainableVariables();
+        $tgtVars = $target->trainableVariables();
+        foreach($srcVars as $i => $srcW) {
+            $tgtW = $tgtVars[$i];
+            $scaledSrc = $g->scale($tau, $srcW);
+            $scaledTgt = $g->scale(1.0 - $tau, $tgtW);
+            $newVal = $g->add($scaledSrc, $scaledTgt);
+            $tgtW->assign($newVal);
         }
     }
 
     # @property
     public function alpha() : Variable
     {
-        return $this->g->exp($this->log_alpha);
+        return $this->g->exp($this->logAlpha);
     }
 
     private function rms(array $values) : float
@@ -133,7 +133,7 @@ class SACGSDEAgent
         return $count ? sqrt($sum / $count) : 0.0;
     }
 
-    private function gradient_rms_list(array $grads) : array
+    private function gradientRmsList(array $grads) : array
     {
         return array_map(fn($v) => $this->rms($v->toArray()), $grads);
     }
@@ -151,67 +151,67 @@ class SACGSDEAgent
         // The old implementation used a MountainCar-shaped (B, 2) tensor,
         // which made any environment with another observation size fail.
         $obs = $this->g->Variable($this->la->zeros(
-            $this->la->alloc([4, $this->obs_dim], dtype:NDArray::float32)
+            $this->la->alloc([4, $this->obsDim], dtype:NDArray::float32)
         ));
-        $mu = $this->actor->diagnostic_mu($obs)->value()->toArray();
-        [$mu_min, $mu_max, $mu_mean] = $this->range($mu);
-        [$ls_min, $ls_max, $ls_mean] = $this->range($this->actor->diagnostic_log_std()->value()->toArray());
-        [$lp_min, $lp_max, $lp_mean] = $this->last_log_pi
-            ? $this->range($this->last_log_pi->value()->toArray())
+        $mu = $this->actor->diagnosticMu($obs)->value()->toArray();
+        [$muMin, $muMax, $muMean] = $this->range($mu);
+        [$lsMin, $lsMax, $lsMean] = $this->range($this->actor->diagnosticLogStd()->value()->toArray());
+        [$lpMin, $lpMax, $lpMean] = $this->lastLogPi
+            ? $this->range($this->lastLogPi->value()->toArray())
             : [0.0, 0.0, 0.0];
-        $sigma_z = $this->actor->diagnostic_sigma_z();
-        [$sz_min, $sz_max, $sz_mean] = $sigma_z
-            ? $this->range($sigma_z->value()->toArray())
+        $sigmaZ = $this->actor->diagnosticSigmaZ();
+        [$szMin, $szMax, $szMean] = $sigmaZ
+            ? $this->range($sigmaZ->value()->toArray())
             : [0.0, 0.0, 0.0];
-        $q_data_mean = $this->last_q_data ? $this->range($this->last_q_data->value()->toArray())[2] : 0.0;
-        $q_pi_mean = $this->last_q_pi ? $this->range($this->last_q_pi->value()->toArray())[2] : 0.0;
-        $target_q_mean = $this->last_target_q ? $this->range($this->last_target_q->value()->toArray())[2] : 0.0;
+        $qDataMean = $this->lastQData ? $this->range($this->lastQData->value()->toArray())[2] : 0.0;
+        $qPiMean = $this->lastQPi ? $this->range($this->lastQPi->value()->toArray())[2] : 0.0;
+        $targetQMean = $this->lastTargetQ ? $this->range($this->lastTargetQ->value()->toArray())[2] : 0.0;
         return [
-            'mu_mean' => $mu_mean, 'mu_min' => $mu_min, 'mu_max' => $mu_max,
-            'log_std_mean' => $ls_mean, 'log_std_min' => $ls_min, 'log_std_max' => $ls_max,
-            'log_pi_mean' => $lp_mean, 'log_pi_min' => $lp_min, 'log_pi_max' => $lp_max,
-            'sigma_z_mean' => $sz_mean, 'sigma_z_min' => $sz_min, 'sigma_z_max' => $sz_max,
-            'q_data_mean' => $q_data_mean, 'q_pi_mean' => $q_pi_mean, 'target_q_mean' => $target_q_mean,
-            'actor_grad_rms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->last_actor_grads)),
-            'actor_grad_rms_by_var' => $this->gradient_rms_list($this->last_actor_grads),
-            'critic_grad_rms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->last_critic_grads)),
+            'muMean' => $muMean, 'muMin' => $muMin, 'muMax' => $muMax,
+            'logStdMean' => $lsMean, 'logStdMin' => $lsMin, 'logStdMax' => $lsMax,
+            'logPiMean' => $lpMean, 'logPiMin' => $lpMin, 'logPiMax' => $lpMax,
+            'sigmaZMean' => $szMean, 'sigmaZMin' => $szMin, 'sigmaZMax' => $szMax,
+            'qDataMean' => $qDataMean, 'qPiMean' => $qPiMean, 'targetQMean' => $targetQMean,
+            'actorGradRms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->lastActorGrads)),
+            'actorGradRmsByVar' => $this->gradientRmsList($this->lastActorGrads),
+            'criticGradRms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->lastCriticGrads)),
         ];
     }
 
 
     # ── 行動選択 ────────────────────────────────
-    public function sample_noise() : Variable
+    public function sampleNoise() : Variable
     {
-        return $this->actor->sample_noise();
+        return $this->actor->sampleNoise();
     }
 
 
-    public function select_action(NDArray $obs, Variable $W_noise) : NDArray
+    public function selectAction(NDArray $obs, Variable $wNoise) : NDArray
     {
-        $obs_t  = $this->g->Variable($this->la->expandDims($obs, 0));
-        $action_var = $this->actor->forward_inference($obs_t, $W_noise);
-        $action = $action_var->value();
+        $obsT  = $this->g->Variable($this->la->expandDims($obs, 0));
+        $actionVar = $this->actor->forwardInference($obsT, $wNoise);
+        $action = $actionVar->value();
         
-        $action_flat = $action->reshape([$this->act_dim]);
-        $action_sc = $this->la->scal($this->act_limit, $action_flat);
+        $actionFlat = $action->reshape([$this->actDim]);
+        $actionSc = $this->la->scal($this->actLimit, $actionFlat);
         
-        return $this->clip_ndarray($action_sc, -$this->act_limit, $this->act_limit);
+        return $this->clipNdarray($actionSc, -$this->actLimit, $this->actLimit);
     }
 
-    public function select_action_deterministic(NDArray $obs) : NDArray
+    public function selectActionDeterministic(NDArray $obs) : NDArray
     {
         # 評価用: 探索ノイズなしで行動を選ぶ。
-        $obs_t  = $this->g->Variable($this->la->expandDims($obs, 0));
-        $action_var = $this->actor->forward_deterministic($obs_t);
-        $action = $action_var->value();
+        $obsT  = $this->g->Variable($this->la->expandDims($obs, 0));
+        $actionVar = $this->actor->forwardDeterministic($obsT);
+        $action = $actionVar->value();
 
-        $action_flat = $action->reshape([$this->act_dim]);
-        $action_sc = $this->la->scal($this->act_limit, $action_flat);
+        $actionFlat = $action->reshape([$this->actDim]);
+        $actionSc = $this->la->scal($this->actLimit, $actionFlat);
 
-        return $this->clip_ndarray($action_sc, -$this->act_limit, $this->act_limit);
+        return $this->clipNdarray($actionSc, -$this->actLimit, $this->actLimit);
     }
     
-    private function clip_ndarray(NDArray $x, float $min, float $max) : NDArray
+    private function clipNdarray(NDArray $x, float $min, float $max) : NDArray
     {
         $arr = $x->toArray();
         array_walk_recursive($arr, function(&$v) use ($min, $max) {
@@ -234,99 +234,99 @@ class SACGSDEAgent
     public function update(ReplayBuffer $buffer) : array
     {
         $g = $this->g;
-        [$obs, $actions, $rewards, $next_obs, $dones] = $buffer->sample($this->batch_size);
+        [$obs, $actions, $rewards, $nextObs, $dones] = $buffer->sample($this->batchSize);
 
-        $obs_v      = $g->Variable($obs);
-        $actions_v  = $g->Variable($actions);
-        $rewards_v  = $g->Variable($rewards);
-        $next_obs_v = $g->Variable($next_obs);
-        $dones_v    = $g->Variable($dones);
+        $obsV      = $g->Variable($obs);
+        $actionsV  = $g->Variable($actions);
+        $rewardsV  = $g->Variable($rewards);
+        $nextObsV = $g->Variable($nextObs);
+        $donesV    = $g->Variable($dones);
 
         # ── [A] target_q (勾配不要) ──────────────
         # tape 外で計算 → 自動的に勾配追跡なし
         # tf.stop_gradient で念のため勾配を遮断
-        [$next_actions, $next_log_pi] = $this->actor->forward_train($next_obs_v);
-        $next_actions_sc = $g->mul($next_actions, $this->act_limit);
+        [$nextActions, $nextLogPi] = $this->actor->forwardTrain($nextObsV);
+        $nextActionsSc = $g->mul($nextActions, $this->actLimit);
         
-        [$q1_next, $q2_next] = $this->critic_target->forward($next_obs_v, $next_actions_sc);
-        $q_next_min = $g->minimum($q1_next, $q2_next);
+        [$q1Next, $q2Next] = $this->criticTarget->forward($nextObsV, $nextActionsSc);
+        $qNextMin = $g->minimum($q1Next, $q2Next);
         
-        $alpha_next_log_pi = $g->mul($this->alpha(), $next_log_pi);
-        $q_next = $g->sub($q_next_min, $alpha_next_log_pi);
+        $alphaNextLogPi = $g->mul($this->alpha(), $nextLogPi);
+        $qNext = $g->sub($qNextMin, $alphaNextLogPi);
         
-        $one_minus_dones = $g->sub(1.0, $dones_v);
-        $gamma_dones_q_next = $g->mul($this->gamma, $g->mul($one_minus_dones, $q_next));
-        $target_q = $g->stopGradient($g->add($rewards_v, $gamma_dones_q_next));
-        $this->last_target_q = $target_q;
+        $oneMinusDones = $g->sub(1.0, $donesV);
+        $gammaDonesQNext = $g->mul($this->gamma, $g->mul($oneMinusDones, $qNext));
+        $targetQ = $g->stopGradient($g->add($rewardsV, $gammaDonesQNext));
+        $this->lastTargetQ = $targetQ;
 
         # ── [B] Critic 更新 ──────────────────────
         # PyTorch: critic_loss.backward(); critic_opt.step()
         $critic = $this->critic;
         $agent = $this;
-        $critic_loss = $this->nn->with($tape = $g->GradientTape(), function()
-        use ($g, $critic, $obs_v, $actions_v, $target_q, $agent)
+        $criticLoss = $this->nn->with($tape = $g->GradientTape(), function()
+        use ($g, $critic, $obsV, $actionsV, $targetQ, $agent)
         {
-            [$q1, $q2] = $critic->forward($obs_v, $actions_v);
-            $agent->last_q_data = $g->minimum($q1, $q2);
-            $critic_loss = $g->add(
-                $g->reduceMean($g->square($g->sub($q1, $target_q))),
-                $g->reduceMean($g->square($g->sub($q2, $target_q)))
+            [$q1, $q2] = $critic->forward($obsV, $actionsV);
+            $agent->lastQData = $g->minimum($q1, $q2);
+            $criticLoss = $g->add(
+                $g->reduceMean($g->square($g->sub($q1, $targetQ))),
+                $g->reduceMean($g->square($g->sub($q2, $targetQ)))
             );
-            return $critic_loss;
+            return $criticLoss;
         });
 
-        $critic_vars = $critic->trainableVariables();
-        $critic_grads = $tape->gradient($critic_loss, $critic_vars);
-        $this->last_critic_grads = $critic_grads;
-        $this->critic_opt->update($critic_vars, $critic_grads);
-        $this->critic->sync_weight_caches();
+        $criticVars = $critic->trainableVariables();
+        $criticGrads = $tape->gradient($criticLoss, $criticVars);
+        $this->lastCriticGrads = $criticGrads;
+        $this->criticOpt->update($criticVars, $criticGrads);
+        $this->critic->syncWeightCaches();
 
         # ── [C] Actor 更新 ───────────────────────
-        $act_limit = $this->act_limit;
+        $actLimit = $this->actLimit;
         $actor = $this->actor;
         $critic = $this->critic;
         $agent = $this;
-        [$actor_loss,$log_pi] = $this->nn->with($tape = $g->GradientTape(), function()
-        use ($g, $agent, $actor, $obs_v, $act_limit, $critic)
+        [$actorLoss,$logPi] = $this->nn->with($tape = $g->GradientTape(), function()
+        use ($g, $agent, $actor, $obsV, $actLimit, $critic)
         {
-            [$new_actions, $log_pi] = $actor->forward_train($obs_v);
-            $new_actions_sc = $g->mul($new_actions, $act_limit);
-            [$q1_pi, $q2_pi] = $critic->forward($obs_v, $new_actions_sc);
-            $agent->last_q_pi = $g->minimum($q1_pi, $q2_pi);
-            $actor_loss = $g->reduceMean($g->sub($g->mul($g->stopGradient($agent->alpha()), $log_pi), $g->minimum($q1_pi, $q2_pi)));
-            return [$actor_loss,$log_pi];
+            [$newActions, $logPi] = $actor->forwardTrain($obsV);
+            $newActionsSc = $g->mul($newActions, $actLimit);
+            [$q1Pi, $q2Pi] = $critic->forward($obsV, $newActionsSc);
+            $agent->lastQPi = $g->minimum($q1Pi, $q2Pi);
+            $actorLoss = $g->reduceMean($g->sub($g->mul($g->stopGradient($agent->alpha()), $logPi), $g->minimum($q1Pi, $q2Pi)));
+            return [$actorLoss,$logPi];
         });
         
-        $actor_vars = $this->actor->trainableVariables();
-        $actor_grads = $tape->gradient($actor_loss, $actor_vars);
-        $this->last_log_pi = $log_pi;
-        $this->last_actor_grads = $actor_grads;
-        $this->actor_opt->update($actor_vars, $actor_grads);
-        $this->actor->sync_weight_caches();
+        $actorVars = $this->actor->trainableVariables();
+        $actorGrads = $tape->gradient($actorLoss, $actorVars);
+        $this->lastLogPi = $logPi;
+        $this->lastActorGrads = $actorGrads;
+        $this->actorOpt->update($actorVars, $actorGrads);
+        $this->actor->syncWeightCaches();
         if (getenv('RL_FREEZE_LOG_STD') === '1') {
-            $this->actor->reset_log_std();
+            $this->actor->resetLogStd();
         }
 
         # ── [D] Alpha 更新 ───────────────────────
-        $log_alpha = $this->log_alpha;
-        $target_entropy = $this->target_entropy;
-        $alpha_loss = $this->nn->with($tape = $g->GradientTape(), function()
-        use ($g, $log_alpha, $log_pi, $target_entropy)
+        $logAlpha = $this->logAlpha;
+        $targetEntropy = $this->targetEntropy;
+        $alphaLoss = $this->nn->with($tape = $g->GradientTape(), function()
+        use ($g, $logAlpha, $logPi, $targetEntropy)
         {
-            $alpha_loss = $g->scale(-1.0, $g->reduceMean($g->mul($log_alpha, $g->stopGradient($g->add($log_pi, $target_entropy)))));
-            return $alpha_loss;
+            $alphaLoss = $g->scale(-1.0, $g->reduceMean($g->mul($logAlpha, $g->stopGradient($g->add($logPi, $targetEntropy)))));
+            return $alphaLoss;
         });
-        $alpha_vars = [$this->log_alpha];
-        $alpha_grads = $tape->gradient($alpha_loss, $alpha_vars);
-        $this->alpha_opt->update($alpha_vars, $alpha_grads);
+        $alphaVars = [$this->logAlpha];
+        $alphaGrads = $tape->gradient($alphaLoss, $alphaVars);
+        $this->alphaOpt->update($alphaVars, $alphaGrads);
 
         # ── [E] Critic ソフトアップデート ────────
-        $this->soft_update($this->g, $this->critic, $this->critic_target, $this->tau);
-        $this->critic_target->sync_weight_caches();
+        $this->softUpdate($this->g, $this->critic, $this->criticTarget, $this->tau);
+        $this->criticTarget->syncWeightCaches();
 
         return [
-            "critic_loss" => $critic_loss->value()->toArray(),
-            "actor_loss"  => $actor_loss->value()->toArray(),
+            "critic_loss" => $criticLoss->value()->toArray(),
+            "actor_loss"  => $actorLoss->value()->toArray(),
             "alpha"       => $this->alpha()->value()->toArray(),
         ];
     }

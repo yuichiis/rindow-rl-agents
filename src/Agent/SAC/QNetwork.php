@@ -10,13 +10,13 @@ class QNetwork extends AbstractModel
     private object $g;
     protected AbstractModel $model; // must be protected or public to be found by trainable variables
 
-    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim)
+    public function __construct(Builder $nn, int $obsDim, int $actDim, int $hiddenDim)
     {
         parent::__construct($nn);
         $this->g = $nn->gradient();
         $this->model = $nn->models->Sequential([
-            $nn->layers->Dense($hidden_dim, activation: 'relu', input_shape: [$obs_dim + $act_dim]),
-            $nn->layers->Dense($hidden_dim, activation: 'relu'),
+            $nn->layers->Dense($hiddenDim, activation: 'relu', input_shape: [$obsDim + $actDim]),
+            $nn->layers->Dense($hiddenDim, activation: 'relu'),
             $nn->layers->Dense(1),
         ]);
     }
@@ -27,7 +27,7 @@ class QNetwork extends AbstractModel
         return $this->model->forward($x, $training);
     }
 
-    public function sync_weight_caches() : void
+    public function syncWeightCaches() : void
     {
         foreach ($this->model->submodules() as $module) {
             $module->reverseSyncWeightVariables();

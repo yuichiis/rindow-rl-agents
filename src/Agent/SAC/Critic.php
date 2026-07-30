@@ -16,11 +16,11 @@ class Critic extends AbstractModel
     public QNetwork $q1;
     public QNetwork $q2;
 
-    public function __construct(Builder $nn, int $obs_dim, int $act_dim, int $hidden_dim)
+    public function __construct(Builder $nn, int $obsDim, int $actDim, int $hiddenDim)
     {
         parent::__construct($nn);
-        $this->q1 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim);
-        $this->q2 = new QNetwork($nn, $obs_dim, $act_dim, $hidden_dim);
+        $this->q1 = new QNetwork($nn, $obsDim, $actDim, $hiddenDim);
+        $this->q2 = new QNetwork($nn, $obsDim, $actDim, $hiddenDim);
     }
 
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array
@@ -28,10 +28,10 @@ class Critic extends AbstractModel
         return [$this->q1->forward($obs, $action, $training), $this->q2->forward($obs, $action, $training)];
     }
 
-    public function sync_weight_caches() : void
+    public function syncWeightCaches() : void
     {
-        $this->q1->sync_weight_caches();
-        $this->q2->sync_weight_caches();
+        $this->q1->syncWeightCaches();
+        $this->q2->syncWeightCaches();
     }
 }
 
