@@ -31,6 +31,7 @@ const UPDATE_EVERY    = 1;
 const EVAL_EVERY      = 2_000;
 const EVAL_EPISODES   = 5;
 const SOLVED_REWARD   = 90.0;
+const MODEL_FILE       = __DIR__ . '/../models/mountaincarcontinuous-sac-gsde.weights';
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
@@ -70,6 +71,7 @@ $agent  = new SACGSDEAgent(
     TAU,
     BATCH_SIZE,
 );
+$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
 [$obs,$info] = $env->reset(seed: SEED);
 
 $runner = new Runner(
@@ -86,7 +88,12 @@ $runner = new Runner(
 );
 
 
-$runner->train(
+if (is_file($modelFile)) {
+    echo "Model weights found. Loading: {$modelFile}\n";
+    $agent->loadWeightsFromFile($modelFile);
+    echo "Training skipped.\n";
+} else {
+    $runner->train(
     $totalSteps,
     START_STEPS,
     UPDATE_EVERY,
@@ -94,8 +101,11 @@ $runner->train(
     $evalEvery,
     EVAL_EPISODES,
     evalgSDE: true,
-);
+    );
 
+    $agent->saveWeightsToFile($modelFile);
+    echo "Model weights saved: {$modelFile}\n";
+}
 
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {

@@ -11,6 +11,7 @@ use Rindow\RL\Agents\Agent\A2C\A2C;
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
+$la->setSeed(1234);
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(null,$mo);
 

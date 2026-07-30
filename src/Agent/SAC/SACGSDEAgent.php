@@ -14,6 +14,7 @@ use Rindow\NeuralNetworks\Model\AbstractModel;
  */
 class SACGSDEAgent
 {
+    private const CHECKPOINT_VERSION = 1;
     private Builder $nn;
     private object $la;
     private object $g;
@@ -212,6 +213,89 @@ class SACGSDEAgent
         $actionSc = $this->la->scal($this->actLimit, $actionFlat);
 
         return $this->clipNdarray($actionSc, -$this->actLimit, $this->actLimit);
+    }
+
+    /**
+     * 学習済みの重みを1つのチェックポイントへ保存する。
+     *
+     * SACは複数のModelを持つため、各Modelの標準重み形式をまとめて保存する。
+     * ActorだけでなくTarget Criticとlog(alpha)も保存するので、同じ構成の
+     * エージェントを作成してから loadWeightsFromFile() を呼べば学習を再開できる。
+     */
+    public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void
+    {
+        $directory = dirname($filepath);
+        if ($directory !== '' && !is_dir($directory)) {
+            if (!mkdir($directory, 0777, true) && !is_dir($directory)) {
+                throw new \RuntimeException("Could not create checkpoint directory: {$directory}");
+            }
+        }
+
+        $weights = [];
+        $weights['actor'] = [];
+        $weights['critic'] = [];
+        $weights['criticTarget'] = [];
+        $this->actor->saveWeights($weights['actor'], $portable);
+        $this->critic->saveWeights($weights['critic'], $portable);
+        $this->criticTarget->saveWeights($weights['criticTarget'], $portable);
+
+        $weights['logAlpha'] = $this->logAlpha->value()->toArray();
+        $checkpoint = [
+            'format' => 'rindow-rl-sac-gsde',
+            'version' => self::CHECKPOINT_VERSION,
+            'obsDim' => $this->obsDim,
+            'actDim' => $this->actDim,
+            'weights' => $weights,
+        ];
+
+        $data = serialize($checkpoint);
+        $temporary = $filepath . '.tmp';
+        if (file_put_contents($temporary, $data, LOCK_EX) === false) {
+            throw new \RuntimeException("Could not write checkpoint: {$temporary}");
+        }
+        // Windowsでは既存ファイルへのrenameが失敗することがあるため、
+        // 一時ファイルの書き込み成功後にチェックポイントを置き換える。
+        if (is_file($filepath) && !unlink($filepath)) {
+            @unlink($temporary);
+            throw new \RuntimeException("Could not replace checkpoint: {$filepath}");
+        }
+        if (!rename($temporary, $filepath)) {
+            @unlink($temporary);
+            throw new \RuntimeException("Could not finalize checkpoint: {$filepath}");
+        }
+    }
+
+    /**
+     * saveWeightsToFile() で保存したチェックポイントを復元する。
+     */
+    public function loadWeightsFromFile(string $filepath) : void
+    {
+        if (!is_file($filepath)) {
+            throw new \InvalidArgumentException("Checkpoint does not exist: {$filepath}");
+        }
+        $checkpoint = unserialize(file_get_contents($filepath), ['allowed_classes' => false]);
+        if (!is_array($checkpoint)
+            || ($checkpoint['format'] ?? null) !== 'rindow-rl-sac-gsde'
+            || ($checkpoint['version'] ?? null) !== self::CHECKPOINT_VERSION
+        ) {
+            throw new \UnexpectedValueException("Invalid SAC gSDE checkpoint: {$filepath}");
+        }
+        if (($checkpoint['obsDim'] ?? null) !== $this->obsDim
+            || ($checkpoint['actDim'] ?? null) !== $this->actDim
+        ) {
+            throw new \InvalidArgumentException('Checkpoint dimensions do not match this agent.');
+        }
+
+        $weights = $checkpoint['weights'] ?? null;
+        if (!is_array($weights)
+            || !isset($weights['actor'], $weights['critic'], $weights['criticTarget'], $weights['logAlpha'])
+        ) {
+            throw new \UnexpectedValueException('Checkpoint is missing SAC model weights.');
+        }
+        $this->actor->loadWeights($weights['actor']);
+        $this->critic->loadWeights($weights['critic']);
+        $this->criticTarget->loadWeights($weights['criticTarget']);
+        $this->logAlpha->assign($this->la->array($weights['logAlpha']));
     }
     
     private function clipNdarray(NDArray $x, float $min, float $max) : NDArray

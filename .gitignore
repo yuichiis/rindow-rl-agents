@@ -7,4 +7,5 @@ composer.phar
 samples/*.pkl
 samples/*.model
 samples/*-trained.gif
+/models/
 /tmp/
