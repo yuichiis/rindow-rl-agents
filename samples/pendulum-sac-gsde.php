@@ -31,6 +31,7 @@ const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
 const EVAL_EVERY      = 256; # 5_000;
 const EVAL_EPISODES   = 5;
+const SOLVED_REWARD   = -200.0;
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();

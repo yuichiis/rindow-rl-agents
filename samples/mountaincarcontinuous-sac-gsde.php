@@ -30,6 +30,7 @@ const GSDE_RESET_FREQ = 16;
 const UPDATE_EVERY    = 1;
 const EVAL_EVERY      = 2_000;
 const EVAL_EPISODES   = 5;
+const SOLVED_REWARD   = 90.0;
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
@@ -81,7 +82,7 @@ $runner = new Runner(
     $actDim,
     $actLimit,
     BUFFER_SIZE,
-    solvedReward: 90.0,
+    solvedReward: SOLVED_REWARD,
 );
 
 
