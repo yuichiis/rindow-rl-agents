@@ -3,7 +3,12 @@ namespace Rindow\RL\Agents\Util;
 
 class ProgressBar
 {
+
     private ?string $lastConsoleOutput = null;
+    private string $title;
+    private int $numIterations;
+    private int $maxDot;
+    private int $startTime;
 
     /**
      * override this method to change the output destination of the progress bar.
@@ -15,27 +20,39 @@ class ProgressBar
         }
     }
 
-    public function progressBar(
+    public function start(
         string $title,
-        int $iterNumber,
         int $numIterations,
-        int $startTime,
         int $maxDot,
-        ) : void
+    ) : void
+    {
+        $this->lastConsoleOutput = null;
+        $this->title = $title;
+        $this->numIterations = $numIterations;
+        $this->maxDot = $maxDot;
+        $this->startTime = time();
+        $message = "\r{$this->title} 0/{$this->numIterations} [".str_repeat(' ',$this->maxDot)."] 0 sec. remaining:????  ";
+        $this->console($message);
+        $this->lastConsoleOutput = $message;
+    }
+
+    public function update(
+        int $iterNumber,
+    ) : void
     {
         if($iterNumber<1) {
-            $message = "\r{$title} 0/{$numIterations} ";
+            $message = "\r{$this->title} 0/{$this->numIterations} ";
             $this->console($message);
             $this->lastConsoleOutput = $message;
             return;
         }
-        $elapsed = time() - $startTime;
-        if($numIterations) {
-            $completion = $iterNumber / $numIterations;
-            $progressOfAgg = ((($iterNumber-1)%$numIterations)+1) / $numIterations;
+        $elapsed = time() - $this->startTime;
+        if($this->numIterations) {
+            $completion = $iterNumber / $this->numIterations;
+            $progressOfAgg = ((($iterNumber-1)%$this->numIterations)+1) / $this->numIterations;
             $estimated = $elapsed / $completion;
             $remaining = $estimated - $elapsed;
-            $dot = (int)ceil($maxDot*$progressOfAgg);
+            $dot = (int)ceil($this->maxDot*$progressOfAgg);
             $sec = (int)floor($remaining) % 60;
             $min = (int)floor($remaining/60) % 60;
             $hour = (int)floor($remaining/3600);
@@ -43,10 +60,10 @@ class ProgressBar
         } else {
             $dot = 1;
             $rem_string = '????';
-            $this->console($maxDot."\n");
+            $this->console($this->maxDot."\n");
         }
-        $message = "\r{$title} {$iterNumber}/{$numIterations} [".
-            str_repeat('.',$dot).str_repeat(' ',$maxDot-$dot).
+        $message = "\r{$this->title} {$iterNumber}/{$this->numIterations} [".
+            str_repeat('.',$dot).str_repeat(' ',$this->maxDot-$dot).
             "] {$elapsed} sec. remaining:{$rem_string}  ";
         $this->console($message);
         $this->lastConsoleOutput = $message;
@@ -67,6 +84,20 @@ class ProgressBar
             return;
         }
         $this->console($this->lastConsoleOutput);
+    }
+
+    public function laptime() : int
+    {
+        return time() - $this->startTime;
+    }
+
+    public function laptimeString() : string
+    {
+        $elapsed = time() - $this->startTime;
+        $sec = (int)floor($elapsed) % 60;
+        $min = (int)floor($elapsed/60) % 60;
+        $hour = (int)floor($elapsed/3600);
+        return ($hour?$hour.':':'').sprintf('%02d:%02d',$min,$sec);
     }
 
 }

@@ -74,6 +74,9 @@ class SACGSDEAgent
         $dummyObs = $this->g->Variable($la->zeros($la->alloc([1, $obsDim])));
         $dummyAct = $this->g->Variable($la->zeros($la->alloc([1, $actDim])));
         
+        $this->actor->build([1, $obsDim]);
+        $this->critic->build([1, $obsDim],[1, $actDim]);
+        $this->criticTarget->build([1, $obsDim],[1, $actDim]);
         $this->actor->forwardTrain($dummyObs);
         $this->critic->forward($dummyObs, $dummyAct);
         $this->criticTarget->forward($dummyObs, $dummyAct);
@@ -96,6 +99,15 @@ class SACGSDEAgent
             $this->la->array([log($alphaInit)]),
             trainable:true, name:"log_alpha"
         );
+    }
+
+    public function summary()
+    {
+        echo "***** Actor Network *****\n";
+        $this->actor->summary();
+        echo "\n";
+        echo "***** Critic Network *****\n";
+        $this->critic->summary();
     }
 
     /**

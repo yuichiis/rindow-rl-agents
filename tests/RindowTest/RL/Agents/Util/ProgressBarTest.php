@@ -10,11 +10,12 @@ class ProgressBarTest extends TestCase
     {
         $progressBar = new ProgressBar();
 
-        $progressBar->progressBar('Test', 0, 10, time(), 10);
-        $progressBar->progressBar('Test', 1, 10, time(), 10);
-        $progressBar->progressBar('Test', 5, 10, time(), 10);
-        $progressBar->progressBar('Test', 10, 10, time(), 10);
-        
+        $progressBar->start('Test', 10, 10);
+        $progressBar->update(0);
+        $progressBar->update(1);
+        $progressBar->update(5);
+        $progressBar->update(10);
+
         $progressBar->clearProgressBar();
         $progressBar->retrieveProgressBar();
         $this->assertTrue(true);

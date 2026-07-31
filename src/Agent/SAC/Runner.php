@@ -3,6 +3,7 @@ namespace Rindow\RL\Agents\Agent\SAC;
 
 use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\RL\Agents\Util\ProgressBar;
 
 class Runner
 {
@@ -16,7 +17,7 @@ class Runner
     private float $actLimit;
     private ReplayBuffer $buffer;
     private ?float $solvedReward;
-
+    private ProgressBar $progressBar;
 
     public function __construct(
         object $la,
@@ -98,6 +99,8 @@ class Runner
         $agent = $this->agent;
         $buffer = $this->buffer;
         $evalgSDE ??= false;
+
+        $this->progressBar = new ProgressBar();
         
         [$obs,$info] = $env->reset();
         $wNoise = $agent->sampleNoise();
@@ -117,8 +120,10 @@ class Runner
             'criticLoss' => [],
         ];
 
+        $this->progressBar->start("Steps",$totalSteps,50);
         for ($step = 1; $step <= $totalSteps; $step++) {
 
+            $this->progressBar->update($step);
             if ($episodeStep % $gsdeResetFreq == 0) {
                 $wNoise = $agent->sampleNoise();
             }
@@ -169,6 +174,7 @@ class Runner
                 }
                 $marker = ($deterministicReward > $bestEval) ? " ← best" : "";
                 $bestEval = max($bestEval, $deterministicReward);
+                $this->progressBar->clearProgressBar();
                 printf(
                     "Step %7d | EvalDet=%+8.2f %s| Alpha=%0.4f | Episodes=%d%s\n",
                     $step,
@@ -190,10 +196,11 @@ class Runner
                     echo "🎉 Solved! (deterministic mean reward >= {$this->solvedReward})\n";
                     break;
                 }
+
             }
         }
 
-        echo "\nTraining finished. Best eval reward: {$bestEval}\n";
+        echo "\nTraining finished. Best eval reward: {$bestEval} time: {$this->progressBar->laptimeString()}\n";
         return $history;
     }
 }

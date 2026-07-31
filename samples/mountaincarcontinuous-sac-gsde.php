@@ -71,6 +71,9 @@ $agent  = new SACGSDEAgent(
     TAU,
     BATCH_SIZE,
 );
+
+$agent->summary();
+
 $modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
 [$obs,$info] = $env->reset(seed: SEED);
 
