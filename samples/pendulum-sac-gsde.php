@@ -15,10 +15,10 @@ use Rindow\RL\Agents\Agent\SAC\Runner;
 # ─────────────────────────────────────────────
 const ENV_ID          = "Pendulum-v1";
 const SEED            = 42;
-const TOTAL_STEPS     = 30000; # 200000;
+const TOTAL_STEPS     = 15000; # 200000;
 const START_STEPS     = 0;
 const BATCH_SIZE      = 256;
-const BUFFER_SIZE     = 30000; # 200000;
+const BUFFER_SIZE     = 15000; # 200000;
 const LR_ACTOR        = 3e-4;
 const LR_CRITIC       = 3e-4;
 const LR_ALPHA        = 3e-4;
@@ -38,7 +38,7 @@ $mo = new MatrixOperator();
 $la = $mo->laRawMode();
 $la->setSeed(SEED);
 $nn = new NeuralNetworks($mo);
-$plt = new Plot(null,$mo);
+$plt = new Plot(['renderer.skipRunViewer' => true],$mo);
 
 // 短縮診断用。未指定時は従来の定数を使用する。
 $totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
@@ -88,13 +88,20 @@ $runner = new Runner(
     solvedReward: -200.0,
 );
 
+function fitplot($la,array $x,float $window,float $bottom) : NDArray
+{
+    $scale = $window/(max($x)-min($x));
+    $bias = -min($x)*$scale+$bottom;
+    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+}
+
 
 if (is_file($modelFile)) {
     echo "Model weights found. Loading: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
     echo "Training skipped.\n";
 } else {
-    $runner->train(
+    $history = $runner->train(
     $totalSteps,
     START_STEPS,
     UPDATE_EVERY,
@@ -103,6 +110,25 @@ if (is_file($modelFile)) {
     EVAL_EPISODES,
     evalgSDE: false,
     );
+
+    $steps = $la->array($history['step']);
+    $arts = [];
+    $legend = [];
+    $arts[] = $plt->plot($steps, $la->array($history['evalDet']))[0];
+    $legend[] = 'EvalDet';
+    $arts[] = $plt->plot($steps, fitplot($la, $history['alpha'], 1000, 0))[0];
+    $legend[] = 'Alpha';
+    if (count($history['updateStep']) > 0) {
+        $updateSteps = $la->array($history['updateStep']);
+        $arts[] = $plt->plot($updateSteps, fitplot($la, $history['actorLoss'], 1000, 0))[0];
+        $arts[] = $plt->plot($updateSteps, fitplot($la, $history['criticLoss'], 1000, 0))[0];
+        $legend[] = 'ActorLoss';
+        $legend[] = 'CriticLoss';
+    }
+    $plt->xlabel('Training steps');
+    $plt->ylabel('Metric');
+    $plt->legend($arts, $legend);
+    $plt->show(filename:__DIR__.'/../graphics/pendulum-sac-gsde-history.png');
 
     $agent->saveWeightsToFile($modelFile);
     echo "Model weights saved: {$modelFile}\n";
@@ -128,5 +154,5 @@ for($i=0;$i<5;$i++) {
     echo "Test Episode {$ep}, Steps: {$step}, Total Reward: {$total}\n";
 }
 echo "\n";
-$filename = $env->show(path:__DIR__.'\\pendulum-sac-gsde-trained.gif');
+$filename = $env->show(path:__DIR__.'/../graphics/pendulum-sac-gsde-trained.gif');
 echo "filename: {$filename}\n";

@@ -91,7 +91,7 @@ class Runner
         int $evalEvery,
         int $evalEpisodes,
         ?bool $evalgSDE=null,
-    )
+    ) : array
     {
         $la = $this->la;
         $env = $this->env;
@@ -106,6 +106,16 @@ class Runner
         $episodeStep   = 0;
         $episodeCount  = 0;
         $bestEval      = -INF;
+        $history = [
+            'step' => [],
+            'episodes' => [],
+            'evalDet' => [],
+            'evalgSDE' => [],
+            'alpha' => [],
+            'updateStep' => [],
+            'actorLoss' => [],
+            'criticLoss' => [],
+        ];
 
         for ($step = 1; $step <= $totalSteps; $step++) {
 
@@ -136,7 +146,10 @@ class Runner
             }
 
             if ($step >= $startSteps && $step % $updateEvery == 0) {
-                $agent->update($buffer);
+                $updateMetrics = $agent->update($buffer);
+                $history['updateStep'][] = $step;
+                $history['actorLoss'][] = $updateMetrics['actor_loss'];
+                $history['criticLoss'][] = $updateMetrics['critic_loss'];
             }
 
             if ($step % $evalEvery == 0) {
@@ -147,6 +160,13 @@ class Runner
                     $strEvalgSDE = sprintf("| EvalgSDE=%+8.2f ",$noisyReward);
                 }
                 $diag = $agent->diagnostics();
+                $history['step'][] = $step;
+                $history['episodes'][] = $episodeCount;
+                $history['evalDet'][] = $deterministicReward;
+                $history['alpha'][] = $agent->alpha()->value()->toArray()[0];
+                if ($evalgSDE) {
+                    $history['evalgSDE'][] = $noisyReward;
+                }
                 $marker = ($deterministicReward > $bestEval) ? " ← best" : "";
                 $bestEval = max($bestEval, $deterministicReward);
                 printf(
@@ -167,12 +187,13 @@ class Runner
                 // );
                 // printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actorGradRmsByVar']));
                 if ($this->solvedReward !== null && $deterministicReward >= $this->solvedReward) {
-                //     echo "🎉 Solved! (deterministic mean reward >= {$this->solvedReward})\n";
+                    echo "🎉 Solved! (deterministic mean reward >= {$this->solvedReward})\n";
                     break;
                 }
             }
         }
 
-        //echo "\nTraining finished. Best eval reward: {$bestEval}\n";
+        echo "\nTraining finished. Best eval reward: {$bestEval}\n";
+        return $history;
     }
 }
