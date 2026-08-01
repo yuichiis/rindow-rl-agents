@@ -1,0 +1,284 @@
+<?php
+namespace Rindow\RL\Agents\Agent\PPO;
+
+use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
+
+/** 離散行動用 Proximal Policy Optimization エージェント。 */
+class PPOAgent
+{
+    private const CHECKPOINT_VERSION = 2;
+    private object $la;
+    private object $g;
+    private object $optimizer;
+    public ActorCritic $network;
+
+    public function __construct(
+        private Builder $nn,
+        private int $obsDim,
+        private int $numActions,
+        array $hiddenLayers = [64, 64],
+        private float $learningRate = 3.0e-4,
+        private float $clipRange = 0.2,
+        private float $valueLossWeight = 0.5,
+        private float $entropyWeight = 0.01,
+        private int $epochs = 10,
+        private int $batchSize = 64,
+        private float $maxGradNorm = 0.5,
+        private bool $clipValueLoss = true,
+        private bool $sharedBackbone = false,
+    ) {
+        $this->la = $nn->backend()->primaryLA();
+        $this->g = $nn->gradient();
+        $this->network = new ActorCritic(
+            $nn, $obsDim, $numActions, $hiddenLayers, $sharedBackbone
+        );
+        $dummy = $this->g->Variable($this->la->zeros($this->la->alloc([1, $obsDim])));
+        $this->network->forward($dummy);
+        $this->optimizer = $nn->optimizers->Adam(lr:$learningRate, epsilon:1.0e-8);
+    }
+
+    public function summary() : void
+    {
+        $this->network->summary();
+    }
+
+    /** @return array{int,float,float} action, log probability, value */
+    public function selectAction(NDArray $observation) : array
+    {
+        [$probs, $value] = $this->inference($observation);
+        // Match the legacy Random::randomCategorical implementation exactly:
+        // it draws a LA randomUniform value, then applies cumsum/searchsorted.
+        // Calling the newer convenience randomCategorical() can use a
+        // different backend path and consume a different RNG sequence.
+        $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
+        $rand = $this->la->randomUniform(
+            [1], dtype:$probs->dtype(), low:0.0, high:1.0
+        );
+        $action = (int)$this->la->searchsorted($thresholds, $rand, true)->toArray()[0];
+        $p = max(1.0e-8, (float)$probs[0][$action]);
+        return [$action, log($p), $value];
+    }
+
+    public function selectActionDeterministic(NDArray $observation) : int
+    {
+        [$probs] = $this->inference($observation);
+        $values = $probs[0]->toArray();
+        $best = 0;
+        foreach ($values as $action => $probability) {
+            if ($probability > $values[$best]) {
+                $best = $action;
+            }
+        }
+        return $best;
+    }
+
+    public function value(NDArray $observation) : float
+    {
+        [, $value] = $this->inference($observation);
+        return $value;
+    }
+
+    private function inference(NDArray $observation) : array
+    {
+        $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
+        $obsV = $this->g->Variable($batch);
+        [$logits, $value] = $this->network->forward($obsV, false);
+        $probs = $this->la->softmax($logits->value());
+        return [$probs, (float)$value->value()->toArray()[0][0]];
+    }
+
+    /** @return array{policy_loss:float,value_loss:float,entropy:float} */
+    public function update(array $rollout) : array
+    {
+        [$observations, $actions, $oldLogProbs, $advantages, $returns, $oldValues] = $rollout;
+        $count = $observations->shape()[0];
+
+        $advArray = $advantages->toArray();
+        $mean = array_sum($advArray) / max(1, $count);
+        $variance = 0.0;
+        foreach ($advArray as $v) {
+            $variance += ($v - $mean) ** 2;
+        }
+        $std = sqrt($variance / max(1, $count) + 1.0e-8);
+        foreach ($advArray as &$v) {
+            $v = ($v - $mean) / $std;
+        }
+        unset($v);
+        $advantages = $this->la->array($advArray, dtype:NDArray::float32);
+
+        $policyTotal = $valueTotal = $entropyTotal = 0.0;
+        $updates = 0;
+        for ($epoch = 0; $epoch < $this->epochs; $epoch++) {
+            // Match NDArrayDataset's shuffle semantics used by the old PPO:
+            // shuffle batch blocks first, then shuffle items inside each block.
+            // PHP's shuffle() uses a different RNG stream and breaks seeded
+            // reproducibility even when the LA seed is identical.
+            $batchCount = (int)ceil($count / $this->batchSize);
+            $batchOrder = $batchCount > 1
+                ? $this->la->randomSequence($batchCount)
+                : null;
+            for ($batchNo = 0; $batchNo < $batchCount; $batchNo++) {
+                $block = $batchOrder === null ? 0 : (int)$batchOrder[$batchNo];
+                $start = $block * $this->batchSize;
+                $size = min($this->batchSize, $count - $start);
+                if ($size > 1) {
+                    $itemOrder = $this->la->randomSequence($size);
+                    $batchIndices = [];
+                    for ($i = 0; $i < $size; $i++) {
+                        $batchIndices[] = $start + (int)$itemOrder[$i];
+                    }
+                } else {
+                    $batchIndices = [$start];
+                }
+                $idx = $this->la->array($batchIndices, dtype:NDArray::int32);
+                $obs = $this->la->gather($observations, $idx);
+                $act = $this->la->gather($actions, $idx);
+                $oldLog = $this->la->gather($oldLogProbs, $idx);
+                $adv = $this->la->gather($advantages, $idx);
+                $ret = $this->la->gather($returns, $idx);
+                $oldValue = $this->la->gather($oldValues, $idx);
+                [$policyLoss, $valueLoss, $entropy] = $this->updateBatch(
+                    $obs, $act, $oldLog, $oldValue, $adv, $ret
+                );
+                $policyTotal += $policyLoss;
+                $valueTotal += $valueLoss;
+                $entropyTotal += $entropy;
+                $updates++;
+            }
+        }
+        return [
+            'policy_loss' => $policyTotal / $updates,
+            'value_loss' => $valueTotal / $updates,
+            'entropy' => $entropyTotal / $updates,
+        ];
+    }
+
+    private function updateBatch(
+        NDArray $obs,
+        NDArray $actions,
+        NDArray $oldLog,
+        NDArray $oldValues,
+        NDArray $advantages,
+        NDArray $returns,
+    ) : array
+    {
+        $g = $this->g;
+        $network = $this->network;
+        $clipRange = $this->clipRange;
+        $entropyWeight = $this->entropyWeight;
+        $valueLossWeight = $this->valueLossWeight;
+        $clipValueLoss = $this->clipValueLoss;
+        [$totalLoss, $policyLoss, $valueLoss, $entropy] = $this->nn->with(
+            $tape = $g->GradientTape(), function() use (
+            $g, $network, $obs, $actions, $oldLog, $oldValues, $advantages, $returns,
+            $clipRange, $entropyWeight, $valueLossWeight, $clipValueLoss
+        ) {
+            [$logits, $values] = $network->forward($g->Variable($obs), true);
+            $values = $g->squeeze($values, axis:1);
+            $logProbs = $g->logSoftmax($logits);
+            $selected = $g->gather($logProbs, $actions, axis:1, batchDims:1);
+            $ratio = $g->exp($g->sub($selected, $oldLog));
+            $unclipped = $g->mul($ratio, $advantages);
+            $clipped = $g->mul($g->clipByValue($ratio, 1.0 - $clipRange, 1.0 + $clipRange), $advantages);
+            $surrogate = $g->minimum($unclipped, $clipped);
+            $policyLoss = $g->scale(-1.0, $g->reduceMean($surrogate));
+
+            $valueLossUnclipped = $g->square($g->sub($values, $returns));
+            if ($clipValueLoss) {
+                $valuesClipped = $g->add(
+                    $oldValues,
+                    $g->clipByValue($g->sub($values, $oldValues), -$clipRange, $clipRange)
+                );
+                $valueLossClipped = $g->square($g->sub($valuesClipped, $returns));
+                $valueLoss = $g->scale(
+                    0.5,
+                    $g->reduceMean($g->maximum($valueLossUnclipped, $valueLossClipped))
+                );
+            } else {
+                $valueLoss = $g->reduceMean($valueLossUnclipped);
+            }
+
+            $probs = $g->softmax($logits);
+            $entropy = $g->scale(-1.0, $g->reduceMean($g->reduceSum($g->mul($probs, $logProbs), axis:1)));
+            $totalLoss = $g->sub(
+                $g->add($policyLoss, $g->scale($valueLossWeight, $valueLoss)),
+                $g->scale($entropyWeight, $entropy)
+            );
+            return [$totalLoss, $policyLoss, $valueLoss, $entropy];
+        });
+        $variables = $network->trainableVariables();
+        $gradients = $this->clipGradients($tape->gradient($totalLoss, $variables));
+        $this->optimizer->update($variables, $gradients);
+        $network->syncWeightCaches();
+        return [$this->scalar($policyLoss), $this->scalar($valueLoss), $this->scalar($entropy)];
+    }
+
+    private function scalar(object $value) : float
+    {
+        $array = $value->value()->toArray();
+        while (is_array($array)) {
+            $array = reset($array);
+        }
+        return (float)$array;
+    }
+
+    private function clipGradients(array $gradients) : array
+    {
+        $sumSquares = 0.0;
+        $accumulate = function(mixed $values) use (&$accumulate, &$sumSquares) : void {
+            if (is_array($values)) {
+                foreach ($values as $value) {
+                    $accumulate($value);
+                }
+            } else {
+                $sumSquares += (float)$values * (float)$values;
+            }
+        };
+        foreach ($gradients as $gradient) {
+            $accumulate($gradient->toArray());
+        }
+        $norm = sqrt($sumSquares);
+        if ($norm <= $this->maxGradNorm || $norm == 0.0) {
+            return $gradients;
+        }
+        $scale = $this->maxGradNorm / ($norm + 1.0e-8);
+        foreach ($gradients as $i => $gradient) {
+            $gradients[$i] = $this->la->scal($scale, $gradient);
+        }
+        return $gradients;
+    }
+
+    public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void
+    {
+        $directory = dirname($filepath);
+        if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+            throw new \RuntimeException("Could not create checkpoint directory: {$directory}");
+        }
+        $weights = [];
+        $this->network->saveWeights($weights, $portable);
+        $checkpoint = ['format'=>'rindow-rl-ppo', 'version'=>self::CHECKPOINT_VERSION,
+            'obsDim'=>$this->obsDim, 'numActions'=>$this->numActions,
+            'sharedBackbone'=>$this->sharedBackbone, 'weights'=>$weights];
+        if (file_put_contents($filepath, serialize($checkpoint), LOCK_EX) === false) {
+            throw new \RuntimeException("Could not write checkpoint: {$filepath}");
+        }
+    }
+
+    public function loadWeightsFromFile(string $filepath) : void
+    {
+        $checkpoint = unserialize(file_get_contents($filepath), ['allowed_classes'=>false]);
+        $version = $checkpoint['version'] ?? null;
+        $compatibleVersion = $version === self::CHECKPOINT_VERSION
+            || ($version === 1 && !$this->sharedBackbone);
+        if (!is_array($checkpoint) || ($checkpoint['format'] ?? null) !== 'rindow-rl-ppo'
+            || !$compatibleVersion
+            || ($checkpoint['obsDim'] ?? null) !== $this->obsDim
+            || ($checkpoint['numActions'] ?? null) !== $this->numActions
+            || ($version === self::CHECKPOINT_VERSION
+                && ($checkpoint['sharedBackbone'] ?? false) !== $this->sharedBackbone)) {
+            throw new \UnexpectedValueException("Invalid or incompatible PPO checkpoint: {$filepath}");
+        }
+        $this->network->loadWeights($checkpoint['weights']);
+    }
+}
