@@ -21,7 +21,11 @@ class Runner
         private mixed $rewardFunction = null,
         private bool $bootstrapTruncated = true,
     ) {
-        $this->buffer = new RolloutBuffer($la, $rolloutSteps);
+        $this->buffer = new RolloutBuffer(
+            $la,
+            $rolloutSteps,
+            $env->observationSpace()->shape()[0],
+        );
     }
 
     public function evaluate(int $episodes = 10) : float
@@ -87,6 +91,7 @@ class Runner
         $windowShaped = 0.0;
         $windowSteps = 0;
         $windowEpisodes = 0;
+        $lastEpisodeEnd = true;
 
         for ($step = 1; $step <= $totalSteps; $step++) {
             $progress->update($step);
@@ -98,14 +103,14 @@ class Runner
                 ? $reward
                 : ($this->rewardFunction)($obs, $action, $nextObs, $reward, $terminated, $truncated);
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
-            $nextValue = $terminalForValue ? 0.0 : $this->agent->value($nextObs);
             $this->buffer->add(
                 $obs, $action, $trainingReward, $terminalForValue, $terminated || $truncated,
-                $value, $nextValue, $logProb
+                $value, $logProb
             );
             $episodeShaped += $trainingReward;
             $episodeSteps++;
             $obs = $nextObs;
+            $lastEpisodeEnd = $terminated || $truncated;
             if ($terminated || $truncated) {
                 $windowShaped += $episodeShaped;
                 $windowSteps += $episodeSteps;
@@ -116,8 +121,12 @@ class Runner
             }
 
             if ($this->buffer->full() || $step === $totalSteps) {
+                // Only the final state needs a fresh bootstrap value.  For
+                // all earlier transitions, GAE reuses the value saved for the
+                // following observation, avoiding one NN inference per step.
+                $lastValue = $lastEpisodeEnd ? 0.0 : $this->agent->value($obs);
                 $lastMetrics = $this->agent->update(
-                    $this->buffer->finish($this->gamma, $this->gaeLambda)
+                    $this->buffer->finish($this->gamma, $this->gaeLambda, $lastValue)
                 );
             }
             if ($step % $evalEvery === 0 || $step === $totalSteps) {

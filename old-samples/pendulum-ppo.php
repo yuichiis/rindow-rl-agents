@@ -1,5 +1,5 @@
 <?php
-require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/../vendor/old-autoload.php';
 
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
@@ -8,23 +8,6 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 use Rindow\RL\Agents\Runner\StepRunner;
 use Rindow\RL\Agents\Agent\PPO\PPO;
-
-$mo = new MatrixOperator();
-$la = $mo->laRawMode();
-$nn = new NeuralNetworks($mo);
-$plt = new Plot(null,$mo);
-
-## { $numIterations = 300; $evalInterval = 50; $numEvalEpisodes = 10;
-##   $maxExperienceSize = 10000; $batchSize = 32;
-##   $gamma = 0.99; $fcLayers = [100]; $targetUpdatePeriod = 5; $targetUpdateTau = 0.025;
-##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
-##   $ddqn = false; $lossFn = null;}
-## { $numIterations = 300; $evalInterval = 10; $numEvalEpisodes = 10;
-##   $maxExperienceSize = 10000; $batchSize = 64;
-##   $gamma = 0.99; $fcLayers = [100]; $targetUpdatePeriod = 5; $targetUpdateTau = 1.0;
-##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
-##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
-
 
 $numIterations = 300000;# 100000; # 300; # 1000; #
 $targetScore = null; # -250; #
@@ -52,11 +35,35 @@ $clipnorm = 0.5;
 //$maxval = 0.003;
 //$actionKernelInitializer = $nn->backend()->getInitializer('random_uniform',minval:$minval,maxval:$maxval);
 $actionKernelInitializer = null;
+$seed = 1234;
+$numIterations = (int)(getenv('RL_TOTAL_STEPS') ?: $numIterations);
+$evalInterval = (int)(getenv('RL_EVAL_EVERY') ?: $evalInterval);
+
+
+$mo = new MatrixOperator();
+$la = $mo->laRawMode();
+$la->setSeed($seed);
+$nn = new NeuralNetworks($mo);
+$plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+
+## { $numIterations = 300; $evalInterval = 50; $numEvalEpisodes = 10;
+##   $maxExperienceSize = 10000; $batchSize = 32;
+##   $gamma = 0.99; $fcLayers = [100]; $targetUpdatePeriod = 5; $targetUpdateTau = 0.025;
+##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
+##   $ddqn = false; $lossFn = null;}
+## { $numIterations = 300; $evalInterval = 10; $numEvalEpisodes = 10;
+##   $maxExperienceSize = 10000; $batchSize = 64;
+##   $gamma = 0.99; $fcLayers = [100]; $targetUpdatePeriod = 5; $targetUpdateTau = 1.0;
+##   $learningRate = 1e-3; $epsStart = 1.0; $epsStop = 0.05; $decayRate = 0.001;
+##   $ddqn = true; $lossFn = $nn->losses->MeanSquaredError();}
+
 
 
 $env = new PendulumV1($la);
 $stateShape = $env->observationSpace()->shape();
 $actionSpace = $env->actionSpace();
+$env->actionSpace()->seed($seed);
+$env->observationSpace()->seed($seed);
 
 //$env->reset();
 //$env->render();
@@ -64,6 +71,8 @@ $actionSpace = $env->actionSpace();
 //exit();
 
 $evalEnv = new PendulumV1($la);
+$evalEnv->actionSpace()->seed($seed + 1);
+$evalEnv->observationSpace()->seed($seed + 1);
 //$network = new QNetwork($la,$nn,$stateShape,$numActions,$convLayers,$convType,$fcLayers);
 //$policy = new AnnealingEpsGreedy($la,$network,$epsStart,$epsStop,$epsDecayRate);
 $agent = new PPO(
@@ -96,7 +105,8 @@ function fitplot(object $la,array $x,float $window,float $bottom) : NDArray
     return $la->increment($la->scal($scale,$la->array($x)),$bias);
 }
 
-$filename = __DIR__.'\\pendulum-ppo';
+$filename = getenv('OLD_MODEL_FILE') ?: __DIR__.'/../models/pendulum-ppo-old';
+var_dump($filename);
 if(!$agent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$agent,,experienceSize:$maxExperienceSize);
     $driver = new StepRunner($la,$env,$agent,experienceSize:$maxExperienceSize,evalEnv:$evalEnv);
@@ -128,32 +138,34 @@ if(!$agent->fileExists($filename)) {
     //$plt->legend($arts,['reward','Ploss','Vloss','entropy','valRewards']);
     $plt->legend($arts,['reward','Ploss','Vloss','entropy','std','valRewards']);
     //$plt->legend($arts,['steps','valSteps']);
-    $plt->show();
+    $plt->show(filename:__DIR__.'/../graphics/pendulum-ppo-old-history.png');
     $agent->saveWeightsToFile($filename);
 } else {
     $agent->loadWeightsFromFile($filename);
 }
 
 
-echo "Creating demo animation.\n";
-for($i=0;$i<5;$i++) {
-    [$state,$info] = $agent->reset($env);
-    $env->render();
-    $done=false;
-    $truncated=false;
-    $testReward = 0;
-    $testSteps = 0;
-    while(!($done||$truncated)) {
-        //$action = $agent->action($state,training:false,info:$info);
-        //[$state,$reward,$done,$truncated,$info] = $env->step($action);
-        [$state,$reward,$done,$truncated,$info] = $agent->step($env,$testSteps,$state,info:$info);
-        $testReward += $reward;
-        $testSteps++;
+if (getenv('RL_SKIP_DEMO') !== '1') {
+    echo "Creating demo animation.\n";
+    for($i=0;$i<5;$i++) {
+        [$state,$info] = $agent->reset($env);
         $env->render();
+        $done=false;
+        $truncated=false;
+        $testReward = 0;
+        $testSteps = 0;
+        while(!($done||$truncated)) {
+            //$action = $agent->action($state,training:false,info:$info);
+            //[$state,$reward,$done,$truncated,$info] = $env->step($action);
+            [$state,$reward,$done,$truncated,$info] = $agent->step($env,$testSteps,$state,info:$info);
+            $testReward += $reward;
+            $testSteps++;
+            $env->render();
+        }
+        $ep = $i+1;
+        echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
     }
-    $ep = $i+1;
-    echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
+    echo "\n";
+    $filename = $env->show(path:__DIR__.'/../graphics/pendulum-ppo-old-trained.gif');
+    echo "filename: {$filename}\n";
 }
-echo "\n";
-$filename = $env->show(path:__DIR__.'\\pendulum-ppo-trained.gif');
-echo "filename: {$filename}\n";

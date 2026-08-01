@@ -3,20 +3,28 @@ namespace Rindow\RL\Agents\Agent\PPO;
 
 use Interop\Polite\Math\Matrix\NDArray;
 
-/** PPOのon-policyロールアウトとGAEを保持する。 */
+/** PPOのon-policyロールアウトを固定長NDArrayへ直接蓄積する。 */
 class RolloutBuffer
 {
-    private array $observations = [];
-    private array $actions = [];
-    private array $rewards = [];
+    private NDArray $observations;
+    private NDArray $actions;
+    private NDArray $rewards;
+    private NDArray $values;
+    private NDArray $logProbs;
     private array $terminated = [];
     private array $episodeEnds = [];
-    private array $values = [];
-    private array $nextValues = [];
-    private array $logProbs = [];
+    private int $index = 0;
 
-    public function __construct(private object $la, private int $capacity)
-    {
+    public function __construct(
+        private object $la,
+        private int $capacity,
+        int $obsDim,
+    ) {
+        $this->observations = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
+        $this->actions = $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
+        $this->rewards = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
+        $this->values = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
+        $this->logProbs = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
     }
 
     public function add(
@@ -26,57 +34,51 @@ class RolloutBuffer
         bool $terminated,
         bool $episodeEnd,
         float $value,
-        float $nextValue,
         float $logProb,
     ) : void {
         if ($this->full()) {
             throw new \OverflowException('PPO rollout buffer is full.');
         }
-        $this->observations[] = $observation->toArray();
-        $this->actions[] = $action;
-        $this->rewards[] = $reward;
-        $this->terminated[] = $terminated;
-        $this->episodeEnds[] = $episodeEnd;
-        $this->values[] = $value;
-        $this->nextValues[] = $nextValue;
-        $this->logProbs[] = $logProb;
+        $i = $this->index++;
+        // Keep data on the backend.  Converting every observation to a PHP
+        // array here is particularly expensive with the FFI backends.
+        $this->observations[$i] = $observation;
+        $this->actions[$i] = $action;
+        $this->rewards[$i] = $reward;
+        $this->terminated[$i] = $terminated;
+        $this->episodeEnds[$i] = $episodeEnd;
+        $this->values[$i] = $value;
+        $this->logProbs[$i] = $logProb;
     }
 
-    public function full() : bool
-    {
-        return count($this->rewards) >= $this->capacity;
-    }
-
-    public function size() : int
-    {
-        return count($this->rewards);
-    }
+    public function full() : bool { return $this->index >= $this->capacity; }
+    public function size() : int { return $this->index; }
 
     /** @return array{NDArray,NDArray,NDArray,NDArray,NDArray,NDArray} */
-    public function finish(float $gamma, float $gaeLambda) : array
+    public function finish(float $gamma, float $gaeLambda, float $lastValue = 0.0) : array
     {
-        $size = $this->size();
-        $advantages = array_fill(0, $size, 0.0);
-        $returns = array_fill(0, $size, 0.0);
+        $size = $this->index;
+        $advantages = $this->la->zeros($this->la->alloc([$size], dtype:NDArray::float32));
+        $returns = $this->la->zeros($this->la->alloc([$size], dtype:NDArray::float32));
         $gae = 0.0;
         for ($i = $size - 1; $i >= 0; $i--) {
-            // terminatedではbootstrapしない。truncatedでは次状態価値を使うが、
-            // GAE自体は次の（reset後の）エピソードへ連鎖させない。
-            $bootstrap = $this->terminated[$i] ? 0.0 : $this->nextValues[$i];
+            $value = (float)$this->values[$i];
+            $bootstrap = $this->terminated[$i] ? 0.0 : (
+                $i + 1 < $size ? (float)$this->values[$i + 1] : $lastValue
+            );
             $continueGae = $this->episodeEnds[$i] ? 0.0 : 1.0;
-            $delta = $this->rewards[$i] + $gamma * $bootstrap - $this->values[$i];
+            $delta = (float)$this->rewards[$i] + $gamma * $bootstrap - $value;
             $gae = $delta + $gamma * $gaeLambda * $continueGae * $gae;
             $advantages[$i] = $gae;
-            $returns[$i] = $gae + $this->values[$i];
+            $returns[$i] = $gae + $value;
         }
-
         $data = [
-            $this->la->array($this->observations, dtype:NDArray::float32),
-            $this->la->array($this->actions, dtype:NDArray::int32),
-            $this->la->array($this->logProbs, dtype:NDArray::float32),
-            $this->la->array($advantages, dtype:NDArray::float32),
-            $this->la->array($returns, dtype:NDArray::float32),
-            $this->la->array($this->values, dtype:NDArray::float32),
+            $this->la->slice($this->observations, [0, 0], [$size, $this->observations->shape()[1]]),
+            $this->la->slice($this->actions, [0], [$size]),
+            $this->la->slice($this->logProbs, [0], [$size]),
+            $advantages,
+            $returns,
+            $this->la->slice($this->values, [0], [$size]),
         ];
         $this->clear();
         return $data;
@@ -84,8 +86,8 @@ class RolloutBuffer
 
     public function clear() : void
     {
-        $this->observations = $this->actions = $this->rewards = [];
-        $this->terminated = $this->episodeEnds = $this->values = [];
-        $this->nextValues = $this->logProbs = [];
+        $this->index = 0;
+        $this->terminated = [];
+        $this->episodeEnds = [];
     }
 }

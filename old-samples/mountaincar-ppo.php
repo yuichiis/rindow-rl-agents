@@ -167,8 +167,7 @@ function fitplot($la,array $x,float $window,float $bottom) : NDArray
     return $la->increment($la->scal($scale,$la->array($x)),$bias);
 }
 
-$filename = getenv('OLD_MODEL_FILE');
-$filename ??= __DIR__.'\\..\\models\\mountaincar-ppo-old';
+$filename = getenv('OLD_MODEL_FILE') ?: __DIR__.'/../models/mountaincar-ppo-old';
 if(!$agent->fileExists($filename)) {
     //$driver = new EpisodeRunner($la,$env,$agent,$maxExperienceSize);
     $driver = new StepRunner($la,$env,$agent,$maxExperienceSize,evalEnv:$evalEnv);
@@ -225,6 +224,6 @@ if (getenv('RL_SKIP_DEMO') !== '1') {
         echo "Test Episode {$ep}, Steps: {$testSteps}, Total Reward: {$testReward}\n";
     }
     echo "\n";
-    $filename = $env->show(path:__DIR__.'\\..\\graphics\\mountaincar-ppo-old-trained.gif');
+    $filename = $env->show(path:__DIR__.'/../graphics/mountaincar-ppo-old-trained.gif');
     echo "filename: {$filename}\n";
 }
