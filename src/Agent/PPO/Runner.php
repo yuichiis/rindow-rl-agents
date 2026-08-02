@@ -25,6 +25,8 @@ class Runner
             $la,
             $rolloutSteps,
             $env->observationSpace()->shape()[0],
+            $agent->isContinuous() ? $env->actionSpace()->shape()[0] : 1,
+            $agent->isContinuous(),
         );
     }
 
@@ -43,7 +45,11 @@ class Runner
             [$obs] = $this->evalEnv->reset();
             $done = false;
             while (!$done) {
-                $action = $this->la->array($this->agent->selectActionDeterministic($obs), dtype:NDArray::int32);
+                $action = $this->agent->selectActionDeterministic($obs);
+                if (!$this->agent->isContinuous()) {
+                    $action = $this->la->array($action, dtype:NDArray::int32);
+                }
+                $action = $this->agent->clipAction($action);
                 $currentObs = $obs;
                 [$obs, $reward, $terminated, $truncated] = $this->evalEnv->step($action);
                 $done = $terminated || $truncated;
@@ -96,8 +102,11 @@ class Runner
         for ($step = 1; $step <= $totalSteps; $step++) {
             $progress->update($step);
             [$action, $logProb, $value] = $this->agent->selectAction($obs);
+            $envAction = $this->agent->isContinuous()
+                ? $this->agent->clipAction($action)
+                : $this->la->array($action, dtype:NDArray::int32);
             [$nextObs, $reward, $terminated, $truncated] = $this->env->step(
-                $this->la->array($action, dtype:NDArray::int32)
+                $envAction
             );
             $trainingReward = $this->rewardFunction === null
                 ? $reward

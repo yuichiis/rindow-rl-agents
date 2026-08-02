@@ -8,10 +8,12 @@ use Rindow\NeuralNetworks\Model\AbstractModel;
 /** CartPoleなどの離散行動環境で使うActor-Criticネットワーク。 */
 class ActorCritic extends AbstractModel
 {
+    private Builder $nnBuilder;
     protected ?AbstractModel $trunk = null;
     protected ?AbstractModel $actor = null;
     protected ?AbstractModel $critic = null;
     protected ?object $actorHead = null;
+    protected ?object $logStdHead = null;
     protected ?object $criticHead = null;
 
     public function __construct(
@@ -20,8 +22,10 @@ class ActorCritic extends AbstractModel
         int $numActions,
         array $hiddenLayers = [64, 64],
         private bool $sharedBackbone = false,
+        private bool $continuous = false,
     ) {
         parent::__construct($nn);
+        $this->nnBuilder = $nn;
         if (!$sharedBackbone) {
             $this->actor = $this->mlp($nn, $obsDim, $hiddenLayers, $numActions, 'tanh');
             $this->critic = $this->mlp($nn, $obsDim, $hiddenLayers, 1, 'tanh');
@@ -40,6 +44,9 @@ class ActorCritic extends AbstractModel
         }
         $this->trunk = $nn->models->Sequential($layers);
         $this->actorHead = $nn->layers->Dense($numActions);
+        if ($continuous) {
+            $this->logStdHead = null;
+        }
         $this->criticHead = $nn->layers->Dense(1);
     }
 
@@ -92,16 +99,26 @@ class ActorCritic extends AbstractModel
             ];
         }
         $features = $this->features($observations, $training);
-        return [
-            $this->actorHead->forward($features, $training),
-            $this->criticHead->forward($features, $training),
-        ];
+        $mean = $this->actorHead->forward($features, $training);
+        $value = $this->criticHead->forward($features, $training);
+        if ($this->continuous) {
+            if ($this->logStdHead === null) {
+                $this->logStdHead = $this->nnBuilder->layers->Dense(
+                    $mean->value()->shape()[1], kernel_initializer:'zeros'
+                );
+            }
+            $logStd = $this->logStdHead->forward($features, $training);
+            return [$mean, $value, $logStd];
+        }
+        return [$mean, $value];
     }
 
     public function syncWeightCaches() : void
     {
         $models = $this->sharedBackbone
-            ? [$this->trunk, $this->actorHead, $this->criticHead]
+            ? ($this->continuous
+                ? [$this->trunk, $this->actorHead, $this->logStdHead, $this->criticHead]
+                : [$this->trunk, $this->actorHead, $this->criticHead])
             : [$this->actor, $this->critic];
         foreach ($models as $model) {
             foreach ($model->submodules() as $module) {

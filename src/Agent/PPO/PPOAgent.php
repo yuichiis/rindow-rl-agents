@@ -27,11 +27,14 @@ class PPOAgent
         private float $maxGradNorm = 0.5,
         private bool $clipValueLoss = true,
         private bool $sharedBackbone = false,
+        private bool $continuous = false,
+        private ?NDArray $actionMin = null,
+        private ?NDArray $actionMax = null,
     ) {
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
         $this->network = new ActorCritic(
-            $nn, $obsDim, $numActions, $hiddenLayers, $sharedBackbone
+            $nn, $obsDim, $numActions, $hiddenLayers, $sharedBackbone, $continuous
         );
         $dummy = $this->g->Variable($this->la->zeros($this->la->alloc([1, $obsDim])));
         $this->network->forward($dummy);
@@ -43,9 +46,21 @@ class PPOAgent
         $this->network->summary();
     }
 
-    /** @return array{int,float,float} action, log probability, value */
+    public function isContinuous() : bool { return $this->continuous; }
+
+    public function clipAction(NDArray $action) : NDArray
+    {
+        if (!$this->continuous) return $action;
+        $out = $this->la->copy($action);
+        if ($this->actionMin !== null) $out = $this->la->maximum($out, $this->actionMin);
+        if ($this->actionMax !== null) $out = $this->la->minimum($out, $this->actionMax);
+        return $out;
+    }
+
+    /** @return array{mixed,float,float} action, log probability, value */
     public function selectAction(NDArray $observation) : array
     {
+        if ($this->continuous) return $this->selectContinuousAction($observation);
         [$probs, $value] = $this->inference($observation);
         // Match the legacy Random::randomCategorical implementation exactly:
         // it draws a LA randomUniform value, then applies cumsum/searchsorted.
@@ -60,8 +75,26 @@ class PPOAgent
         return [$action, log($p), $value];
     }
 
-    public function selectActionDeterministic(NDArray $observation) : int
+    private function selectContinuousAction(NDArray $observation) : array
     {
+        $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
+        [$mean, $value, $logStd] = $this->network->forward($this->g->Variable($batch), false);
+        $mu = $mean->value();
+        $ls = $this->la->minimum($this->la->maximum($logStd, -5.0), 2.0);
+        $noise = $this->la->randomNormal($mu->shape(), 0.0, 1.0);
+        $std = $this->la->exp($this->la->copy($ls));
+        $action = $this->la->add($mu, $this->la->multiply($std, $noise));
+        $logp = $this->gaussianLogProb($action, $mu, $ls);
+        return [$this->la->squeeze($action, axis:0), $logp, (float)$value->value()->toArray()[0][0]];
+    }
+
+    public function selectActionDeterministic(NDArray $observation) : mixed
+    {
+        if ($this->continuous) {
+            $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
+            [$mean] = $this->network->forward($this->g->Variable($batch), false);
+            return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
+        }
         [$probs] = $this->inference($observation);
         $values = $probs[0]->toArray();
         $best = 0;
@@ -71,6 +104,26 @@ class PPOAgent
             }
         }
         return $best;
+    }
+
+    private function gaussianLogProb(mixed $actions, mixed $mean, mixed $logStd) : mixed
+    {
+        if ($actions instanceof NDArray && $mean instanceof NDArray && $logStd instanceof NDArray) {
+            $diff = $this->la->axpy($mean, $this->la->copy($actions), -1.0);
+            $std = $this->la->exp($this->la->copy($logStd));
+            $z = $this->la->multiply($diff, $this->la->reciprocal($std));
+            $term = $this->la->add(
+                $this->la->scal(-0.5, $this->la->square($z)),
+                $this->la->scal(-1.0, $logStd)
+            );
+            $value = $this->la->reduceSum($term, axis:1)->toArray();
+            while (is_array($value)) $value = reset($value);
+            return (float)$value;
+        }
+        $g = $this->g;
+        $actionConst = $g->constant($this->la->copy($actions));
+        $diff = $g->add($mean, $g->scale(-1.0, $actionConst));
+        return $g->squeeze($g->scale(-0.5, $g->square($diff)), axis:1);
     }
 
     public function value(NDArray $observation) : float
@@ -169,15 +222,33 @@ class PPOAgent
         $entropyWeight = $this->entropyWeight;
         $valueLossWeight = $this->valueLossWeight;
         $clipValueLoss = $this->clipValueLoss;
+        $continuous = $this->continuous;
         [$totalLoss, $policyLoss, $valueLoss, $entropy] = $this->nn->with(
             $tape = $g->GradientTape(), function() use (
             $g, $network, $obs, $actions, $oldLog, $oldValues, $advantages, $returns,
-            $clipRange, $entropyWeight, $valueLossWeight, $clipValueLoss
+            $clipRange, $entropyWeight, $valueLossWeight, $clipValueLoss, $continuous
         ) {
-            [$logits, $values] = $network->forward($g->Variable($obs), true);
+            $outputs = $network->forward($g->Variable($obs), true);
+            [$logits, $values] = $outputs;
             $values = $g->squeeze($values, axis:1);
-            $logProbs = $g->logSoftmax($logits);
-            $selected = $g->gather($logProbs, $actions, axis:1, batchDims:1);
+            if ($continuous) {
+                // Bound exploration scale to keep exp(logStd) finite.
+                $logStd = $g->clipByValue($outputs[2], -5.0, 2.0);
+                $stableStd = $g->add($g->exp($logStd), $g->constant(1.0e-8));
+                $actionConstant = $g->constant($this->la->copy($actions));
+                $diff = $g->add($logits, $g->scale(-1.0, $actionConstant));
+                $z = $g->div($diff, $stableStd);
+                $selected = $g->squeeze(
+                    $g->sub(
+                        $g->scale(-0.5, $g->square($z)),
+                        $g->log($stableStd)
+                    ), axis:1
+                );
+                $logProbs = null;
+            } else {
+                $logProbs = $g->logSoftmax($logits);
+                $selected = $g->gather($logProbs, $actions, axis:1, batchDims:1);
+            }
             $ratio = $g->exp($g->sub($selected, $oldLog));
             $unclipped = $g->mul($ratio, $advantages);
             $clipped = $g->mul($g->clipByValue($ratio, 1.0 - $clipRange, 1.0 + $clipRange), $advantages);
@@ -199,8 +270,12 @@ class PPOAgent
                 $valueLoss = $g->reduceMean($valueLossUnclipped);
             }
 
-            $probs = $g->softmax($logits);
-            $entropy = $g->scale(-1.0, $g->reduceMean($g->reduceSum($g->mul($probs, $logProbs), axis:1)));
+            if ($continuous) {
+                $entropy = $g->reduceMean($g->squeeze($logStd, axis:1));
+            } else {
+                $probs = $g->softmax($logits);
+                $entropy = $g->scale(-1.0, $g->reduceMean($g->reduceSum($g->mul($probs, $logProbs), axis:1)));
+            }
             $totalLoss = $g->sub(
                 $g->add($policyLoss, $g->scale($valueLossWeight, $valueLoss)),
                 $g->scale($entropyWeight, $entropy)

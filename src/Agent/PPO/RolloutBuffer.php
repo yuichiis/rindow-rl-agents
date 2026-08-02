@@ -14,14 +14,20 @@ class RolloutBuffer
     private array $terminated = [];
     private array $episodeEnds = [];
     private int $index = 0;
+    private bool $continuous;
 
     public function __construct(
         private object $la,
         private int $capacity,
         int $obsDim,
+        int $actionDim = 1,
+        bool $continuous = false,
     ) {
+        $this->continuous = $continuous;
         $this->observations = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
-        $this->actions = $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
+        $this->actions = $continuous
+            ? $la->zeros($la->alloc([$capacity, $actionDim], dtype:NDArray::float32))
+            : $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
         $this->rewards = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         $this->values = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         $this->logProbs = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
@@ -29,7 +35,7 @@ class RolloutBuffer
 
     public function add(
         NDArray $observation,
-        int $action,
+        mixed $action,
         float $reward,
         bool $terminated,
         bool $episodeEnd,
@@ -43,7 +49,7 @@ class RolloutBuffer
         // Keep data on the backend.  Converting every observation to a PHP
         // array here is particularly expensive with the FFI backends.
         $this->observations[$i] = $observation;
-        $this->actions[$i] = $action;
+        $this->actions[$i] = $action instanceof NDArray ? $action : $action;
         $this->rewards[$i] = $reward;
         $this->terminated[$i] = $terminated;
         $this->episodeEnds[$i] = $episodeEnd;
@@ -74,7 +80,9 @@ class RolloutBuffer
         }
         $data = [
             $this->la->slice($this->observations, [0, 0], [$size, $this->observations->shape()[1]]),
-            $this->la->slice($this->actions, [0], [$size]),
+            $this->continuous
+                ? $this->la->slice($this->actions, [0, 0], [$size, $this->actions->shape()[1]])
+                : $this->la->slice($this->actions, [0], [$size]),
             $this->la->slice($this->logProbs, [0], [$size]),
             $advantages,
             $returns,
