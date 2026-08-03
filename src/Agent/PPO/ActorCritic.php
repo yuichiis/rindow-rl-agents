@@ -4,8 +4,9 @@ namespace Rindow\RL\Agents\Agent\PPO;
 use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Model\AbstractModel;
+use Interop\Polite\Math\Matrix\NDArray;
 
-/** CartPoleなどの離散行動環境で使うActor-Criticネットワーク。 */
+/** 離散方策、Gaussian方策、gSDE方策で共有するActor-Criticネットワーク。 */
 class ActorCritic extends AbstractModel
 {
     private Builder $nnBuilder;
@@ -14,6 +15,7 @@ class ActorCritic extends AbstractModel
     protected ?AbstractModel $critic = null;
     protected ?object $actorHead = null;
     protected ?object $logStdHead = null;
+    protected ?Variable $sdeLogStd = null;
     protected ?object $criticHead = null;
 
     public function __construct(
@@ -23,6 +25,8 @@ class ActorCritic extends AbstractModel
         array $hiddenLayers = [64, 64],
         private bool $sharedBackbone = false,
         private bool $continuous = false,
+        private bool $useSDE = false,
+        private float $sdeInitialLogStd = -2.0,
     ) {
         parent::__construct($nn);
         $this->nnBuilder = $nn;
@@ -44,8 +48,19 @@ class ActorCritic extends AbstractModel
         }
         $this->trunk = $nn->models->Sequential($layers);
         $this->actorHead = $nn->layers->Dense($numActions);
-        if ($continuous) {
+        if ($continuous && !$useSDE) {
             $this->logStdHead = null;
+        }
+        if ($useSDE) {
+            $latentDim = $hiddenLayers[count($hiddenLayers)-1];
+            $this->sdeLogStd = $nn->gradient()->Variable(
+                $nn->backend()->primaryLA()->fill(
+                    $sdeInitialLogStd,
+                    $nn->backend()->primaryLA()->alloc([$numActions, $latentDim], dtype:NDArray::float32)
+                ),
+                trainable:true,
+                name:'ppo_sde_log_std',
+            );
         }
         $this->criticHead = $nn->layers->Dense(1);
     }
@@ -102,6 +117,13 @@ class ActorCritic extends AbstractModel
         $mean = $this->actorHead->forward($features, $training);
         $value = $this->criticHead->forward($features, $training);
         if ($this->continuous) {
+            if ($this->useSDE) {
+                $g = $this->nnBuilder->gradient();
+                $logStd = $g->clipByValue($this->sdeLogStd, -5.0, 2.0);
+                $variance = $g->matmul($g->square($features), $g->transpose($g->square($g->exp($logStd))));
+                $std = $g->sqrt($g->maximum($variance, $g->constant(1.0e-8)));
+                return [$mean, $value, $std];
+            }
             if ($this->logStdHead === null) {
                 $this->logStdHead = $this->nnBuilder->layers->Dense(
                     $mean->value()->shape()[1], kernel_initializer:'zeros'
@@ -113,11 +135,41 @@ class ActorCritic extends AbstractModel
         return [$mean, $value];
     }
 
+    public function sampleSDENoise() : NDArray
+    {
+        if (!$this->useSDE || $this->sdeLogStd === null) {
+            throw new \LogicException('gSDE is not enabled.');
+        }
+        $la = $this->nnBuilder->backend()->primaryLA();
+        $logStd = $la->minimum($la->maximum($this->sdeLogStd->value(), -5.0), 2.0);
+        return $la->multiply(
+            $la->randomNormal($logStd->shape(), 0.0, 1.0),
+            $la->exp($la->copy($logStd)),
+        );
+    }
+
+    /** @return array{Variable,Variable,Variable,Variable} action, value, marginal std, mean */
+    public function forwardSDE(Variable $observations, NDArray $noise, ?bool $training = false) : array
+    {
+        if (!$this->useSDE) {
+            throw new \LogicException('gSDE is not enabled.');
+        }
+        $g = $this->nnBuilder->gradient();
+        $features = $this->features($observations, $training);
+        $mean = $this->actorHead->forward($features, $training);
+        $value = $this->criticHead->forward($features, $training);
+        $noiseTerm = $g->matmul($features, $g->transpose($g->constant($noise)));
+        $logStd = $g->clipByValue($this->sdeLogStd, -5.0, 2.0);
+        $variance = $g->matmul($g->square($features), $g->transpose($g->square($g->exp($logStd))));
+        $std = $g->sqrt($g->maximum($variance, $g->constant(1.0e-8)));
+        return [$g->add($mean, $noiseTerm), $value, $std, $mean];
+    }
+
     public function syncWeightCaches() : void
     {
         $models = $this->sharedBackbone
             ? ($this->continuous
-                ? [$this->trunk, $this->actorHead, $this->logStdHead, $this->criticHead]
+                ? array_filter([$this->trunk, $this->actorHead, $this->logStdHead, $this->criticHead])
                 : [$this->trunk, $this->actorHead, $this->criticHead])
             : [$this->actor, $this->critic];
         foreach ($models as $model) {

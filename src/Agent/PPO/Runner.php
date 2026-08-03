@@ -98,10 +98,21 @@ class Runner
         $windowSteps = 0;
         $windowEpisodes = 0;
         $lastEpisodeEnd = true;
+        $sdeNoiseAge = 0;
 
         for ($step = 1; $step <= $totalSteps; $step++) {
+            if ($this->agent->usesSDE() && $sdeNoiseAge === 0) {
+                $this->agent->resetExplorationNoise();
+            }
             $progress->update($step);
             [$action, $logProb, $value] = $this->agent->selectAction($obs);
+            if ($this->agent->usesSDE()) {
+                $sdeNoiseAge++;
+                if ($this->agent->sdeSampleFreq() > 0
+                    && $sdeNoiseAge >= $this->agent->sdeSampleFreq()) {
+                    $sdeNoiseAge = 0;
+                }
+            }
             $envAction = $this->agent->isContinuous()
                 ? $this->agent->clipAction($action)
                 : $this->la->array($action, dtype:NDArray::int32);
@@ -137,6 +148,8 @@ class Runner
                 $lastMetrics = $this->agent->update(
                     $this->buffer->finish($this->gamma, $this->gaeLambda, $lastValue)
                 );
+                // A PPO rollout always starts with a fresh exploration matrix.
+                $sdeNoiseAge = 0;
             }
             if ($step % $evalEvery === 0 || $step === $totalSteps) {
                 $evaluation = $this->evaluateDetailed($evalEpisodes);
