@@ -11,6 +11,7 @@ class RolloutBuffer
     private NDArray $rewards;
     private NDArray $values;
     private NDArray $logProbs;
+    private ?NDArray $actionMasks = null;
     private array $terminated = [];
     private array $episodeEnds = [];
     private int $index = 0;
@@ -22,6 +23,7 @@ class RolloutBuffer
         int $obsDim,
         int $actionDim = 1,
         bool $continuous = false,
+        int $maskDim = 0,
     ) {
         $this->continuous = $continuous;
         $this->observations = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
@@ -31,6 +33,11 @@ class RolloutBuffer
         $this->rewards = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         $this->values = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         $this->logProbs = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
+        if ($maskDim > 0) {
+            $this->actionMasks = $la->zeros(
+                $la->alloc([$capacity, $maskDim], dtype:NDArray::bool)
+            );
+        }
     }
 
     public function add(
@@ -41,6 +48,7 @@ class RolloutBuffer
         bool $episodeEnd,
         float $value,
         float $logProb,
+        ?NDArray $actionMask = null,
     ) : void {
         if ($this->full()) {
             throw new \OverflowException('PPO rollout buffer is full.');
@@ -55,6 +63,14 @@ class RolloutBuffer
         $this->episodeEnds[$i] = $episodeEnd;
         $this->values[$i] = $value;
         $this->logProbs[$i] = $logProb;
+        if ($this->actionMasks !== null) {
+            if ($actionMask === null) {
+                throw new \InvalidArgumentException('Action mask is required for this rollout buffer.');
+            }
+            $this->actionMasks[$i] = $actionMask;
+        } elseif ($actionMask !== null) {
+            throw new \InvalidArgumentException('This rollout buffer is not configured for action masks.');
+        }
     }
 
     public function full() : bool { return $this->index >= $this->capacity; }
@@ -88,6 +104,11 @@ class RolloutBuffer
             $returns,
             $this->la->slice($this->values, [0], [$size]),
         ];
+        if ($this->actionMasks !== null) {
+            $data[] = $this->la->slice(
+                $this->actionMasks, [0, 0], [$size, $this->actionMasks->shape()[1]]
+            );
+        }
         $this->clear();
         return $data;
     }

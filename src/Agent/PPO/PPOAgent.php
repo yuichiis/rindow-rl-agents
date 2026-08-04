@@ -34,12 +34,17 @@ class PPOAgent
         private string $exploration = 'gaussian',
         private int $sdeSampleFreq = -1,
         private float $sdeInitialLogStd = -2.0,
+        private ?string $stateField = null,
+        private ?string $actionMaskField = null,
     ) {
         if (!in_array($exploration, ['gaussian', 'gsde'], true)) {
             throw new \InvalidArgumentException("exploration must be 'gaussian' or 'gsde'.");
         }
         if ($exploration === 'gsde' && (!$continuous || !$sharedBackbone)) {
             throw new \InvalidArgumentException('gSDE requires continuous:true and sharedBackbone:true.');
+        }
+        if ($continuous && $actionMaskField !== null) {
+            throw new \InvalidArgumentException('Action masks are supported only for discrete actions.');
         }
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
@@ -58,6 +63,8 @@ class PPOAgent
     }
 
     public function isContinuous() : bool { return $this->continuous; }
+    public function observationDimension() : int { return $this->obsDim; }
+    public function usesActionMask() : bool { return $this->actionMaskField !== null; }
     public function usesSDE() : bool { return $this->exploration === 'gsde'; }
     public function sdeSampleFreq() : int { return $this->sdeSampleFreq; }
 
@@ -75,11 +82,62 @@ class PPOAgent
         return $out;
     }
 
+    /** @return array{NDArray,?NDArray} state and action mask */
+    public function parseObservation(NDArray|array $observation) : array
+    {
+        if ($observation instanceof NDArray) {
+            if ($this->stateField !== null || $this->actionMaskField !== null) {
+                throw new \InvalidArgumentException('A dictionary observation was expected.');
+            }
+            return [$this->asNetworkState($observation), null];
+        }
+        if ($this->stateField === null) {
+            throw new \InvalidArgumentException('stateField is required for dictionary observations.');
+        }
+        $state = $observation[$this->stateField] ?? null;
+        if (!$state instanceof NDArray) {
+            throw new \InvalidArgumentException("Observation field '{$this->stateField}' must be an NDArray.");
+        }
+        $mask = null;
+        if ($this->actionMaskField !== null) {
+            $mask = $observation[$this->actionMaskField] ?? null;
+            if (!$mask instanceof NDArray) {
+                throw new \InvalidArgumentException(
+                    "Observation field '{$this->actionMaskField}' must be an NDArray."
+                );
+            }
+            if ($mask->shape() !== [$this->numActions]) {
+                throw new \InvalidArgumentException('Action mask shape must equal [numActions].');
+            }
+            if ($mask->dtype() !== NDArray::bool) {
+                $mask = $this->la->astype($mask, dtype:NDArray::bool);
+            }
+            if (!in_array(true, $mask->toArray(), true)) {
+                throw new \InvalidArgumentException('Action mask must allow at least one action.');
+            }
+        }
+        return [$this->asNetworkState($state), $mask];
+    }
+
+    private function asNetworkState(NDArray $state) : NDArray
+    {
+        return $this->la->isInt($state)
+            ? $this->la->astype($state, dtype:NDArray::float32)
+            : $state;
+    }
+
     /** @return array{mixed,float,float} action, log probability, value */
-    public function selectAction(NDArray $observation) : array
+    public function selectAction(NDArray|array $observation) : array
+    {
+        [$observation, $mask] = $this->parseObservation($observation);
+        return $this->selectActionFromState($observation, $mask);
+    }
+
+    /** @return array{mixed,float,float} action, log probability, value */
+    public function selectActionFromState(NDArray $observation, ?NDArray $mask = null) : array
     {
         if ($this->continuous) return $this->selectContinuousAction($observation);
-        [$probs, $value] = $this->inference($observation);
+        [$probs, $value] = $this->inference($observation, $mask);
         // Match the legacy Random::randomCategorical implementation exactly:
         // it draws a LA randomUniform value, then applies cumsum/searchsorted.
         // Calling the newer convenience randomCategorical() can use a
@@ -118,14 +176,15 @@ class PPOAgent
         return [$this->la->squeeze($action, axis:0), $logp, (float)$value->value()->toArray()[0][0]];
     }
 
-    public function selectActionDeterministic(NDArray $observation) : mixed
+    public function selectActionDeterministic(NDArray|array $observation) : mixed
     {
+        [$observation, $mask] = $this->parseObservation($observation);
         if ($this->continuous) {
             $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
             [$mean] = $this->network->forward($this->g->Variable($batch), false);
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
-        [$probs] = $this->inference($observation);
+        [$probs] = $this->inference($observation, $mask);
         $values = $probs[0]->toArray();
         $best = 0;
         foreach ($values as $action => $probability) {
@@ -156,18 +215,24 @@ class PPOAgent
         return $g->squeeze($g->scale(-0.5, $g->square($diff)), axis:1);
     }
 
-    public function value(NDArray $observation) : float
+    public function value(NDArray|array $observation) : float
     {
-        [, $value] = $this->inference($observation);
+        [$observation, $mask] = $this->parseObservation($observation);
+        [, $value] = $this->inference($observation, $mask);
         return $value;
     }
 
-    private function inference(NDArray $observation) : array
+    private function inference(NDArray $observation, ?NDArray $mask = null) : array
     {
         $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
         $obsV = $this->g->Variable($batch);
         [$logits, $value] = $this->network->forward($obsV, false);
-        $probs = $this->la->softmax($logits->value());
+        $logits = $logits->value();
+        if ($mask !== null) {
+            $batchMask = $this->la->expandDims($mask, axis:0);
+            $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
+        }
+        $probs = $this->la->softmax($logits);
         return [$probs, (float)$value->value()->toArray()[0][0]];
     }
 
@@ -175,6 +240,7 @@ class PPOAgent
     public function update(array $rollout) : array
     {
         [$observations, $actions, $oldLogProbs, $advantages, $returns, $oldValues] = $rollout;
+        $actionMasks = $rollout[6] ?? null;
         $count = $observations->shape()[0];
 
         $advArray = $advantages->toArray();
@@ -221,8 +287,9 @@ class PPOAgent
                 $adv = $this->la->gather($advantages, $idx);
                 $ret = $this->la->gather($returns, $idx);
                 $oldValue = $this->la->gather($oldValues, $idx);
+                $mask = $actionMasks === null ? null : $this->la->gather($actionMasks, $idx);
                 [$policyLoss, $valueLoss, $entropy] = $this->updateBatch(
-                    $obs, $act, $oldLog, $oldValue, $adv, $ret
+                    $obs, $act, $oldLog, $oldValue, $adv, $ret, $mask
                 );
                 $policyTotal += $policyLoss;
                 $valueTotal += $valueLoss;
@@ -244,6 +311,7 @@ class PPOAgent
         NDArray $oldValues,
         NDArray $advantages,
         NDArray $returns,
+        ?NDArray $actionMasks = null,
     ) : array
     {
         $g = $this->g;
@@ -257,7 +325,8 @@ class PPOAgent
         [$totalLoss, $policyLoss, $valueLoss, $entropy] = $this->nn->with(
             $tape = $g->GradientTape(), function() use (
             $g, $network, $obs, $actions, $oldLog, $oldValues, $advantages, $returns,
-            $clipRange, $entropyWeight, $valueLossWeight, $clipValueLoss, $continuous, $useSDE
+            $clipRange, $entropyWeight, $valueLossWeight, $clipValueLoss, $continuous, $useSDE,
+            $actionMasks
         ) {
             $outputs = $network->forward($g->Variable($obs), true);
             [$logits, $values] = $outputs;
@@ -279,6 +348,9 @@ class PPOAgent
                 );
                 $logProbs = null;
             } else {
+                if ($actionMasks !== null) {
+                    $logits = $g->masking($actionMasks, $logits, fill:-1.0e9);
+                }
                 $logProbs = $g->logSoftmax($logits);
                 $selected = $g->gather($logProbs, $actions, axis:1, batchDims:1);
             }

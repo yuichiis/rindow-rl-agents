@@ -24,9 +24,10 @@ class Runner
         $this->buffer = new RolloutBuffer(
             $la,
             $rolloutSteps,
-            $env->observationSpace()->shape()[0],
+            $agent->observationDimension(),
             $agent->isContinuous() ? $env->actionSpace()->shape()[0] : 1,
             $agent->isContinuous(),
+            $agent->usesActionMask() ? $env->actionSpace()->n() : 0,
         );
     }
 
@@ -105,7 +106,10 @@ class Runner
                 $this->agent->resetExplorationNoise();
             }
             $progress->update($step);
-            [$action, $logProb, $value] = $this->agent->selectAction($obs);
+            [$state, $actionMask] = $this->agent->parseObservation($obs);
+            [$action, $logProb, $value] = $this->agent->selectActionFromState(
+                $state, $actionMask
+            );
             if ($this->agent->usesSDE()) {
                 $sdeNoiseAge++;
                 if ($this->agent->sdeSampleFreq() > 0
@@ -124,8 +128,8 @@ class Runner
                 : ($this->rewardFunction)($obs, $action, $nextObs, $reward, $terminated, $truncated);
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
             $this->buffer->add(
-                $obs, $action, $trainingReward, $terminalForValue, $terminated || $truncated,
-                $value, $logProb
+                $state, $action, $trainingReward, $terminalForValue, $terminated || $truncated,
+                $value, $logProb, $actionMask
             );
             $episodeShaped += $trainingReward;
             $episodeSteps++;
