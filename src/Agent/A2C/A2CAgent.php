@@ -30,6 +30,8 @@ class A2CAgent
         string $optimizer = 'adam',
         mixed $actionKernelInitializer = null,
         string $activation = 'tanh',
+        private ?string $stateField = null,
+        private ?string $actionMaskField = null,
     ) {
         if ($obsDim < 1 || $numActions < ($continuous ? 1 : 2)) {
             throw new \InvalidArgumentException('Invalid observation or action dimension.');
@@ -38,6 +40,9 @@ class A2CAgent
         $this->g = $nn->gradient();
         if ($continuous && ($actionMin === null || $actionMax === null)) {
             throw new \InvalidArgumentException('Continuous actions require actionMin and actionMax.');
+        }
+        if ($continuous && $actionMaskField !== null) {
+            throw new \InvalidArgumentException('Action masks are supported only for discrete actions.');
         }
         $this->network = new ActorCritic(
             $nn, $obsDim, $numActions, $hiddenLayers, $continuous, $initialLogStd,
@@ -58,6 +63,53 @@ class A2CAgent
     public function observationDimension() : int { return $this->obsDim; }
     public function actionDimension() : int { return $this->numActions; }
     public function isContinuous() : bool { return $this->continuous; }
+    public function usesActionMask() : bool { return $this->actionMaskField !== null; }
+
+    /** @return array{NDArray,?NDArray} network state and optional action mask */
+    public function parseObservation(NDArray|array $observation) : array
+    {
+        if ($observation instanceof NDArray) {
+            if ($this->stateField !== null || $this->actionMaskField !== null) {
+                throw new \InvalidArgumentException('A dictionary observation was expected.');
+            }
+            return [$this->asNetworkState($observation), null];
+        }
+        if ($this->stateField === null) {
+            throw new \InvalidArgumentException('stateField is required for dictionary observations.');
+        }
+        $state = $observation[$this->stateField] ?? null;
+        if (!$state instanceof NDArray) {
+            throw new \InvalidArgumentException(
+                "Observation field '{$this->stateField}' must be an NDArray."
+            );
+        }
+        $mask = null;
+        if ($this->actionMaskField !== null) {
+            $mask = $observation[$this->actionMaskField] ?? null;
+            if (!$mask instanceof NDArray) {
+                throw new \InvalidArgumentException(
+                    "Observation field '{$this->actionMaskField}' must be an NDArray."
+                );
+            }
+            if ($mask->shape() !== [$this->numActions]) {
+                throw new \InvalidArgumentException('Action mask shape must equal [numActions].');
+            }
+            if ($mask->dtype() !== NDArray::bool) {
+                $mask = $this->la->astype($mask, dtype:NDArray::bool);
+            }
+            if (!in_array(true, $mask->toArray(), true)) {
+                throw new \InvalidArgumentException('Action mask must allow at least one action.');
+            }
+        }
+        return [$this->asNetworkState($state), $mask];
+    }
+
+    private function asNetworkState(NDArray $state) : NDArray
+    {
+        return $this->la->isInt($state)
+            ? $this->la->astype($state, dtype:NDArray::float32)
+            : $state;
+    }
 
     public function clipAction(NDArray $action) : NDArray
     {
@@ -69,24 +121,32 @@ class A2CAgent
     }
 
     /** @return array{int|NDArray,float} sampled action and V(s) */
-    public function selectAction(NDArray $observation) : array
+    public function selectAction(NDArray|array $observation) : array
+    {
+        [$observation, $mask] = $this->parseObservation($observation);
+        return $this->selectActionFromState($observation, $mask);
+    }
+
+    /** @return array{int|NDArray,float} sampled action and V(s) */
+    public function selectActionFromState(NDArray $observation, ?NDArray $mask = null) : array
     {
         if ($this->continuous) return $this->selectContinuousAction($observation);
-        [$probs, $value] = $this->inference($observation);
+        [$probs, $value] = $this->inference($observation, $mask);
         $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
         $rand = $this->la->randomUniform([1], dtype:$probs->dtype(), low:0.0, high:1.0);
         $action = (int)$this->la->searchsorted($thresholds, $rand, true)->toArray()[0];
         return [$action, $value];
     }
 
-    public function selectActionDeterministic(NDArray $observation) : int|NDArray
+    public function selectActionDeterministic(NDArray|array $observation) : int|NDArray
     {
+        [$observation, $mask] = $this->parseObservation($observation);
         if ($this->continuous) {
             $batch = $this->asBatch($observation);
             [$mean] = $this->network->forward($this->g->Variable($batch), false);
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
-        [$probs] = $this->inference($observation);
+        [$probs] = $this->inference($observation, $mask);
         $values = $probs[0]->toArray();
         $best = 0;
         foreach ($values as $action => $probability) {
@@ -95,18 +155,24 @@ class A2CAgent
         return $best;
     }
 
-    public function value(NDArray $observation) : float
+    public function value(NDArray|array $observation) : float
     {
-        [, $value] = $this->inference($observation);
+        [$observation, $mask] = $this->parseObservation($observation);
+        [, $value] = $this->inference($observation, $mask);
         return $value;
     }
 
     /** @return array{NDArray,float} */
-    private function inference(NDArray $observation) : array
+    private function inference(NDArray $observation, ?NDArray $mask = null) : array
     {
         $batch = $this->asBatch($observation);
         [$logits, $value] = $this->network->forward($this->g->Variable($batch), false);
-        return [$this->la->softmax($logits->value()), (float)$value->value()->toArray()[0][0]];
+        $logits = $logits->value();
+        if ($mask !== null) {
+            $batchMask = $this->la->expandDims($mask, axis:0);
+            $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
+        }
+        return [$this->la->softmax($logits), (float)$value->value()->toArray()[0][0]];
     }
 
     private function asBatch(NDArray $observation) : NDArray
@@ -138,6 +204,7 @@ class A2CAgent
     public function update(array $rollout) : array
     {
         [$observations, $actions, $advantages, $returns] = $rollout;
+        $actionMasks = $rollout[4] ?? null;
         if ($this->normalizeAdvantages && $advantages->shape()[0] > 1) {
             // Keep reductions on the configured LA backend. Besides avoiding
             // transfers, this preserves the successful legacy float32 order.
@@ -160,7 +227,8 @@ class A2CAgent
         $network = $this->network;
         [$totalLoss, $policyLoss, $valueLoss, $entropy, $standardDeviation] = $this->nn->with(
             $tape = $g->GradientTape(),
-            function() use ($g, $network, $observations, $actions, $advantages, $returns) {
+            function() use ($g, $network, $observations, $actions, $advantages, $returns,
+                $actionMasks) {
                 $outputs = $network->forward($g->Variable($observations), true);
                 [$logits, $values] = $outputs;
                 $values = $g->squeeze($values, axis:1);
@@ -188,6 +256,9 @@ class A2CAgent
                     $entropy = $g->reduceMean($g->reduceSum($entropyPerAction, axis:-1));
                     $standardDeviation = $g->reduceMean($std);
                 } else {
+                    if ($actionMasks !== null) {
+                        $logits = $g->masking($actionMasks, $logits, fill:-1.0e9);
+                    }
                     $logProbs = $g->logSoftmax($logits);
                     $selectedLogProbs = $g->gather($logProbs, $actions, axis:1, batchDims:1);
                     $probs = $g->softmax($logits);

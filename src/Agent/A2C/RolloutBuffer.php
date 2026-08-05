@@ -10,6 +10,7 @@ class RolloutBuffer
     private NDArray $actions;
     private NDArray $rewards;
     private NDArray $values;
+    private ?NDArray $actionMasks = null;
     private array $terminated = [];
     private array $episodeEnds = [];
     private int $index = 0;
@@ -20,6 +21,7 @@ class RolloutBuffer
         int $obsDim,
         private int $actionDim = 1,
         private bool $continuous = false,
+        int $maskDim = 0,
     )
     {
         if ($capacity < 1) {
@@ -31,10 +33,15 @@ class RolloutBuffer
             : $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
         $this->rewards = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         $this->values = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
+        if ($maskDim > 0) {
+            $this->actionMasks = $la->zeros(
+                $la->alloc([$capacity, $maskDim], dtype:NDArray::bool)
+            );
+        }
     }
 
     public function add(NDArray $observation, int|NDArray $action, float $reward, bool $terminated,
-        bool $episodeEnd, float $value) : void
+        bool $episodeEnd, float $value, ?NDArray $actionMask = null) : void
     {
         if ($this->full()) {
             throw new \OverflowException('A2C rollout buffer is full.');
@@ -46,6 +53,14 @@ class RolloutBuffer
         $this->values[$i] = $value;
         $this->terminated[$i] = $terminated;
         $this->episodeEnds[$i] = $episodeEnd;
+        if ($this->actionMasks !== null) {
+            if ($actionMask === null) {
+                throw new \InvalidArgumentException('Action mask is required for this rollout buffer.');
+            }
+            $this->actionMasks[$i] = $actionMask;
+        } elseif ($actionMask !== null) {
+            throw new \InvalidArgumentException('This rollout buffer is not configured for action masks.');
+        }
     }
 
     public function full() : bool { return $this->index >= $this->capacity; }
@@ -77,6 +92,11 @@ class RolloutBuffer
             $advantages,
             $returns,
         ];
+        if ($this->actionMasks !== null) {
+            $rollout[] = $this->la->slice(
+                $this->actionMasks, [0, 0], [$size, $this->actionMasks->shape()[1]]
+            );
+        }
         $this->index = 0;
         $this->terminated = [];
         $this->episodeEnds = [];

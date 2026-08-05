@@ -24,7 +24,8 @@ class Runner
     ) {
         $this->buffer = new RolloutBuffer(
             $la, $rolloutSteps, $agent->observationDimension(),
-            $agent->actionDimension(), $agent->isContinuous()
+            $agent->actionDimension(), $agent->isContinuous(),
+            $agent->usesActionMask() ? $agent->actionDimension() : 0
         );
     }
 
@@ -69,7 +70,8 @@ class Runner
 
         for ($step = 1; $step <= $totalSteps; $step++) {
             $progress->update($step);
-            [$action, $value] = $this->agent->selectAction($observation);
+            [$state, $actionMask] = $this->agent->parseObservation($observation);
+            [$action, $value] = $this->agent->selectActionFromState($state, $actionMask);
             $envAction = $this->agent->isContinuous()
                 ? $this->agent->clipAction($action)
                 : $this->la->array($action, dtype:NDArray::int32);
@@ -82,8 +84,8 @@ class Runner
                     $observation, $action, $nextObservation, $reward, $terminated, $truncated
                 );
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
-            $this->buffer->add($observation, $action, $trainingReward, $terminalForValue,
-                $terminated || $truncated, $value);
+            $this->buffer->add($state, $action, $trainingReward, $terminalForValue,
+                $terminated || $truncated, $value, $actionMask);
             $episodeReward += $reward;
             $episodeSteps++;
             $observation = $nextObservation;
