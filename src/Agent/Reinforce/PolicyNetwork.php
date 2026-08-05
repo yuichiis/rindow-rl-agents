@@ -1,111 +1,48 @@
 <?php
 namespace Rindow\RL\Agents\Agent\Reinforce;
 
-use Rindow\RL\Agents\Estimator;
-use Rindow\RL\Agents\Estimator\AbstractEstimatorNetwork;
-use Rindow\RL\Agents\Util\Random;
-use Rindow\NeuralNetworks\Model\Model;
 use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Gradient\Variable;
+use Rindow\NeuralNetworks\Model\AbstractModel;
 
-use Interop\Polite\Math\Matrix\NDArray;
-use InvalidArgumentException;
-
-class PolicyNetwork extends AbstractEstimatorNetwork
+/** Multi-layer categorical policy used by REINFORCE. */
+class PolicyNetwork extends AbstractModel
 {
-    protected object $la;
-    protected int $numActions;
-    protected Model $policyModel;
-    protected ?object $mo;  // for debug
+    protected AbstractModel $policy;
 
     public function __construct(
-        Builder $builder,
-        array $stateShape,
+        Builder $nn,
+        int $obsDim,
         int $numActions,
-        ?array $convLayers=null,
-        ?string $convType=null,
-        ?array $fcLayers=null,
-        ?string $activation=null,
-        ?string $kernelInitializer=null,
-        ?string $lastActivation=null,
-        ?string $lastKernelInitializer=null,
-        ?Model $model=null,
-        ?object $mo=null
-        )
-    {
-        parent::__construct($builder,$stateShape);
-        $la = $this->la;
-        $this->numActions = $numActions;
-        if($fcLayers===null) {
-            $fcLayers = [32, 16];
+        array $hiddenLayers = [128],
+        string $activation = 'relu',
+    ) {
+        parent::__construct($nn);
+        if ($hiddenLayers === []) {
+            throw new \InvalidArgumentException('hiddenLayers must contain at least one layer.');
         }
-        if($model===null) {
-            $model = $this->buildModel($stateShape,$numActions,
-                $convLayers,$convType,$fcLayers,
-                $activation,$kernelInitializer,$lastActivation,$lastKernelInitializer);
+        $layers = [];
+        foreach ($hiddenLayers as $i => $units) {
+            if ($units < 1) {
+                throw new \InvalidArgumentException('Hidden layer sizes must be positive.');
+            }
+            $options = ['activation'=>$activation];
+            if ($i === 0) $options['input_shape'] = [$obsDim];
+            $layers[] = $nn->layers->Dense($units, ...$options);
         }
-        $this->policyModel = $model;
-        $this->mo = $mo;
+        $layers[] = $nn->layers->Dense($numActions);
+        $this->policy = $nn->models->Sequential($layers);
     }
 
-    public function model() : Model
+    public function call(Variable $observations, ?bool $training = null) : Variable
     {
-        return $this->policyModel;
+        return $this->policy->forward($observations, $training);
     }
 
-    protected function buildModel(
-        array $stateShape,
-        int $numActions,
-        ?array $convLayers=null,
-        ?string $convType=null,
-        ?array $fcLayers=null,
-        ?string $activation=null,
-        ?string $kernelInitializer=null,
-        ?string $lastActivation=null,
-        ?string $lastKernelInitializer=null,
-    ) : Model
+    public function syncWeightCaches() : void
     {
-        $nn = $this->builder;
-
-        $model = $this->buildMlpLayers(
-            $stateShape,
-            convLayers:$convLayers,
-            convType:$convType,
-            fcLayers:$fcLayers,
-            activation:$activation,
-            kernelInitializer:$kernelInitializer,
-        );
-
-        $model->add($nn->layers->Dense(
-            $numActions,
-            activation:$lastActivation,
-            kernel_initializer:$lastKernelInitializer,
-        ));
-        return $model;
-    }
-
-    protected function call(NDArray $inputs, mixed $training) : NDArray
-    {
-        $outputs = $this->policyModel->forward($inputs,$training);
-        return $outputs;
-    }
-
-    /**
-    * $states : (batches,...stateShape) typeof int32 or float32
-    * $actionValues : (batches,...numActions)  typeof float32
-    */
-    public function getActionValues(NDArray $states,?bool $std=null) : NDArray|array
-    {
-        $la = $this->la;
-        $orgStates = $states;
-        if($la->isInt($states)) {
-            $states = $la->astype($states,NDArray::float32);
+        foreach ($this->policy->submodules() as $module) {
+            $module->reverseSyncWeightVariables();
         }
-        $values = $this->predict($states);
-        return $values;
-    }
-
-    public function __clone()
-    {
-        parent::__clone();
     }
 }
