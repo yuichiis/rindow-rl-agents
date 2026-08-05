@@ -14,18 +14,26 @@ class RolloutBuffer
     private array $episodeEnds = [];
     private int $index = 0;
 
-    public function __construct(private object $la, private int $capacity, int $obsDim)
+    public function __construct(
+        private object $la,
+        private int $capacity,
+        int $obsDim,
+        private int $actionDim = 1,
+        private bool $continuous = false,
+    )
     {
         if ($capacity < 1) {
             throw new \InvalidArgumentException('capacity must be greater than zero.');
         }
         $this->observations = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
-        $this->actions = $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
+        $this->actions = $continuous
+            ? $la->zeros($la->alloc([$capacity, $actionDim], dtype:NDArray::float32))
+            : $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
         $this->rewards = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         $this->values = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
     }
 
-    public function add(NDArray $observation, int $action, float $reward, bool $terminated,
+    public function add(NDArray $observation, int|NDArray $action, float $reward, bool $terminated,
         bool $episodeEnd, float $value) : void
     {
         if ($this->full()) {
@@ -63,7 +71,9 @@ class RolloutBuffer
         }
         $rollout = [
             $this->la->slice($this->observations, [0, 0], [$size, $this->observations->shape()[1]]),
-            $this->la->slice($this->actions, [0], [$size]),
+            $this->continuous
+                ? $this->la->slice($this->actions, [0, 0], [$size, $this->actionDim])
+                : $this->la->slice($this->actions, [0], [$size]),
             $advantages,
             $returns,
         ];

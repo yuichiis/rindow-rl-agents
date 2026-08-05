@@ -20,8 +20,12 @@ class Runner
         private float $gaeLambda = 1.0,
         private ?float $solvedReward = null,
         private bool $bootstrapTruncated = true,
+        private mixed $rewardFunction = null,
     ) {
-        $this->buffer = new RolloutBuffer($la, $rolloutSteps, $agent->observationDimension());
+        $this->buffer = new RolloutBuffer(
+            $la, $rolloutSteps, $agent->observationDimension(),
+            $agent->actionDimension(), $agent->isContinuous()
+        );
     }
 
     public function evaluate(int $episodes = 10) : float
@@ -31,9 +35,10 @@ class Runner
             [$observation] = $this->evalEnv->reset();
             $done = false;
             while (!$done) {
-                $action = $this->la->array(
-                    $this->agent->selectActionDeterministic($observation), dtype:NDArray::int32
-                );
+                $action = $this->agent->selectActionDeterministic($observation);
+                if (!$this->agent->isContinuous()) {
+                    $action = $this->la->array($action, dtype:NDArray::int32);
+                }
                 [$observation, $reward, $terminated, $truncated] = $this->evalEnv->step($action);
                 $total += $reward;
                 $done = $terminated || $truncated;
@@ -50,10 +55,10 @@ class Runner
         }
         $progress = new ProgressBar();
         $history = ['step'=>[], 'trainReward'=>[], 'trainSteps'=>[], 'evalReward'=>[],
-            'policyLoss'=>[], 'valueLoss'=>[], 'entropy'=>[]];
+            'policyLoss'=>[], 'valueLoss'=>[], 'entropy'=>[], 'std'=>[]];
         [$observation] = $this->env->reset();
         $progress->start('Steps', $totalSteps, 50);
-        $lastMetrics = ['policy_loss'=>0.0, 'value_loss'=>0.0, 'entropy'=>0.0];
+        $lastMetrics = ['policy_loss'=>0.0, 'value_loss'=>0.0, 'entropy'=>0.0, 'std'=>0.0];
         $best = -INF;
         $episodeReward = 0.0;
         $episodeSteps = 0;
@@ -65,11 +70,19 @@ class Runner
         for ($step = 1; $step <= $totalSteps; $step++) {
             $progress->update($step);
             [$action, $value] = $this->agent->selectAction($observation);
+            $envAction = $this->agent->isContinuous()
+                ? $this->agent->clipAction($action)
+                : $this->la->array($action, dtype:NDArray::int32);
             [$nextObservation, $reward, $terminated, $truncated] = $this->env->step(
-                $this->la->array($action, dtype:NDArray::int32)
+                $envAction
             );
+            $trainingReward = $this->rewardFunction === null
+                ? $reward
+                : ($this->rewardFunction)(
+                    $observation, $action, $nextObservation, $reward, $terminated, $truncated
+                );
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
-            $this->buffer->add($observation, $action, $reward, $terminalForValue,
+            $this->buffer->add($observation, $action, $trainingReward, $terminalForValue,
                 $terminated || $truncated, $value);
             $episodeReward += $reward;
             $episodeSteps++;
@@ -98,12 +111,15 @@ class Runner
                 if ($improved) $best = $score;
                 foreach (['step'=>$step, 'trainReward'=>$trainReward, 'trainSteps'=>$trainSteps,
                     'evalReward'=>$score, 'policyLoss'=>$lastMetrics['policy_loss'],
-                    'valueLoss'=>$lastMetrics['value_loss'], 'entropy'=>$lastMetrics['entropy']]
+                    'valueLoss'=>$lastMetrics['value_loss'], 'entropy'=>$lastMetrics['entropy'],
+                    'std'=>$lastMetrics['std']]
                     as $key => $value) $history[$key][] = $value;
                 $progress->clearProgressBar();
-                printf("Step %7d | TrainReward=%6.1f | TrainSteps=%5.1f | EvalReward=%6.1f | PolicyLoss=%+.3e | ValueLoss=%+.3e | Entropy=%.3f\n",
+                $stdText = $this->agent->isContinuous()
+                    ? sprintf(' | Std=%.3f', $lastMetrics['std']) : '';
+                printf("Step %7d | TrainReward=%6.1f | TrainSteps=%5.1f | EvalReward=%6.1f | PolicyLoss=%+.3e | ValueLoss=%+.3e | Entropy=%.3f%s\n",
                     $step, $trainReward, $trainSteps, $score, $lastMetrics['policy_loss'],
-                    $lastMetrics['value_loss'], $lastMetrics['entropy']);
+                    $lastMetrics['value_loss'], $lastMetrics['entropy'], $stdText);
                 if ($improved && $bestModelFile !== null) {
                     $this->agent->saveWeightsToFile($bestModelFile);
                     echo "Best model saved: {$bestModelFile}\n";
