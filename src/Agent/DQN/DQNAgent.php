@@ -25,6 +25,8 @@ class DQNAgent
         private int $batchSize=64,
         private int $targetUpdateInterval=500,
         private float $maxGradNorm=10.0,
+        private ?string $stateField=null,
+        private ?string $actionMaskField=null,
     ) {
         if ($obsDim < 1 || $numActions < 2 || $batchSize < 1 || $targetUpdateInterval < 1) {
             throw new \InvalidArgumentException('Invalid DQN dimensions or update parameters.');
@@ -45,27 +47,102 @@ class DQNAgent
     public function summary() : void { $this->qNetwork->summary(); }
     public function observationDimension() : int { return $this->obsDim; }
     public function actionDimension() : int { return $this->numActions; }
+    public function usesActionMask() : bool { return $this->actionMaskField !== null; }
 
-    public function selectAction(NDArray $observation, float $epsilon=0.0) : int
+    /** @return array{NDArray,?NDArray} network state and optional action mask */
+    public function parseObservation(NDArray|array $observation) : array
+    {
+        if ($observation instanceof NDArray) {
+            if ($this->stateField !== null || $this->actionMaskField !== null) {
+                throw new \InvalidArgumentException('A dictionary observation was expected.');
+            }
+            return [$this->asNetworkState($observation),null];
+        }
+        if ($this->stateField === null) {
+            throw new \InvalidArgumentException('stateField is required for dictionary observations.');
+        }
+        $state = $observation[$this->stateField] ?? null;
+        if (!$state instanceof NDArray) {
+            throw new \InvalidArgumentException(
+                "Observation field '{$this->stateField}' must be an NDArray."
+            );
+        }
+        $mask = null;
+        if ($this->actionMaskField !== null) {
+            $mask = $observation[$this->actionMaskField] ?? null;
+            if (!$mask instanceof NDArray) {
+                throw new \InvalidArgumentException(
+                    "Observation field '{$this->actionMaskField}' must be an NDArray."
+                );
+            }
+            if ($mask->shape() !== [$this->numActions]) {
+                throw new \InvalidArgumentException('Action mask shape must equal [numActions].');
+            }
+            if ($mask->dtype() !== NDArray::bool) {
+                $mask = $this->la->astype($mask,dtype:NDArray::bool);
+            }
+            if (!in_array(true,$mask->toArray(),true)) {
+                throw new \InvalidArgumentException('Action mask must allow at least one action.');
+            }
+        }
+        return [$this->asNetworkState($state),$mask];
+    }
+
+    private function asNetworkState(NDArray $state) : NDArray
+    {
+        return $this->la->isInt($state)
+            ? $this->la->astype($state,dtype:NDArray::float32)
+            : $state;
+    }
+
+    public function selectAction(NDArray|array $observation, float $epsilon=0.0) : int
+    {
+        [$state,$mask] = $this->parseObservation($observation);
+        return $this->selectActionFromState($state,$epsilon,$mask);
+    }
+
+    public function selectActionFromState(
+        NDArray $observation,
+        float $epsilon=0.0,
+        ?NDArray $mask=null,
+    ) : int
     {
         if ($epsilon < 0.0 || $epsilon > 1.0) {
             throw new \InvalidArgumentException('epsilon must be between zero and one.');
         }
         $random = (float)$this->la->randomUniform([1], 0.0, 1.0)->toArray()[0];
         if ($random < $epsilon) {
-            return (int)$this->la->randomUniform([1], 0, $this->numActions-1,
-                dtype:NDArray::int32)->toArray()[0];
+            $allowed = $mask === null
+                ? range(0,$this->numActions-1)
+                : array_keys(array_filter($mask->toArray(),static fn($value)=>(bool)$value));
+            $index = (int)$this->la->randomUniform(
+                [1],0,count($allowed)-1,dtype:NDArray::int32
+            )->toArray()[0];
+            return $allowed[$index];
         }
-        return $this->selectActionDeterministic($observation);
+        return $this->selectActionDeterministicFromState($observation,$mask);
     }
 
-    public function selectActionDeterministic(NDArray $observation) : int
+    public function selectActionDeterministic(NDArray|array $observation) : int
+    {
+        [$state,$mask] = $this->parseObservation($observation);
+        return $this->selectActionDeterministicFromState($state,$mask);
+    }
+
+    public function selectActionDeterministicFromState(
+        NDArray $observation,
+        ?NDArray $mask=null,
+    ) : int
     {
         $batch = $this->la->copy($observation)->reshape([1,$this->obsDim]);
         if ($this->la->isInt($batch)) $batch = $this->la->astype($batch, dtype:NDArray::float32);
         $values = $this->qNetwork->forward($this->g->Variable($batch),false)->value()[0]->toArray();
-        $best = 0;
-        foreach ($values as $action=>$value) {
+        $allowed = $mask === null
+            ? range(0,$this->numActions-1)
+            : array_keys(array_filter($mask->toArray(),static fn($value)=>(bool)$value));
+        $best = $allowed[0];
+        foreach ($allowed as $action) {
+            $value = $values[$action];
             if ($value > $values[$best]) $best = $action;
         }
         return $best;
@@ -74,9 +151,12 @@ class DQNAgent
     /** @return array{loss:float,q_value:float} */
     public function update(ReplayBuffer $buffer) : array
     {
-        [$observations,$actions,$rewards,$nextObservations,$dones] =
+        [$observations,$actions,$rewards,$nextObservations,$dones,$nextActionMasks] =
             $buffer->sample($this->batchSize);
         $nextQ = $this->targetNetwork->forward($this->g->Variable($nextObservations),false)->value();
+        if ($nextActionMasks !== null) {
+            $nextQ = $this->la->masking($nextActionMasks,$nextQ,fill:-1.0e9);
+        }
         $nextValues = $this->la->reduceMax($nextQ, axis:1);
         $notDones = $this->la->fill(
             1.0,

@@ -22,7 +22,10 @@ class Runner
         if ($solvedEvaluations < 1) {
             throw new \InvalidArgumentException('solvedEvaluations must be positive.');
         }
-        $this->buffer = new ReplayBuffer($la,$bufferSize,$obsDim);
+        $this->buffer = new ReplayBuffer(
+            $la,$bufferSize,$obsDim,
+            $agent->usesActionMask() ? $agent->actionDimension() : 0
+        );
     }
 
     public function evaluate(int $episodes) : float
@@ -71,12 +74,16 @@ class Runner
             $progress->update($step);
             $fraction = min(1.0,$step/$epsilonDecaySteps);
             $epsilon = $epsilonStart+($epsilonEnd-$epsilonStart)*$fraction;
-            $actionValue = $this->agent->selectAction($observation,$epsilon);
+            [$state,$actionMask] = $this->agent->parseObservation($observation);
+            $actionValue = $this->agent->selectActionFromState($state,$epsilon,$actionMask);
             $action = $this->la->array($actionValue,dtype:NDArray::int32);
             [$nextObservation,$reward,$terminated,$truncated] = $this->env->step($action);
+            [$nextState,$nextActionMask] = $this->agent->parseObservation($nextObservation);
             $done = $terminated || $truncated;
             // A time-limit truncation still has a valid bootstrap value.
-            $this->buffer->add($observation,$actionValue,$reward,$nextObservation,$terminated);
+            $this->buffer->add(
+                $state,$actionValue,$reward,$nextState,$terminated,$nextActionMask
+            );
             $observation = $nextObservation;
             if ($done) {
                 $episodeCount++;
