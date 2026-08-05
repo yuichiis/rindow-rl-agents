@@ -1,0 +1,109 @@
+<?php
+require __DIR__.'/../vendor/autoload.php';
+
+use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\Math\Matrix\MatrixOperator;
+use Rindow\Math\Plot\Plot;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
+use Rindow\RL\Agents\Agent\DQN\DQNAgent;
+use Rindow\RL\Agents\Agent\DQN\Runner;
+use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
+
+const SEED = 42;
+const TOTAL_STEPS = 200_000;
+const BUFFER_SIZE = 100_000;
+const BATCH_SIZE = 64;
+const LEARNING_STARTS = 1_000;
+const TRAIN_EVERY = 4;
+const TARGET_UPDATE_INTERVAL = 250;
+const GAMMA = 0.99;
+const LEARNING_RATE = 1.0e-3;
+const EPSILON_START = 1.0;
+const EPSILON_END = 0.05;
+const EPSILON_DECAY_STEPS = 50_000;
+const EVAL_EVERY = 2_000;
+const EVAL_EPISODES = 30;
+const SOLVED_REWARD = 475.0;
+const SOLVED_EVALUATIONS = 3;
+const MODEL_FILE = __DIR__.'/../models/cartpole-dqn.weights';
+
+$mo = new MatrixOperator();
+$la = $mo->laRawMode();
+$la->setSeed(SEED);
+$nn = new NeuralNetworks($mo);
+$plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+$env = new CartPoleV1($la);
+$evalEnv = new CartPoleV1($la);
+$env->observationSpace()->seed(SEED);
+$env->actionSpace()->seed(SEED);
+
+$agent = new DQNAgent(
+    $nn,
+    obsDim:$env->observationSpace()->shape()[0],
+    numActions:$env->actionSpace()->n(),
+    hiddenLayers:[128,128],
+    learningRate:LEARNING_RATE,
+    gamma:GAMMA,
+    batchSize:BATCH_SIZE,
+    targetUpdateInterval:TARGET_UPDATE_INTERVAL,
+    maxGradNorm:10.0,
+);
+$agent->summary();
+$runner = new Runner(
+    $la,$env,$evalEnv,$agent,
+    obsDim:$env->observationSpace()->shape()[0],
+    bufferSize:BUFFER_SIZE,
+    solvedReward:SOLVED_REWARD,
+    solvedEvaluations:SOLVED_EVALUATIONS,
+);
+$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
+$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
+$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+
+if (is_file($modelFile)) {
+    echo "Loading model: {$modelFile}\n";
+    $agent->loadWeightsFromFile($modelFile);
+} else {
+    $history = $runner->train(
+        $totalSteps,LEARNING_STARTS,TRAIN_EVERY,$evalEvery,EVAL_EPISODES,
+        EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
+    );
+    if (count($history['step']) > 0) {
+        $art = $plt->plot($la->array($history['step']),$la->array($history['evalReward']))[0];
+        $plt->xlabel('Training steps');
+        $plt->ylabel('Evaluation reward');
+        $plt->legend([$art],['DQN']);
+        $plt->show(filename:__DIR__.'/../graphics/cartpole-dqn-history.png');
+    }
+    if (count($history['step']) > 0) {
+        // Runner saves every new best checkpoint. Restore it for the demo and
+        // do not overwrite it with a possibly degraded final network.
+        $agent->loadWeightsFromFile($modelFile);
+        echo "Best model restored: {$modelFile}\n";
+    } else {
+        $agent->saveWeightsToFile($modelFile);
+        echo "Model saved: {$modelFile}\n";
+    }
+}
+
+if (getenv('RL_SKIP_DEMO') !== '1') {
+    echo "Creating demo animation.\n";
+    for ($episode=1; $episode<=5; $episode++) {
+        [$observation] = $env->reset();
+        $done = false;
+        $totalReward = 0.0;
+        $steps = 0;
+        $env->render();
+        while (!$done) {
+            $action = $la->array($agent->selectActionDeterministic($observation),dtype:NDArray::int32);
+            [$observation,$reward,$terminated,$truncated] = $env->step($action);
+            $done = $terminated || $truncated;
+            $totalReward += $reward;
+            $steps++;
+            $env->render();
+        }
+        echo "Test Episode {$episode}, Steps: {$steps}, Total Reward: {$totalReward}\n";
+    }
+    $filename = $env->show(path:__DIR__.'/../graphics/cartpole-dqn-trained.gif');
+    echo "filename: {$filename}\n";
+}
