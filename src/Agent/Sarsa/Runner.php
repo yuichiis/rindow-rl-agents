@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\TileCoding;
+namespace Rindow\RL\Agents\Agent\Sarsa;
 
 use Interop\Polite\AI\RL\Environment as Env;
 use Interop\Polite\Math\Matrix\NDArray;

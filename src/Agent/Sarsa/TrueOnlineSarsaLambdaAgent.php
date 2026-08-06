@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\RL\Agents\Agent\TileCoding;
+namespace Rindow\RL\Agents\Agent\Sarsa;
 
 use Interop\Polite\Math\Matrix\NDArray;
 
@@ -22,21 +22,67 @@ class TrueOnlineSarsaLambdaAgent
         private float $gamma = 1.0,
         private float $lambda = 0.9,
         private float $epsilon = 0.0,
+        private ?string $stateField = null,
+        private ?string $actionMaskField = null,
+        float $initialValue = 0.0,
     ) {
         if ($numActions < 2 || $learningRate <= 0.0 || $gamma < 0.0 || $gamma > 1.0
             || $lambda < 0.0 || $lambda > 1.0 || $epsilon < 0.0 || $epsilon > 1.0) {
             throw new \InvalidArgumentException('Invalid True Online Sarsa(lambda) parameters.');
         }
+        if ($actionMaskField !== null && $stateField === null) {
+            throw new \InvalidArgumentException('stateField is required when actionMaskField is used.');
+        }
         // Tile coding activates numTilings features, so divide the nominal step size.
         $this->alpha = $learningRate / $tileCoder->activeFeatureCount();
+        $initialWeight = $initialValue / $tileCoder->activeFeatureCount();
         $this->weights = array_fill(0, $numActions,
-            array_fill(0, $tileCoder->featureCount(), 0.0));
+            array_fill(0, $tileCoder->featureCount(), $initialWeight));
         $this->traces = $this->emptyTable();
     }
 
     public function observationDimension() : int { return $this->tileCoder->observationDimension(); }
     public function actionDimension() : int { return $this->numActions; }
     public function epsilon() : float { return $this->epsilon; }
+    public function usesActionMask() : bool { return $this->actionMaskField !== null; }
+
+    /** @return array{NDArray|array,?array<int,bool>} tile-coder state and action mask */
+    public function parseObservation(NDArray|array $observation) : array
+    {
+        if ($observation instanceof NDArray) {
+            if ($this->stateField !== null || $this->actionMaskField !== null) {
+                throw new \InvalidArgumentException('A dictionary observation was expected.');
+            }
+            return [$observation, null];
+        }
+        if ($this->stateField === null) {
+            return [$observation, null];
+        }
+        $state = $observation[$this->stateField] ?? null;
+        if (!$state instanceof NDArray && !is_array($state)) {
+            throw new \InvalidArgumentException(
+                "Observation field '{$this->stateField}' must be an NDArray or array."
+            );
+        }
+        $mask = null;
+        if ($this->actionMaskField !== null) {
+            $maskValue = $observation[$this->actionMaskField] ?? null;
+            if (!$maskValue instanceof NDArray && !is_array($maskValue)) {
+                throw new \InvalidArgumentException(
+                    "Observation field '{$this->actionMaskField}' must be an NDArray or array."
+                );
+            }
+            $maskValues = $maskValue instanceof NDArray ? $maskValue->toArray() : $maskValue;
+            if (count($maskValues) !== $this->numActions) {
+                throw new \InvalidArgumentException('Action mask size must equal numActions.');
+            }
+            $mask = array_map(static fn($value) : bool => (bool)$value, $maskValues);
+            if (!in_array(true, $mask, true)) {
+                throw new \InvalidArgumentException('Action mask must allow at least one action.');
+            }
+        }
+        return [$state, $mask];
+    }
 
     public function startEpisode() : void
     {
@@ -47,7 +93,8 @@ class TrueOnlineSarsaLambdaAgent
     public function value(NDArray|array $observation, int $action) : float
     {
         $this->validateAction($action);
-        return $this->valueOfFeatures($this->tileCoder->encode($observation), $action);
+        [$state] = $this->parseObservation($observation);
+        return $this->valueOfFeatures($this->tileCoder->encode($state), $action);
     }
 
     public function selectAction(NDArray|array $observation, ?float $epsilon = null) : int
@@ -56,26 +103,35 @@ class TrueOnlineSarsaLambdaAgent
         if ($epsilon < 0.0 || $epsilon > 1.0) {
             throw new \InvalidArgumentException('epsilon must be between zero and one.');
         }
+        [$state, $mask] = $this->parseObservation($observation);
+        $allowed = $this->allowedActions($mask);
         $random = (float)$this->la->randomUniform([1], 0.0, 1.0)->toArray()[0];
         if ($random < $epsilon) {
-            return (int)$this->la->randomUniform(
-                [1], 0, $this->numActions - 1, dtype:NDArray::int32
+            $index = (int)$this->la->randomUniform(
+                [1], 0, count($allowed) - 1, dtype:NDArray::int32
             )->toArray()[0];
+            return $allowed[$index];
         }
-        return $this->greedyAction($observation, true);
+        return $this->greedyActionFromState($state, $allowed, true);
     }
 
     public function selectActionDeterministic(NDArray|array $observation) : int
     {
-        return $this->greedyAction($observation, false);
+        [$state, $mask] = $this->parseObservation($observation);
+        return $this->greedyActionFromState($state, $this->allowedActions($mask), false);
     }
 
-    private function greedyAction(NDArray|array $observation, bool $randomTie) : int
+    /** @param int[] $allowed */
+    private function greedyActionFromState(
+        NDArray|array $state,
+        array $allowed,
+        bool $randomTie,
+    ) : int
     {
-        $features = $this->tileCoder->encode($observation);
-        $bestActions = [0];
-        $bestValue = $this->valueOfFeatures($features, 0);
-        for ($action = 1; $action < $this->numActions; $action++) {
+        $features = $this->tileCoder->encode($state);
+        $bestActions = [$allowed[0]];
+        $bestValue = $this->valueOfFeatures($features, $allowed[0]);
+        foreach (array_slice($allowed, 1) as $action) {
             $value = $this->valueOfFeatures($features, $action);
             if ($value > $bestValue) {
                 $bestValue = $value;
@@ -105,7 +161,11 @@ class TrueOnlineSarsaLambdaAgent
         if (!$terminal && $nextAction === null) {
             throw new \InvalidArgumentException('nextAction is required for a non-terminal update.');
         }
-        $features = $this->tileCoder->encode($observation);
+        [$state, $mask] = $this->parseObservation($observation);
+        if ($mask !== null && !$mask[$action]) {
+            throw new \InvalidArgumentException('The selected action is disabled by the action mask.');
+        }
+        $features = $this->tileCoder->encode($state);
         $q = $this->valueOfFeatures($features, $action);
         $qNext = $terminal ? 0.0 : $this->value($nextObservation, $nextAction);
         $delta = $reward + $this->gamma * $qNext - $q;
@@ -182,6 +242,13 @@ class TrueOnlineSarsaLambdaAgent
         if ($action < 0 || $action >= $this->numActions) {
             throw new \InvalidArgumentException('Action is outside the discrete action space.');
         }
+    }
+
+    /** @param ?array<int,bool> $mask @return int[] */
+    private function allowedActions(?array $mask) : array
+    {
+        if ($mask === null) return range(0, $this->numActions - 1);
+        return array_keys(array_filter($mask, static fn(bool $allowed) : bool => $allowed));
     }
 
     private function emptyTable() : array
