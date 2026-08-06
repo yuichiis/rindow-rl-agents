@@ -18,6 +18,7 @@ class Runner
         int $bufferSize,
         private ?float $solvedReward=null,
         private int $solvedEvaluations=1,
+        private mixed $rewardFunction=null,
     ) {
         if ($solvedEvaluations < 1) {
             throw new \InvalidArgumentException('solvedEvaluations must be positive.');
@@ -30,21 +31,52 @@ class Runner
 
     public function evaluate(int $episodes) : float
     {
+        return $this->evaluateDetailed($episodes)['rawReward'];
+    }
+
+    /** @return array{rawReward:float,transformedReward:float,steps:float} */
+    public function evaluateDetailed(int $episodes) : array
+    {
         if ($episodes < 1) throw new \InvalidArgumentException('episodes must be positive.');
-        $total = 0.0;
+        $rawTotal = 0.0;
+        $transformedTotal = 0.0;
+        $stepTotal = 0;
         for ($episode=0; $episode<$episodes; $episode++) {
             [$observation] = $this->evalEnv->reset();
             $done = false;
             while (!$done) {
-                $action = $this->la->array(
-                    $this->agent->selectActionDeterministic($observation), dtype:NDArray::int32
-                );
+                $actionValue = $this->agent->selectActionDeterministic($observation);
+                $action = $this->la->array($actionValue,dtype:NDArray::int32);
+                $currentObservation = $observation;
                 [$observation,$reward,$terminated,$truncated] = $this->evalEnv->step($action);
                 $done = $terminated || $truncated;
-                $total += $reward;
+                $rawTotal += $reward;
+                $transformedTotal += $this->transformReward(
+                    $currentObservation,$actionValue,$observation,$reward,$terminated,$truncated
+                );
+                $stepTotal++;
             }
         }
-        return $total/$episodes;
+        return [
+            'rawReward'=>$rawTotal/$episodes,
+            'transformedReward'=>$transformedTotal/$episodes,
+            'steps'=>$stepTotal/$episodes,
+        ];
+    }
+
+    private function transformReward(
+        mixed $observation,
+        int $action,
+        mixed $nextObservation,
+        float $reward,
+        bool $terminated,
+        bool $truncated,
+    ) : float {
+        return $this->rewardFunction === null
+            ? $reward
+            : ($this->rewardFunction)(
+                $observation,$action,$nextObservation,$reward,$terminated,$truncated
+            );
     }
 
     public function train(
@@ -62,12 +94,19 @@ class Runner
             || $evalEvery < 1 || $epsilonDecaySteps < 1) {
             throw new \InvalidArgumentException('Invalid DQN training parameters.');
         }
-        $history = ['step'=>[],'episodes'=>[],'evalReward'=>[],
+        $history = ['step'=>[],'episodes'=>[],'trainShaped'=>[],'trainSteps'=>[],
+            'evalReward'=>[],'evalShaped'=>[],'evalSteps'=>[],
             'updateStep'=>[],'loss'=>[],'qValue'=>[],'epsilon'=>[]];
         [$observation] = $this->env->reset();
         $episodeCount = 0;
         $bestEval = -INF;
         $solvedCount = 0;
+        $bestTransformed = -INF;
+        $episodeShaped = 0.0;
+        $episodeSteps = 0;
+        $windowShaped = 0.0;
+        $windowSteps = 0;
+        $windowEpisodes = 0;
         $progress = new ProgressBar();
         $progress->start('Steps',$totalSteps,50);
         for ($step=1; $step<=$totalSteps; $step++) {
@@ -78,15 +117,25 @@ class Runner
             $actionValue = $this->agent->selectActionFromState($state,$epsilon,$actionMask);
             $action = $this->la->array($actionValue,dtype:NDArray::int32);
             [$nextObservation,$reward,$terminated,$truncated] = $this->env->step($action);
+            $trainingReward = $this->transformReward(
+                $observation,$actionValue,$nextObservation,$reward,$terminated,$truncated
+            );
             [$nextState,$nextActionMask] = $this->agent->parseObservation($nextObservation);
             $done = $terminated || $truncated;
             // A time-limit truncation still has a valid bootstrap value.
             $this->buffer->add(
-                $state,$actionValue,$reward,$nextState,$terminated,$nextActionMask
+                $state,$actionValue,$trainingReward,$nextState,$terminated,$nextActionMask
             );
+            $episodeShaped += $trainingReward;
+            $episodeSteps++;
             $observation = $nextObservation;
             if ($done) {
                 $episodeCount++;
+                $windowShaped += $episodeShaped;
+                $windowSteps += $episodeSteps;
+                $windowEpisodes++;
+                $episodeShaped = 0.0;
+                $episodeSteps = 0;
                 [$observation] = $this->env->reset();
             }
             if ($step >= $learningStarts && $this->buffer->size() > 0
@@ -98,18 +147,33 @@ class Runner
                 $history['epsilon'][] = $epsilon;
             }
             if ($step%$evalEvery === 0) {
-                $eval = $this->evaluate($evalEpisodes);
+                $evaluation = $this->evaluateDetailed($evalEpisodes);
+                $eval = $evaluation['rawReward'];
+                $evalShaped = $evaluation['transformedReward'];
+                $trainShaped = $windowEpisodes > 0 ? $windowShaped/$windowEpisodes : 0.0;
+                $trainSteps = $windowEpisodes > 0 ? $windowSteps/$windowEpisodes : 0.0;
                 $history['step'][] = $step;
                 $history['episodes'][] = $episodeCount;
+                $history['trainShaped'][] = $trainShaped;
+                $history['trainSteps'][] = $trainSteps;
                 $history['evalReward'][] = $eval;
-                $marker = $eval>$bestEval ? ' <- best' : '';
-                if ($eval>$bestEval) {
+                $history['evalShaped'][] = $evalShaped;
+                $history['evalSteps'][] = $evaluation['steps'];
+                $improved = $eval>$bestEval || ($eval===$bestEval && $evalShaped>$bestTransformed);
+                $marker = $improved ? ' <- best' : '';
+                if ($improved) {
                     $bestEval = $eval;
+                    $bestTransformed = $evalShaped;
                     if ($bestModelFile!==null) $this->agent->saveWeightsToFile($bestModelFile);
                 }
                 $progress->clearProgressBar();
-                printf("Step %7d | EvalDet=%+8.2f | Epsilon=%.3f | Episodes=%d%s\n",
-                    $step,$eval,$epsilon,$episodeCount,$marker);
+                $transformedText = $this->rewardFunction === null
+                    ? '' : sprintf(' | EvalShaped=%+8.2f',$evalShaped);
+                printf(
+                    "Step %7d | TrainShaped=%+8.2f | TrainSteps=%5.1f | EvalDet=%+8.2f%s | EvalSteps=%5.1f | Epsilon=%.3f | Episodes=%d%s\n",
+                    $step,$trainShaped,$trainSteps,$eval,$transformedText,$evaluation['steps'],
+                    $epsilon,$episodeCount,$marker
+                );
                 if ($this->solvedReward!==null) {
                     $solvedCount = $eval >= $this->solvedReward ? $solvedCount+1 : 0;
                     if ($solvedCount > 0) {
@@ -121,6 +185,9 @@ class Runner
                         break;
                     }
                 }
+                $windowShaped = 0.0;
+                $windowSteps = 0;
+                $windowEpisodes = 0;
             }
         }
         echo "\nTraining finished. Best eval reward: {$bestEval} time: {$progress->laptimeString()}\n";
