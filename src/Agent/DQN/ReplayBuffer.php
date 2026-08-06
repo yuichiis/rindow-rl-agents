@@ -17,16 +17,19 @@ class ReplayBuffer
     public function __construct(
         private object $la,
         private int $capacity,
-        int $obsDim,
+        int|array $obsDim,
         int $actionMaskDim=0,
     ) {
-        if ($capacity < 1 || $obsDim < 1) {
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($capacity < 1 || $observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
             throw new \InvalidArgumentException('Capacity and observation dimension must be positive.');
         }
-        $this->observations = $la->zeros($la->alloc([$capacity,$obsDim], dtype:NDArray::float32));
+        $bufferShape = array_merge([$capacity],$observationShape);
+        $this->observations = $la->zeros($la->alloc($bufferShape, dtype:NDArray::float32));
         $this->actions = $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
         $this->rewards = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
-        $this->nextObservations = $la->zeros($la->alloc([$capacity,$obsDim], dtype:NDArray::float32));
+        $this->nextObservations = $la->zeros($la->alloc($bufferShape, dtype:NDArray::float32));
         $this->dones = $la->zeros($la->alloc([$capacity], dtype:NDArray::float32));
         if ($actionMaskDim > 0) {
             $this->nextActionMasks = $la->zeros(

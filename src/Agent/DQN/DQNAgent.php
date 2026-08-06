@@ -17,7 +17,7 @@ class DQNAgent
 
     public function __construct(
         private Builder $nn,
-        private int $obsDim,
+        private int|array $obsDim,
         private int $numActions,
         array $hiddenLayers=[128, 128],
         float $learningRate=1.0e-3,
@@ -27,16 +27,24 @@ class DQNAgent
         private float $maxGradNorm=10.0,
         private ?string $stateField=null,
         private ?string $actionMaskField=null,
+        // Optional CNN/RNN feature extractor. The layers are cloned for the
+        // online and target networks; the final action-value Dense is appended.
+        ?array $featureLayers=null,
     ) {
-        if ($obsDim < 1 || $numActions < 2 || $batchSize < 1 || $targetUpdateInterval < 1) {
+        if ($featureLayers === []) $featureLayers = null;
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)
+            || $numActions < 2 || $batchSize < 1 || $targetUpdateInterval < 1) {
             throw new \InvalidArgumentException('Invalid DQN dimensions or update parameters.');
         }
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
-        $this->qNetwork = new QNetwork($nn,$obsDim,$numActions,$hiddenLayers);
-        $this->targetNetwork = new QNetwork($nn,$obsDim,$numActions,$hiddenLayers);
+        $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
+        $this->qNetwork = new QNetwork($nn,$this->obsDim,$numActions,$hiddenLayers,$featureLayers);
+        $this->targetNetwork = new QNetwork($nn,$this->obsDim,$numActions,$hiddenLayers,$featureLayers);
         $dummy = $this->g->Variable($this->la->zeros(
-            $this->la->alloc([1,$obsDim], dtype:NDArray::float32)
+            $this->la->alloc(array_merge([1],$observationShape), dtype:NDArray::float32)
         ));
         $this->qNetwork->forward($dummy);
         $this->targetNetwork->forward($dummy);
@@ -45,7 +53,12 @@ class DQNAgent
     }
 
     public function summary() : void { $this->qNetwork->summary(); }
-    public function observationDimension() : int { return $this->obsDim; }
+    public function observationDimension() : int { return array_product($this->observationShape()); }
+    /** @return array<int> */
+    public function observationShape() : array
+    {
+        return is_int($this->obsDim) ? [$this->obsDim] : $this->obsDim;
+    }
     public function actionDimension() : int { return $this->numActions; }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
 
@@ -90,6 +103,12 @@ class DQNAgent
 
     private function asNetworkState(NDArray $state) : NDArray
     {
+        if ($state->shape() !== $this->observationShape()) {
+            throw new \InvalidArgumentException(sprintf(
+                'Observation shape must be [%s]; [%s] given.',
+                implode(',',$this->observationShape()),implode(',',$state->shape())
+            ));
+        }
         return $this->la->isInt($state)
             ? $this->la->astype($state,dtype:NDArray::float32)
             : $state;
@@ -134,7 +153,7 @@ class DQNAgent
         ?NDArray $mask=null,
     ) : int
     {
-        $batch = $this->la->copy($observation)->reshape([1,$this->obsDim]);
+        $batch = $this->la->copy($observation)->reshape(array_merge([1],$this->observationShape()));
         if ($this->la->isInt($batch)) $batch = $this->la->astype($batch, dtype:NDArray::float32);
         $values = $this->qNetwork->forward($this->g->Variable($batch),false)->value()[0]->toArray();
         $allowed = $mask === null

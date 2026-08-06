@@ -14,19 +14,35 @@ class Runner
         private Env $env,
         private Env $evalEnv,
         private DQNAgent $agent,
-        int $obsDim,
+        int|array $obsDim,
         int $bufferSize,
         private ?float $solvedReward=null,
         private int $solvedEvaluations=1,
         private mixed $rewardFunction=null,
+        /** fn(Environment $env, mixed $rawObservation, bool $reset): NDArray|array */
+        private mixed $observationFunction=null,
     ) {
         if ($solvedEvaluations < 1) {
             throw new \InvalidArgumentException('solvedEvaluations must be positive.');
+        }
+        if ($observationFunction !== null && !is_callable($observationFunction)) {
+            throw new \InvalidArgumentException('observationFunction must be callable.');
         }
         $this->buffer = new ReplayBuffer(
             $la,$bufferSize,$obsDim,
             $agent->usesActionMask() ? $agent->actionDimension() : 0
         );
+    }
+
+    private function networkObservation(
+        Env $env,
+        mixed $observation,
+        bool $reset=false,
+    ) : mixed
+    {
+        return $this->observationFunction === null
+            ? $observation
+            : ($this->observationFunction)($env,$observation,$reset);
     }
 
     public function evaluate(int $episodes) : float
@@ -42,17 +58,19 @@ class Runner
         $transformedTotal = 0.0;
         $stepTotal = 0;
         for ($episode=0; $episode<$episodes; $episode++) {
-            [$observation] = $this->evalEnv->reset();
+            [$rawObservation] = $this->evalEnv->reset();
+            $observation = $this->networkObservation($this->evalEnv,$rawObservation,true);
             $done = false;
             while (!$done) {
                 $actionValue = $this->agent->selectActionDeterministic($observation);
                 $action = $this->la->array($actionValue,dtype:NDArray::int32);
-                $currentObservation = $observation;
-                [$observation,$reward,$terminated,$truncated] = $this->evalEnv->step($action);
+                $currentRawObservation = $rawObservation;
+                [$rawObservation,$reward,$terminated,$truncated] = $this->evalEnv->step($action);
+                $observation = $this->networkObservation($this->evalEnv,$rawObservation);
                 $done = $terminated || $truncated;
                 $rawTotal += $reward;
                 $transformedTotal += $this->transformReward(
-                    $currentObservation,$actionValue,$observation,$reward,$terminated,$truncated
+                    $currentRawObservation,$actionValue,$rawObservation,$reward,$terminated,$truncated
                 );
                 $stepTotal++;
             }
@@ -97,7 +115,8 @@ class Runner
         $history = ['step'=>[],'episodes'=>[],'trainShaped'=>[],'trainSteps'=>[],
             'evalReward'=>[],'evalShaped'=>[],'evalSteps'=>[],
             'updateStep'=>[],'loss'=>[],'qValue'=>[],'epsilon'=>[]];
-        [$observation] = $this->env->reset();
+        [$rawObservation] = $this->env->reset();
+        $observation = $this->networkObservation($this->env,$rawObservation,true);
         $episodeCount = 0;
         $bestEval = -INF;
         $solvedCount = 0;
@@ -116,9 +135,10 @@ class Runner
             [$state,$actionMask] = $this->agent->parseObservation($observation);
             $actionValue = $this->agent->selectActionFromState($state,$epsilon,$actionMask);
             $action = $this->la->array($actionValue,dtype:NDArray::int32);
-            [$nextObservation,$reward,$terminated,$truncated] = $this->env->step($action);
+            [$nextRawObservation,$reward,$terminated,$truncated] = $this->env->step($action);
+            $nextObservation = $this->networkObservation($this->env,$nextRawObservation);
             $trainingReward = $this->transformReward(
-                $observation,$actionValue,$nextObservation,$reward,$terminated,$truncated
+                $rawObservation,$actionValue,$nextRawObservation,$reward,$terminated,$truncated
             );
             [$nextState,$nextActionMask] = $this->agent->parseObservation($nextObservation);
             $done = $terminated || $truncated;
@@ -129,6 +149,7 @@ class Runner
             $episodeShaped += $trainingReward;
             $episodeSteps++;
             $observation = $nextObservation;
+            $rawObservation = $nextRawObservation;
             if ($done) {
                 $episodeCount++;
                 $windowShaped += $episodeShaped;
@@ -136,7 +157,8 @@ class Runner
                 $windowEpisodes++;
                 $episodeShaped = 0.0;
                 $episodeSteps = 0;
-                [$observation] = $this->env->reset();
+                [$rawObservation] = $this->env->reset();
+                $observation = $this->networkObservation($this->env,$rawObservation,true);
             }
             if ($step >= $learningStarts && $this->buffer->size() > 0
                 && $step%$trainEvery === 0) {
