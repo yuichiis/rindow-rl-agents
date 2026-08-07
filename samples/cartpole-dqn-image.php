@@ -69,8 +69,7 @@ $imageObservation = static function(
         size:[CROP_HEIGHT,SCREEN_WIDTH],
     );
     // imagecopy materializes the selected image area as an independent NDArray.
-    $cropped = $la->imagecopy($croppedView);
-    $small = $la->gather($cropped,$rowIndices);
+    $small = $la->gather($croppedView,$rowIndices);
     $small = $la->transpose($small,[1,0,2]);
     $small = $la->gather($small,$columnIndices);
     $small = $la->transpose($small,[1,0,2]);

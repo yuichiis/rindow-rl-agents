@@ -66,7 +66,6 @@ $imageObservation = static function(
     bool $reset=false,
 ) use ($la,$rowIndices,$columnIndices,$frameHistory) : NDArray {
     $rgb = $environment->render(mode:'rgb_array'); // [400,600,3]
-    $rgb = $la->imagecopy($rgb);
 
     // gather() samples its first dimension. Transpose once to sample width.
     $small = $la->gather($rgb,$rowIndices);

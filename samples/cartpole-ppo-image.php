@@ -61,7 +61,7 @@ $imageObservation = static function(
     mixed $rawObservation,
     bool $reset=false,
 ) use ($la,$rowIndices,$columnIndices,$frameHistory) : NDArray {
-    $rgb = $la->imagecopy($environment->render(mode:'rgb_array'));
+    $rgb = $environment->render(mode:'rgb_array');
     $small = $la->gather($rgb,$rowIndices);
     $small = $la->transpose($small,[1,0,2]);
     $small = $la->gather($small,$columnIndices);
