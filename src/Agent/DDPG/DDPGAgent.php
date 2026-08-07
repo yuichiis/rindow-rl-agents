@@ -20,7 +20,7 @@ class DDPGAgent
 
     public function __construct(
         private Builder $nn,
-        private int $obsDim,
+        private int|array $obsDim,
         private int $actDim,
         private float $actLimit,
         int $hiddenDim=256,
@@ -29,16 +29,28 @@ class DDPGAgent
         private float $gamma=0.99,
         private float $tau=0.005,
         private int $batchSize=128,
+        // Optional CNN/RNN feature extractor. Layers are cloned independently
+        // for actor, critic, and both target networks.
+        ?array $featureLayers=null,
     ) {
-        if ($actLimit <= 0.0) throw new \InvalidArgumentException('actLimit must be positive.');
+        if ($featureLayers === []) $featureLayers = null;
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)
+            || $actDim < 1 || $actLimit <= 0.0 || $batchSize < 1) {
+            throw new \InvalidArgumentException('Invalid DDPG dimensions or update parameters.');
+        }
+        $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
-        $this->actor = new Actor($nn,$obsDim,$actDim,$hiddenDim);
-        $this->actorTarget = new Actor($nn,$obsDim,$actDim,$hiddenDim);
-        $this->critic = new Critic($nn,$obsDim,$actDim,$hiddenDim);
-        $this->criticTarget = new Critic($nn,$obsDim,$actDim,$hiddenDim);
+        $this->actor = new Actor($nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers);
+        $this->actorTarget = new Actor($nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers);
+        $this->critic = new Critic($nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers);
+        $this->criticTarget = new Critic($nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers);
 
-        $obs = $this->g->Variable($this->la->zeros($this->la->alloc([1,$obsDim], dtype:NDArray::float32)));
+        $obs = $this->g->Variable($this->la->zeros($this->la->alloc(
+            array_merge([1],$observationShape),dtype:NDArray::float32
+        )));
         $act = $this->g->Variable($this->la->zeros($this->la->alloc([1,$actDim], dtype:NDArray::float32)));
         $this->actor->forward($obs);
         $this->actorTarget->forward($obs);
@@ -58,9 +70,23 @@ class DDPGAgent
         $this->critic->summary();
     }
 
+    /** @return array<int> */
+    public function observationShape() : array
+    {
+        return is_int($this->obsDim) ? [$this->obsDim] : $this->obsDim;
+    }
+
     public function selectActionDeterministic(NDArray $obs) : NDArray
     {
-        $batch = $this->g->Variable($this->la->expandDims($obs,0));
+        if ($obs->shape() !== $this->observationShape()) {
+            throw new \InvalidArgumentException(sprintf(
+                'Observation shape must be [%s]; [%s] given.',
+                implode(',',$this->observationShape()),implode(',',$obs->shape())
+            ));
+        }
+        $batch = $this->la->copy($obs)->reshape(array_merge([1],$this->observationShape()));
+        if ($this->la->isInt($batch)) $batch = $this->la->astype($batch,dtype:NDArray::float32);
+        $batch = $this->g->Variable($batch);
         $action = $this->actor->forward($batch)->value()->reshape([$this->actDim]);
         return $this->clip($this->la->scal($this->actLimit,$action));
     }

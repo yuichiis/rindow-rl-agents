@@ -86,7 +86,7 @@ $runner = new Runner(
     gamma:0.99,
     gaeLambda:0.95,
     solvedReward:SOLVED_REWARD,
-    //rewardFunction:$rewardFunction,
+    rewardFunction:$rewardFunction,
     bootstrapTruncated:false,
 );
 

@@ -29,7 +29,12 @@ class GSDEActor extends AbstractModel
     
     public function __construct(
         Builder $nn,
-        int $obsDim, int $actDim, int $latentDim, int $hiddenDim)
+        int|array $obsDim,
+        int $actDim,
+        int $latentDim,
+        int $hiddenDim,
+        ?array $featureLayers=null,
+    )
     {
         parent::__construct($nn);
         $this->la = $nn->backend()->primaryLA();
@@ -39,11 +44,18 @@ class GSDEActor extends AbstractModel
         $this->latentsDim = $latentDim;
 
         # 共有特徴抽出器  (PyTorch: phi_net)
-        $this->phiNet = $nn->models->Sequential([
-            $nn->layers->Dense($hiddenDim, activation:"relu",
-                                  input_shape:[$obsDim]),
-            $nn->layers->Dense($latentDim, activation:"relu"),
-        ]);
+        if ($featureLayers === []) $featureLayers = null;
+        $layers = $featureLayers === null
+            ? []
+            : array_map(static fn(object $layer)=>clone $layer,$featureLayers);
+        $firstOptions = ['activation'=>'relu'];
+        if ($featureLayers === null) {
+            $firstOptions['input_shape'] = is_int($obsDim)
+                ? [$obsDim] : array_values($obsDim);
+        }
+        $layers[] = $nn->layers->Dense($hiddenDim,...$firstOptions);
+        $layers[] = $nn->layers->Dense($latentDim,activation:'relu');
+        $this->phiNet = $nn->models->Sequential($layers);
 
         // 平均ヘッド  (PyTorch: mu_head = nn.Linear)
         $this->muHead = $nn->layers->Dense($actDim, input_shape:[$latentDim]);

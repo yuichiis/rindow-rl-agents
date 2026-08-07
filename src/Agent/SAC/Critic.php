@@ -18,11 +18,17 @@ class Critic extends AbstractModel
     public QNetwork $q1;
     public QNetwork $q2;
 
-    public function __construct(Builder $nn, int $obsDim, int $actDim, int $hiddenDim)
+    public function __construct(
+        Builder $nn,
+        int|array $obsDim,
+        int $actDim,
+        int $hiddenDim,
+        ?array $featureLayers=null,
+    )
     {
         parent::__construct($nn);
-        $this->q1 = new QNetwork($nn, $obsDim, $actDim, $hiddenDim);
-        $this->q2 = new QNetwork($nn, $obsDim, $actDim, $hiddenDim);
+        $this->q1 = new QNetwork($nn,$obsDim,$actDim,$hiddenDim,$featureLayers);
+        $this->q2 = new QNetwork($nn,$obsDim,$actDim,$hiddenDim,$featureLayers);
     }
 
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array

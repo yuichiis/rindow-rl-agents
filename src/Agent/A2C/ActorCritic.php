@@ -20,7 +20,7 @@ class ActorCritic extends AbstractModel
 
     public function __construct(
         Builder $nn,
-        int $obsDim,
+        int|array $obsDim,
         int $numActions,
         array $hiddenLayers = [64, 64],
         private bool $continuous = false,
@@ -29,17 +29,21 @@ class ActorCritic extends AbstractModel
         ?NDArray $actionMax = null,
         mixed $actionKernelInitializer = null,
         string $activation = 'tanh',
+        ?array $featureLayers = null,
     ) {
         parent::__construct($nn);
         $this->nnBuilder = $nn;
         if ($hiddenLayers === []) {
             throw new \InvalidArgumentException('hiddenLayers must contain at least one layer.');
         }
-        $layers = [];
+        $inputShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        $layers = $featureLayers === null
+            ? []
+            : array_map(static fn(object $layer)=>clone $layer,$featureLayers);
         foreach ($hiddenLayers as $i => $units) {
             $options = ['activation'=>$activation];
-            if ($i === 0) {
-                $options['input_shape'] = [$obsDim];
+            if ($i === 0 && $featureLayers === null) {
+                $options['input_shape'] = $inputShape;
             }
             $layers[] = $nn->layers->Dense($units, ...$options);
         }

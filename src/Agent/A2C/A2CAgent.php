@@ -15,7 +15,7 @@ class A2CAgent
 
     public function __construct(
         private Builder $nn,
-        private int $obsDim,
+        private int|array $obsDim,
         private int $numActions,
         array $hiddenLayers = [64, 64],
         float $learningRate = 7.0e-4,
@@ -32,10 +32,17 @@ class A2CAgent
         string $activation = 'tanh',
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
+        // Optional CNN/RNN layers prepended to the shared feature network.
+        ?array $featureLayers = null,
     ) {
-        if ($obsDim < 1 || $numActions < ($continuous ? 1 : 2)) {
+        if ($featureLayers === []) $featureLayers = null;
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)
+            || $numActions < ($continuous ? 1 : 2)) {
             throw new \InvalidArgumentException('Invalid observation or action dimension.');
         }
+        $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
         if ($continuous && ($actionMin === null || $actionMax === null)) {
@@ -46,9 +53,12 @@ class A2CAgent
         }
         $this->network = new ActorCritic(
             $nn, $obsDim, $numActions, $hiddenLayers, $continuous, $initialLogStd,
-            $actionMin, $actionMax, $actionKernelInitializer, $activation
+            $actionMin, $actionMax, $actionKernelInitializer, $activation,
+            $featureLayers
         );
-        $dummy = $this->g->Variable($this->la->zeros($this->la->alloc([1, $obsDim])));
+        $dummy = $this->g->Variable($this->la->zeros($this->la->alloc(
+            array_merge([1],$observationShape),dtype:NDArray::float32
+        )));
         $this->network->forward($dummy);
         $this->optimizer = match (strtolower($optimizer)) {
             'adam' => $nn->optimizers->Adam(lr:$learningRate),
@@ -60,7 +70,12 @@ class A2CAgent
     }
 
     public function summary() : void { $this->network->summary(); }
-    public function observationDimension() : int { return $this->obsDim; }
+    public function observationDimension() : int { return array_product($this->observationShape()); }
+    /** @return array<int> */
+    public function observationShape() : array
+    {
+        return is_int($this->obsDim) ? [$this->obsDim] : $this->obsDim;
+    }
     public function actionDimension() : int { return $this->numActions; }
     public function isContinuous() : bool { return $this->continuous; }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
@@ -106,6 +121,12 @@ class A2CAgent
 
     private function asNetworkState(NDArray $state) : NDArray
     {
+        if ($state->shape() !== $this->observationShape()) {
+            throw new \InvalidArgumentException(sprintf(
+                'Observation shape must be [%s]; [%s] given.',
+                implode(',',$this->observationShape()),implode(',',$state->shape())
+            ));
+        }
         return $this->la->isInt($state)
             ? $this->la->astype($state, dtype:NDArray::float32)
             : $state;
@@ -180,7 +201,9 @@ class A2CAgent
         if ($this->la->isInt($observation)) {
             $observation = $this->la->astype($observation, dtype:NDArray::float32);
         }
-        return $this->la->copy($observation)->reshape([1, $this->obsDim]);
+        return $this->la->copy($observation)->reshape(
+            array_merge([1],$this->observationShape())
+        );
     }
 
     /** @return array{NDArray,float} */

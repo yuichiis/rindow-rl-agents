@@ -6,76 +6,68 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\DQN\DQNAgent;
-use Rindow\RL\Agents\Agent\DQN\Runner;
-use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
+use Rindow\RL\Agents\Agent\DDPG\DDPGAgent;
+use Rindow\RL\Agents\Agent\DDPG\Runner;
+use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 
 const SEED = 42;
 const TOTAL_STEPS = 300_000;
-// Image transitions are much larger than vector observations. At 34x100x4,
-// both observation arrays in this buffer use about 218 MB as float32.
+// Two float32 image arrays in the replay buffer use about 147 MB.
 const BUFFER_SIZE = 2_000;
 const BATCH_SIZE = 32;
-const LEARNING_STARTS = 1_000;
-const TRAIN_EVERY = 4;
-const TARGET_UPDATE_INTERVAL = 1_000;
+const START_STEPS = 1_000;
+const UPDATE_AFTER = 1_000;
+const UPDATE_EVERY = 4;
+const HIDDEN_DIM = 128;
+const LR_ACTOR = 1.0e-4;
+const LR_CRITIC = 1.0e-3;
 const GAMMA = 0.99;
-const LEARNING_RATE = 2.5e-4;
-const EPSILON_START = 1.0;
-const EPSILON_END = 0.05;
-const EPSILON_DECAY_STEPS = 100_000;
+const TAU = 0.005;
+const NOISE_SIGMA = 0.20;
 const EVAL_EVERY = 5_000;
-const EVAL_EPISODES = 10;
-const SOLVED_REWARD = 475.0;
-const SOLVED_EVALUATIONS = 3;
-const MODEL_FILE = __DIR__.'/../models/cartpole-dqn-image.weights';
+const EVAL_EPISODES = 5;
+const SOLVED_REWARD = -200.0;
+const MODEL_FILE = __DIR__.'/../models/pendulum-ddpg-image.weights';
 
-const CROP_TOP = 60;
-const CROP_HEIGHT = 200;
-const SCREEN_WIDTH = 600;
-const DOWNSAMPLE = 6;
+const SCREEN_SIZE = 500;
+const IMAGE_SIZE = 48;
 const FRAME_STACK = 4;
-const IMAGE_HEIGHT = 34; // count(range(0, CROP_HEIGHT-1, DOWNSAMPLE))
-const IMAGE_WIDTH = 100; // count(range(0, SCREEN_WIDTH-1, DOWNSAMPLE))
-const IMAGE_SHAPE = [IMAGE_HEIGHT,IMAGE_WIDTH,FRAME_STACK];
+const IMAGE_SHAPE = [IMAGE_SIZE,IMAGE_SIZE,FRAME_STACK];
 
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
 $la->setSeed(SEED);
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
-$env = new CartPoleV1($la);
-$evalEnv = new CartPoleV1($la);
+$env = new PendulumV1($la);
+$evalEnv = new PendulumV1($la);
 $env->observationSpace()->seed(SEED);
 $env->actionSpace()->seed(SEED);
 $evalEnv->observationSpace()->seed(SEED+1);
 $evalEnv->actionSpace()->seed(SEED+1);
 
-$rowIndices = $la->array(range(0,CROP_HEIGHT-1,DOWNSAMPLE),dtype:NDArray::int32);
-$columnIndices = $la->array(range(0,SCREEN_WIDTH-1,DOWNSAMPLE),dtype:NDArray::int32);
+// Resize the whole rendered screen and stack frames so the policy can infer
+// angular velocity as well as the pendulum angle.
+$indices = [];
+for ($i=0; $i<IMAGE_SIZE; $i++) {
+    $indices[] = (int)round($i*(SCREEN_SIZE-1)/(IMAGE_SIZE-1));
+}
+$rowIndices = $la->array($indices,dtype:NDArray::int32);
+$columnIndices = $la->array($indices,dtype:NDArray::int32);
 $frameHistory = new WeakMap();
 
-// The third argument is true immediately after reset. Keeping separate histories
-// for env and evalEnv prevents evaluations from contaminating training frames.
 $imageObservation = static function(
     Environment $environment,
     mixed $rawObservation,
     bool $reset=false,
 ) use ($la,$rowIndices,$columnIndices,$frameHistory) : NDArray {
-    $rgb = $environment->render(mode:'rgb_array');       // [400,600,3]
-    $croppedView = $la->slice(
-        $rgb,
-        begin:[CROP_TOP,0],
-        size:[CROP_HEIGHT,SCREEN_WIDTH],
-    );
-    // imagecopy materializes the selected image area as an independent NDArray.
-    $small = $la->gather($croppedView,$rowIndices);
+    $rgb = $environment->render(mode:'rgb_array');
+    $small = $la->gather($rgb,$rowIndices);
     $small = $la->transpose($small,[1,0,2]);
     $small = $la->gather($small,$columnIndices);
     $small = $la->transpose($small,[1,0,2]);
     $small = $la->astype($small,dtype:NDArray::float32);
-    $gray = $la->reduceMean($small,axis:2);
-    $gray = $la->scal(1.0/255.0,$gray);
+    $gray = $la->scal(1.0/255.0,$la->reduceMean($small,axis:2));
 
     if ($reset || !isset($frameHistory[$environment])) {
         $frameHistory[$environment] = array_fill(0,FRAME_STACK,$gray);
@@ -88,11 +80,22 @@ $imageObservation = static function(
     return $la->stack($frameHistory[$environment],axis:2);
 };
 
-$agent = new DQNAgent(
+$actionSpace = $env->actionSpace();
+$actDim = $actionSpace->shape()[0];
+$high = $actionSpace->high()->toArray();
+while (is_array($high)) $high = reset($high);
+$actLimit = (float)$high;
+$agent = new DDPGAgent(
     $nn,
     obsDim:IMAGE_SHAPE,
-    numActions:$env->actionSpace()->n(),
-    hiddenLayers:[128],
+    actDim:$actDim,
+    actLimit:$actLimit,
+    hiddenDim:HIDDEN_DIM,
+    lrActor:LR_ACTOR,
+    lrCritic:LR_CRITIC,
+    gamma:GAMMA,
+    tau:TAU,
+    batchSize:BATCH_SIZE,
     featureLayers:[
         $nn->layers->Conv2D(
             filters:16,
@@ -117,15 +120,8 @@ $agent = new DQNAgent(
             activation:'relu',
             kernel_initializer:'he_normal',
         ),
-        // Preserve the 3x3 spatial layout so the dense layer can distinguish
-        // where the cart and pole appear on the rail.
         $nn->layers->Flatten(),
     ],
-    learningRate:LEARNING_RATE,
-    gamma:GAMMA,
-    batchSize:BATCH_SIZE,
-    targetUpdateInterval:TARGET_UPDATE_INTERVAL,
-    maxGradNorm:10.0,
 );
 $agent->summary();
 
@@ -133,32 +129,40 @@ $bufferSize = (int)(getenv('RL_BUFFER_SIZE') ?: BUFFER_SIZE);
 $runner = new Runner(
     $la,$env,$evalEnv,$agent,
     obsDim:IMAGE_SHAPE,
+    actDim:$actDim,
+    actLimit:$actLimit,
     bufferSize:$bufferSize,
     solvedReward:SOLVED_REWARD,
-    solvedEvaluations:SOLVED_EVALUATIONS,
+    noiseSigma:NOISE_SIGMA,
     observationFunction:$imageObservation,
 );
 
 $modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
 $totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
 $evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-$learningStarts = (int)(getenv('RL_LEARNING_STARTS') ?: LEARNING_STARTS);
-$trainEvery = (int)(getenv('RL_TRAIN_EVERY') ?: TRAIN_EVERY);
+$evalEpisodes = (int)(getenv('RL_EVAL_EPISODES') ?: EVAL_EPISODES);
+$startSteps = (int)(getenv('RL_START_STEPS') !== false ? getenv('RL_START_STEPS') : START_STEPS);
+$updateAfter = (int)(getenv('RL_UPDATE_AFTER') !== false ? getenv('RL_UPDATE_AFTER') : UPDATE_AFTER);
+$updateEvery = (int)(getenv('RL_UPDATE_EVERY') ?: UPDATE_EVERY);
 
 if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
 } else {
     $history = $runner->train(
-        $totalSteps,$learningStarts,$trainEvery,$evalEvery,EVAL_EPISODES,
-        EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
+        $totalSteps,$startSteps,$updateAfter,$updateEvery,
+        $evalEvery,$evalEpisodes,$modelFile
     );
-    if (count($history['step']) > 0) {
-        $art = $plt->plot($la->array($history['step']),$la->array($history['evalReward']))[0];
+    if (count($history['step'])) {
+        $art = $plt->plot(
+            $la->array($history['step']),$la->array($history['evalReward'])
+        )[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
-        $plt->legend([$art],['Image DQN']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-dqn-image-history.png');
+        $plt->legend([$art],['Image DDPG']);
+        $plt->show(filename:__DIR__.'/../graphics/pendulum-ddpg-image-history.png');
+    }
+    if (is_file($modelFile)) {
         $agent->loadWeightsFromFile($modelFile);
         echo "Best model restored: {$modelFile}\n";
     } else {
@@ -172,12 +176,9 @@ if (getenv('RL_SKIP_DEMO') !== '1') {
     for ($episode=1; $episode<=5; $episode++) {
         [$rawObservation] = $env->reset();
         $observation = $imageObservation($env,$rawObservation,true);
-        $done = false;
-        $totalReward = 0.0;
-        $steps = 0;
+        $done = false; $totalReward = 0.0; $steps = 0;
         while (!$done) {
-            $actionValue = $agent->selectActionDeterministic($observation);
-            $action = $la->array($actionValue,dtype:NDArray::int32);
+            $action = $agent->selectActionDeterministic($observation);
             [$rawObservation,$reward,$terminated,$truncated] = $env->step($action);
             $observation = $imageObservation($env,$rawObservation,false);
             $done = $terminated || $truncated;
@@ -185,8 +186,11 @@ if (getenv('RL_SKIP_DEMO') !== '1') {
             $steps++;
             $env->render();
         }
-        echo "Test Episode {$episode}, Steps: {$steps}, Total Reward: {$totalReward}\n";
+        printf(
+            "Test Episode %d, Steps: %d, Total Reward: %.1f\n",
+            $episode,$steps,$totalReward
+        );
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/cartpole-dqn-image-trained.gif');
+    $filename = $env->show(path:__DIR__.'/../graphics/pendulum-ddpg-image-trained.gif');
     echo "filename: {$filename}\n";
 }

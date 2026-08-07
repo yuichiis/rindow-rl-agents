@@ -15,15 +15,20 @@ class ReplayBuffer
     private NDArray $nextObs;
     private NDArray $dones;
 
-    public function __construct(object $la, int $capacity, int $obsDim, int $actDim)
+    public function __construct(object $la, int $capacity, int|array $obsDim, int $actDim)
     {
         if ($capacity < 1) throw new \InvalidArgumentException('capacity must be positive.');
         $this->la = $la;
         $this->capacity = $capacity;
-        $this->obs = $la->zeros($la->alloc([$capacity,$obsDim], dtype:NDArray::float32));
+        $obsShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($obsShape === []
+            || array_filter($obsShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            throw new \InvalidArgumentException('Invalid observation dimensions.');
+        }
+        $this->obs = $la->zeros($la->alloc(array_merge([$capacity],$obsShape), dtype:NDArray::float32));
         $this->actions = $la->zeros($la->alloc([$capacity,$actDim], dtype:NDArray::float32));
         $this->rewards = $la->zeros($la->alloc([$capacity,1], dtype:NDArray::float32));
-        $this->nextObs = $la->zeros($la->alloc([$capacity,$obsDim], dtype:NDArray::float32));
+        $this->nextObs = $la->zeros($la->alloc(array_merge([$capacity],$obsShape), dtype:NDArray::float32));
         $this->dones = $la->zeros($la->alloc([$capacity,1], dtype:NDArray::float32));
     }
 

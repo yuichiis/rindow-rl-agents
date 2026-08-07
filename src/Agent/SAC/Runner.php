@@ -17,6 +17,8 @@ class Runner
     private float $actLimit;
     private ReplayBuffer $buffer;
     private ?float $solvedReward;
+    private mixed $rewardFunction;
+    private mixed $observationFunction;
     private ProgressBar $progressBar;
 
     public function __construct(
@@ -25,11 +27,14 @@ class Runner
         Env $env,
         Env $evalEnv,
         SACGSDEAgent $agent,
-        int $obsDim,
+        int|array $obsDim,
         int $actDim,
         float $actLimit,
         int $bufferSize,
         ?float $solvedReward = null,
+        mixed $rewardFunction = null,
+        /** fn(Environment $env, mixed $rawObservation, bool $reset): NDArray */
+        mixed $observationFunction = null,
     )
     {
         $this->la = $la;
@@ -41,6 +46,36 @@ class Runner
 
         $this->buffer = new ReplayBuffer($la, $bufferSize, $obsDim, $actDim);
         $this->solvedReward = $solvedReward;
+        if ($rewardFunction !== null && !is_callable($rewardFunction)) {
+            throw new \InvalidArgumentException('rewardFunction must be callable.');
+        }
+        $this->rewardFunction = $rewardFunction;
+        if ($observationFunction !== null && !is_callable($observationFunction)) {
+            throw new \InvalidArgumentException('observationFunction must be callable.');
+        }
+        $this->observationFunction = $observationFunction;
+    }
+
+    private function networkObservation(Env $env, mixed $observation, bool $reset=false) : mixed
+    {
+        return $this->observationFunction === null
+            ? $observation
+            : ($this->observationFunction)($env,$observation,$reset);
+    }
+
+    private function transformReward(
+        mixed $observation,
+        mixed $action,
+        mixed $nextObservation,
+        float $reward,
+        bool $terminated,
+        bool $truncated,
+    ) : float {
+        return $this->rewardFunction === null
+            ? $reward
+            : ($this->rewardFunction)(
+                $observation,$action,$nextObservation,$reward,$terminated,$truncated
+            );
     }
 
     /**
@@ -53,12 +88,28 @@ class Runner
         bool $withExplorationNoise = false,
     ) : float
     {
+        return $this->evaluateDetailed(
+            $agent,$nEpisodes,$gsdeResetFreq,$withExplorationNoise
+        )['rawReward'];
+    }
+
+    /** @return array{rawReward:float,transformedReward:float,steps:float} */
+    public function evaluateDetailed(
+        SACGSDEAgent $agent,
+        int $nEpisodes,
+        int $gsdeResetFreq,
+        bool $withExplorationNoise = false,
+    ) : array
+    {
         $la = $this->la;
         // 評価用の開始状態列は学習用の乱数列から独立させる。
         $env = $this->evalEnv;
         $total = 0.0;
+        $transformedTotal = 0.0;
+        $stepTotal = 0;
         for ($i = 0; $i < $nEpisodes; $i++) {
-            [$obs, $info] = $env->reset();
+            [$rawObs, $info] = $env->reset();
+            $obs = $this->networkObservation($env,$rawObs,true);
             $wNoise = $withExplorationNoise ? $agent->sampleNoise() : null;
             $done = false;
             $step = 0;
@@ -71,14 +122,24 @@ class Runner
                 } else {
                     $action = $agent->selectActionDeterministic($obs);
                 }
-                [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
+                $currentRawObs = $rawObs;
+                [$rawObs, $reward, $terminated, $truncated, $info] = $env->step($action);
+                $nextObs = $this->networkObservation($env,$rawObs);
                 $done = $terminated || $truncated;
+                $transformedTotal += $this->transformReward(
+                    $currentRawObs,$action,$rawObs,$reward,$terminated,$truncated
+                );
                 $obs = $nextObs;
                 $total += $reward;
                 $step  += 1;
+                $stepTotal += 1;
             }
         }
-        return $total / $nEpisodes;
+        return [
+            'rawReward'=>$total/$nEpisodes,
+            'transformedReward'=>$transformedTotal/$nEpisodes,
+            'steps'=>$stepTotal/$nEpisodes,
+        ];
     }
 
     /**
@@ -102,7 +163,8 @@ class Runner
 
         $this->progressBar = new ProgressBar();
         
-        [$obs,$info] = $env->reset();
+        [$rawObs,$info] = $env->reset();
+        $obs = $this->networkObservation($env,$rawObs,true);
         $wNoise = $agent->sampleNoise();
 
         $episodeReward = 0.0;
@@ -114,6 +176,7 @@ class Runner
             'episodes' => [],
             'evalDet' => [],
             'evalgSDE' => [],
+            'evalShaped' => [],
             'alpha' => [],
             'updateStep' => [],
             'actorLoss' => [],
@@ -134,17 +197,23 @@ class Runner
                 $action = $agent->selectAction($obs, $wNoise);
             }
 
-            [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
+            [$nextRawObs, $reward, $terminated, $truncated, $info] = $env->step($action);
+            $nextObs = $this->networkObservation($env,$nextRawObs);
             $done = $terminated || $truncated;
             $episodeReward += $reward;
             $episodeStep   += 1;
 
-            $buffer->add($obs, $action, $reward, $nextObs, $terminated);
+            $trainingReward = $this->transformReward(
+                $rawObs,$action,$nextRawObs,$reward,$terminated,$truncated
+            );
+            $buffer->add($obs, $action, $trainingReward, $nextObs, $terminated);
             $obs = $nextObs;
+            $rawObs = $nextRawObs;
 
             if ($done) {
                 $episodeCount += 1;
-                [$obs,$info] = $env->reset();
+                [$rawObs,$info] = $env->reset();
+                $obs = $this->networkObservation($env,$rawObs,true);
                 $wNoise = $agent->sampleNoise();
                 $episodeReward = 0.0;
                 $episodeStep   = 0;
@@ -158,7 +227,10 @@ class Runner
             }
 
             if ($step % $evalEvery == 0) {
-                $deterministicReward = $this->evaluate($agent, $evalEpisodes, $gsdeResetFreq, withExplorationNoise: false);
+                $evaluation = $this->evaluateDetailed(
+                    $agent,$evalEpisodes,$gsdeResetFreq,withExplorationNoise:false
+                );
+                $deterministicReward = $evaluation['rawReward'];
                 $strEvalgSDE = "";
                 if($evalgSDE) {
                     $noisyReward = $this->evaluate($agent, $evalEpisodes, $gsdeResetFreq, withExplorationNoise: true);
@@ -168,6 +240,7 @@ class Runner
                 $history['step'][] = $step;
                 $history['episodes'][] = $episodeCount;
                 $history['evalDet'][] = $deterministicReward;
+                $history['evalShaped'][] = $evaluation['transformedReward'];
                 $history['alpha'][] = $agent->alpha()->value()->toArray()[0];
                 if ($evalgSDE) {
                     $history['evalgSDE'][] = $noisyReward;
@@ -175,11 +248,14 @@ class Runner
                 $marker = ($deterministicReward > $bestEval) ? " ← best" : "";
                 $bestEval = max($bestEval, $deterministicReward);
                 $this->progressBar->clearProgressBar();
+                $shapedText = $this->rewardFunction === null
+                    ? '' : sprintf('| EvalShaped=%+8.2f ',$evaluation['transformedReward']);
                 printf(
-                    "Step %7d | EvalDet=%+8.2f %s| Alpha=%0.4f | Episodes=%d%s\n",
+                    "Step %7d | EvalDet=%+8.2f %s%s| Alpha=%0.4f | Episodes=%d%s\n",
                     $step,
                     $deterministicReward,
                     $strEvalgSDE,
+                    $shapedText,
                     $agent->alpha()->value()->toArray()[0],
                     $episodeCount,
                     $marker

@@ -19,7 +19,7 @@ class SACGSDEAgent
     private object $la;
     private object $g;
     private int $actDim;
-    private int $obsDim;
+    private int|array $obsDim;
     private float $actLimit;
     public GSDEActor $actor;
     public Critic $critic;
@@ -41,7 +41,7 @@ class SACGSDEAgent
 
     public function __construct(
         Builder $nn,
-        int $obsDim,
+        int|array $obsDim,
         int $actDim,
         float $actLimit,
         int $gsdeLatentDim,
@@ -53,30 +53,46 @@ class SACGSDEAgent
         float $gamma,
         float $tau,
         int $batchSize,
+        ?array $featureLayers=null,
     )
     {
         $this->nn = $nn;
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
+        if ($featureLayers === []) $featureLayers = null;
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            throw new \InvalidArgumentException('Invalid SAC observation dimensions.');
+        }
         $this->actDim   = $actDim;
-        $this->obsDim   = $obsDim;
+        $this->obsDim   = is_int($obsDim) ? $obsDim : $observationShape;
         $this->actLimit = $actLimit;
         $this->gamma = $gamma;
         $this->tau = $tau;
         $this->batchSize = $batchSize;
         $la = $this->la; 
 
-        $this->actor         = new GSDEActor($nn, $obsDim, $actDim, $gsdeLatentDim, $hiddenDim);
-        $this->critic        = new Critic($nn, $obsDim, $actDim, $hiddenDim);
-        $this->criticTarget = new Critic($nn, $obsDim, $actDim, $hiddenDim);
+        $this->actor = new GSDEActor(
+            $nn,$this->obsDim,$actDim,$gsdeLatentDim,$hiddenDim,$featureLayers
+        );
+        $this->critic = new Critic(
+            $nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers
+        );
+        $this->criticTarget = new Critic(
+            $nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers
+        );
 
         // ダミー入力で build してから weights をコピー
-        $dummyObs = $this->g->Variable($la->zeros($la->alloc([1, $obsDim])));
+        $batchedObservationShape = array_merge([1],$observationShape);
+        $dummyObs = $this->g->Variable($la->zeros(
+            $la->alloc($batchedObservationShape,dtype:NDArray::float32)
+        ));
         $dummyAct = $this->g->Variable($la->zeros($la->alloc([1, $actDim])));
         
-        $this->actor->build([1, $obsDim]);
-        $this->critic->build([1, $obsDim],[1, $actDim]);
-        $this->criticTarget->build([1, $obsDim],[1, $actDim]);
+        $this->actor->build($batchedObservationShape);
+        $this->critic->build($batchedObservationShape,[1,$actDim]);
+        $this->criticTarget->build($batchedObservationShape,[1,$actDim]);
         $this->actor->forwardTrain($dummyObs);
         $this->critic->forward($dummyObs, $dummyAct);
         $this->criticTarget->forward($dummyObs, $dummyAct);
@@ -166,7 +182,7 @@ class SACGSDEAgent
         // The old implementation used a MountainCar-shaped (B, 2) tensor,
         // which made any environment with another observation size fail.
         $obs = $this->g->Variable($this->la->zeros(
-            $this->la->alloc([4, $this->obsDim], dtype:NDArray::float32)
+            $this->la->alloc(array_merge([4],$this->observationShape()), dtype:NDArray::float32)
         ));
         $mu = $this->actor->diagnosticMu($obs)->value()->toArray();
         [$muMin, $muMax, $muMean] = $this->range($mu);
@@ -200,6 +216,12 @@ class SACGSDEAgent
     public function sampleNoise() : Variable
     {
         return $this->actor->sampleNoise();
+    }
+
+    /** @return array<int> */
+    public function observationShape() : array
+    {
+        return is_int($this->obsDim) ? [$this->obsDim] : $this->obsDim;
     }
 
     public function selectAction(NDArray $obs, Variable $wNoise) : NDArray

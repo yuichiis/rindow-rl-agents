@@ -18,16 +18,20 @@ class RolloutBuffer
     public function __construct(
         private object $la,
         private int $capacity,
-        int $obsDim,
+        int|array $obsDim,
         private int $actionDim = 1,
         private bool $continuous = false,
         int $maskDim = 0,
     )
     {
-        if ($capacity < 1) {
-            throw new \InvalidArgumentException('capacity must be greater than zero.');
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($capacity < 1 || $observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            throw new \InvalidArgumentException('Invalid rollout buffer dimensions.');
         }
-        $this->observations = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
+        $this->observations = $la->zeros($la->alloc(
+            array_merge([$capacity],$observationShape),dtype:NDArray::float32
+        ));
         $this->actions = $continuous
             ? $la->zeros($la->alloc([$capacity, $actionDim], dtype:NDArray::float32))
             : $la->zeros($la->alloc([$capacity], dtype:NDArray::int32));
@@ -84,8 +88,10 @@ class RolloutBuffer
             $advantages[$i] = $gae;
             $returns[$i] = $gae + $value;
         }
+        $indices = $this->la->array(range(0,$size-1),dtype:NDArray::int32);
         $rollout = [
-            $this->la->slice($this->observations, [0, 0], [$size, $this->observations->shape()[1]]),
+            // gather supports image batches with more than three dimensions.
+            $this->la->gather($this->observations,$indices),
             $this->continuous
                 ? $this->la->slice($this->actions, [0, 0], [$size, $this->actionDim])
                 : $this->la->slice($this->actions, [0], [$size]),

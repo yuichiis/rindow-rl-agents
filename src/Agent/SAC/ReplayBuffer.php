@@ -12,7 +12,7 @@ class ReplayBuffer
 {
     private object $la;
     private int $capacity;
-    private int $obsDim;
+    private int|array $obsDim;
     private int $actDim;
     private int $ptr;
     private int $size;
@@ -25,7 +25,7 @@ class ReplayBuffer
     public function __construct(
         object $la,
         int $capacity,
-        int $obsDim,
+        int|array $obsDim,
         int $actDim
         )
     {
@@ -33,9 +33,14 @@ class ReplayBuffer
         $this->capacity = $capacity;
         $this->ptr = 0;
         $this->size = 0;
-        $this->obs      = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
+        $obsShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($capacity < 1 || $obsShape === []
+            || array_filter($obsShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            throw new \InvalidArgumentException('Invalid replay buffer dimensions.');
+        }
+        $this->obs      = $la->zeros($la->alloc(array_merge([$capacity],$obsShape), dtype:NDArray::float32));
         $this->rewards  = $la->zeros($la->alloc([$capacity, 1],       dtype:NDArray::float32));
-        $this->nextObs = $la->zeros($la->alloc([$capacity, $obsDim], dtype:NDArray::float32));
+        $this->nextObs = $la->zeros($la->alloc(array_merge([$capacity],$obsShape), dtype:NDArray::float32));
         $this->dones    = $la->zeros($la->alloc([$capacity, 1],       dtype:NDArray::float32));
         $this->actions  = $la->zeros($la->alloc([$capacity, $actDim], dtype:NDArray::float32));
     }
