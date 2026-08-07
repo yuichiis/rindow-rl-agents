@@ -6,8 +6,8 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\DoubleDQN\DoubleDQNAgent;
-use Rindow\RL\Agents\Agent\DoubleDQN\Runner;
+use Rindow\RL\Agents\Agent\DQN\DQNAgent;
+use Rindow\RL\Agents\Agent\DQN\Runner;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
@@ -90,7 +90,7 @@ $imageObservation = static function(
     return $la->stack($frameHistory[$environment],axis:2); // [84,84,4]
 };
 
-$agent = new DoubleDQNAgent(
+$agent = new DQNAgent(
     $nn,
     obsDim:IMAGE_SHAPE,
     numActions:$env->actionSpace()->n(),
@@ -128,6 +128,7 @@ $agent = new DoubleDQNAgent(
     batchSize:BATCH_SIZE,
     targetUpdateInterval:TARGET_UPDATE_INTERVAL,
     maxGradNorm:10.0,
+    ddqn:true,
 );
 $agent->summary();
 

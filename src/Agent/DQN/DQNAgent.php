@@ -8,8 +8,8 @@ use Rindow\NeuralNetworks\Gradient\Variable;
 class DQNAgent
 {
     private const CHECKPOINT_VERSION = 1;
-    protected object $la;
-    protected object $g;
+    private object $la;
+    private object $g;
     private object $optimizer;
     private int $updates = 0;
     public QNetwork $qNetwork;
@@ -30,6 +30,7 @@ class DQNAgent
         // Optional CNN/RNN feature extractor. The layers are cloned for the
         // online and target networks; the final action-value Dense is appended.
         ?array $featureLayers=null,
+        private bool $ddqn=false,
     ) {
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
@@ -202,21 +203,40 @@ class DQNAgent
         return ['loss'=>$this->scalar($loss),'q_value'=>$this->scalar($meanQ)];
     }
 
-    /**
-     * Compute the bootstrap value for each next state.
-     * Subclasses can override this without duplicating the DQN update routine.
-     */
-    protected function nextStateValues(
+    private function nextStateValues(
         NDArray $nextObservations,
         ?NDArray $nextActionMasks,
     ) : NDArray {
-        $nextQ = $this->targetNetwork->forward(
+        if ($this->ddqn) {
+            // Double DQN selects the action with the online network and
+            // evaluates that action with the target network.
+            $onlineQ = $this->qNetwork->forward(
+                $this->g->Variable($nextObservations),false
+            )->value();
+            if ($nextActionMasks !== null) {
+                $onlineQ = $this->la->masking(
+                    $nextActionMasks,$onlineQ,fill:-1.0e9
+                );
+            }
+            $nextActions = $this->la->reduceArgMax(
+                $onlineQ,axis:1,dtype:NDArray::int32
+            );
+            $targetQ = $this->targetNetwork->forward(
+                $this->g->Variable($nextObservations),false
+            )->value();
+            return $this->la->gather($targetQ,$nextActions,axis:1);
+        }
+
+        // Standard DQN selects and evaluates with the target network.
+        $targetQ = $this->targetNetwork->forward(
             $this->g->Variable($nextObservations),false
         )->value();
         if ($nextActionMasks !== null) {
-            $nextQ = $this->la->masking($nextActionMasks,$nextQ,fill:-1.0e9);
+            $targetQ = $this->la->masking(
+                $nextActionMasks,$targetQ,fill:-1.0e9
+            );
         }
-        return $this->la->reduceMax($nextQ,axis:1);
+        return $this->la->reduceMax($targetQ,axis:1);
     }
 
     private function syncTargetNetwork() : void
