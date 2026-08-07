@@ -3,6 +3,7 @@ namespace Rindow\RL\Agents\Agent\DDPG;
 
 use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\RL\Agents\Util\ProgressBar;
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 
 class Runner
 {

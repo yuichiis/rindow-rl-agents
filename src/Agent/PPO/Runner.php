@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent\PPO;
 use Interop\Polite\AI\RL\Environment as Env;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Util\ProgressBar;
+use Rindow\RL\Agents\ReplayBuffer\RolloutBuffer;
 
 class Runner
 {
@@ -33,6 +34,7 @@ class Runner
             $agent->isContinuous() ? $env->actionSpace()->shape()[0] : 1,
             $agent->isContinuous(),
             $agent->usesActionMask() ? $env->actionSpace()->n() : 0,
+            storePolicyData:true,
         );
     }
 

@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent\DQN;
 use Interop\Polite\AI\RL\Environment as Env;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Util\ProgressBar;
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 
 class Runner
 {
@@ -30,7 +31,7 @@ class Runner
         }
         $this->buffer = new ReplayBuffer(
             $la,$bufferSize,$obsDim,
-            $agent->usesActionMask() ? $agent->actionDimension() : 0
+            actionMaskDimension:$agent->usesActionMask() ? $agent->actionDimension() : 0
         );
     }
 

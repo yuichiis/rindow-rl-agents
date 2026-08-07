@@ -1,34 +1,96 @@
 <?php
 namespace Rindow\RL\Agents\ReplayBuffer;
 
-use SplFixedArray;
-use InvalidArgumentException;
-use LogicException;
-use Rindow\RL\Agents\ReplayBuffer as ReplayBufferInterface;
+use Interop\Polite\Math\Matrix\NDArray;
 
-class ReplayBuffer implements ReplayBufferInterface
+class ReplayBuffer
 {
-    protected object $la;
-    protected int $maxSize;
-    protected int $size = 0;
-    protected int $last = -1;
-    protected SplFixedArray $array;
+    private int $ptr = 0;
+    private int $size = 0;
+    private NDArray $observations;
+    private NDArray $actions;
+    private NDArray $rewards;
+    private NDArray $nextObservations;
+    private NDArray $dones;
+    private ?NDArray $nextActionMasks = null;
+    private bool $continuousActions;
 
-    public function __construct(object $la, int $maxSize)
-    {
-        $this->la = $la;
-        if($maxSize<=0) {
-            throw new InvalidArgumentException('maxSize must be greater then 0');
+    public function __construct(
+        private object $la,
+        private int $capacity,
+        int|array $observationDimensions,
+        ?int $actionDimension=null,
+        int $actionMaskDimension=0,
+    ) {
+        $observationShape = is_int($observationDimensions)
+            ? [$observationDimensions]
+            : array_values($observationDimensions);
+        if ($capacity < 1 || $observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            throw new \InvalidArgumentException(
+                'Capacity and observation dimensions must be positive.'
+            );
         }
-        $this->maxSize = $maxSize;
-        $this->array = new SplFixedArray($maxSize);
+        if ($actionDimension !== null && $actionDimension < 1) {
+            throw new \InvalidArgumentException('Action dimension must be positive.');
+        }
+        if ($actionMaskDimension < 0) {
+            throw new \InvalidArgumentException('Action mask dimension must not be negative.');
+        }
+        if ($actionDimension !== null && $actionMaskDimension !== 0) {
+            throw new \InvalidArgumentException(
+                'Action masks are only supported for discrete actions.'
+            );
+        }
+
+        $bufferShape = array_merge([$capacity],$observationShape);
+        $continuousActions = $actionDimension !== null;
+        $this->continuousActions = $continuousActions;
+        $this->observations = $la->zeros($la->alloc($bufferShape,dtype:NDArray::float32));
+        $this->actions = $la->zeros($la->alloc(
+            $continuousActions ? [$capacity,$actionDimension] : [$capacity],
+            dtype:$continuousActions ? NDArray::float32 : NDArray::int32,
+        ));
+        $scalarShape = $continuousActions ? [$capacity,1] : [$capacity];
+        $this->rewards = $la->zeros($la->alloc($scalarShape,dtype:NDArray::float32));
+        $this->nextObservations = $la->zeros($la->alloc($bufferShape,dtype:NDArray::float32));
+        $this->dones = $la->zeros($la->alloc($scalarShape,dtype:NDArray::float32));
+        if ($actionMaskDimension > 0) {
+            $this->nextActionMasks = $la->zeros(
+                $la->alloc([$capacity,$actionMaskDimension],dtype:NDArray::bool)
+            );
+        }
     }
 
-    public function clear() : void
-    {
-        $this->array = new SplFixedArray($this->maxSize);
-        $this->size = 0;
-        $this->last = -1;
+    public function add(
+        NDArray $observation,
+        int|NDArray $action,
+        float $reward,
+        NDArray $nextObservation,
+        bool $done,
+        ?NDArray $nextActionMask=null,
+    ) : void {
+        $i = $this->ptr;
+        $this->observations[$i] = $observation;
+        $this->actions[$i] = $action;
+        if ($this->continuousActions) {
+            $this->rewards[$i][0] = $reward;
+            $this->dones[$i][0] = $done ? 1.0 : 0.0;
+        } else {
+            $this->rewards[$i] = $reward;
+            $this->dones[$i] = $done ? 1.0 : 0.0;
+        }
+        $this->nextObservations[$i] = $nextObservation;
+        if ($this->nextActionMasks !== null) {
+            if ($nextActionMask === null) {
+                throw new \InvalidArgumentException('A next action mask is required.');
+            }
+            $this->nextActionMasks[$i] = $nextActionMask;
+        } elseif ($nextActionMask !== null) {
+            throw new \InvalidArgumentException('This replay buffer does not use action masks.');
+        }
+        $this->ptr = ($i+1) % $this->capacity;
+        $this->size = min($this->size+1,$this->capacity);
     }
 
     public function size() : int
@@ -36,74 +98,30 @@ class ReplayBuffer implements ReplayBufferInterface
         return $this->size;
     }
 
-    public function maxSize() : int
+    public function sample(int $batchSize) : array
     {
-        return $this->maxSize;
-    }
-
-    public function count() : int
-    {
-        return $this->size();
-    }
-
-    public function add(mixed $item) : void
-    {
-        $this->last++;
-        if($this->last >= $this->maxSize) {
-            $this->last=0;
+        if ($batchSize < 1) {
+            throw new \InvalidArgumentException('Batch size must be positive.');
         }
-        if($this->last >= $this->size) {
-            $this->size = $this->last+1;
+        if ($this->size === 0) {
+            throw new \UnderflowException('Replay buffer is empty.');
         }
-        $this->array[$this->last] = $item;
-    }
-
-    public function last() : array
-    {
-        if($this->last<0) {
-            throw new LogicException('No data');
+        // Sampling with replacement, equivalent to NumPy's randint.
+        $indices = $this->la->randomUniform(
+            [$batchSize],0,$this->size-1,dtype:NDArray::int32
+        );
+        $batch = [
+            $this->la->gather($this->observations,$indices),
+            $this->la->gather($this->actions,$indices),
+            $this->la->gather($this->rewards,$indices),
+            $this->la->gather($this->nextObservations,$indices),
+            $this->la->gather($this->dones,$indices),
+        ];
+        if (!$this->continuousActions) {
+            $batch[] = $this->nextActionMasks === null
+                ? null
+                : $this->la->gather($this->nextActionMasks,$indices);
         }
-        return $this->array[$this->last];
-    }
-
-    public function recently(int $quantity) : iterable
-    {
-        if($this->last<0) {
-            throw new LogicException('No data');
-        }
-        if($quantity<=0) {
-            throw new InvalidArgumentException('quantity must be greater then 0');
-        }
-        if($quantity > $this->size) {
-            throw new InvalidArgumentException('Too few items are stored.');
-        }
-        $pos=$this->last-$quantity+1;
-        if($pos<0) {
-            $pos += $this->size;
-        }
-        $recently = [];
-        for($i=0;$i<$quantity;$i++,$pos++) {
-            if($pos>=$this->size) {
-                $pos = 0;
-            }
-            $recently[] = $this->array[$pos];
-        }
-        return $recently;
-    }
-
-    public function sample(int $quantity) : iterable
-    {
-        if($quantity<=0) {
-            throw new InvalidArgumentException('quantity must be greater then 0');
-        }
-        if($quantity > $this->size) {
-            throw new InvalidArgumentException('Too few items are stored.');
-        }
-        $indexes = $this->la->randomSequence($this->size,$quantity);
-        $samples = [];
-        foreach ($indexes as $idx) {
-            $samples[] = $this->array[$idx];
-        }
-        return $samples;
+        return $batch;
     }
 }

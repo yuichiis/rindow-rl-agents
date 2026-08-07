@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent\SAC;
 use Interop\Polite\AI\RL\Environment as Env;
 use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\RL\Agents\Util\ProgressBar;
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 
 class Runner
 {

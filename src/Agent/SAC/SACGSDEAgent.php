@@ -1,6 +1,8 @@
 <?php
 namespace Rindow\RL\Agents\Agent\SAC;
 
+use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\NeuralNetworks\Gradient\Variable;

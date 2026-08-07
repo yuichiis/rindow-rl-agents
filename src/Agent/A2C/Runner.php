@@ -4,6 +4,7 @@ namespace Rindow\RL\Agents\Agent\A2C;
 use Interop\Polite\AI\RL\Environment as Env;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Agents\Util\ProgressBar;
+use Rindow\RL\Agents\ReplayBuffer\RolloutBuffer;
 
 /** Single-process synchronous A2C training loop. */
 class Runner
@@ -107,7 +108,7 @@ class Runner
                 );
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
             $this->buffer->add($state, $action, $trainingReward, $terminalForValue,
-                $terminated || $truncated, $value, $actionMask);
+                $terminated || $truncated, $value, actionMask:$actionMask);
             $episodeReward += $reward;
             $episodeSteps++;
             $observation = $nextObservation;
