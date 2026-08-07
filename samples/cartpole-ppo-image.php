@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\AI\RL\Environment;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -32,17 +33,18 @@ const IMAGE_SIZE = 84;
 const FRAME_STACK = 4;
 const IMAGE_SHAPE = [IMAGE_SIZE,IMAGE_SIZE,FRAME_STACK];
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$la->setSeed(SEED);
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+
 $env = new CartPoleV1($la);
 $evalEnv = new CartPoleV1($la);
-$env->observationSpace()->seed(SEED);
-$env->actionSpace()->seed(SEED);
-$evalEnv->observationSpace()->seed(SEED+1);
-$evalEnv->actionSpace()->seed(SEED+1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 // Resize the complete screen with nearest-neighbour sampling. Retaining the
 // whole rail lets the policy observe the cart's absolute position.
@@ -122,7 +124,7 @@ $agent = new PPOAgent(
 );
 $agent->summary();
 
-$rolloutSteps = (int)(getenv('RL_ROLLOUT_STEPS') ?: ROLLOUT_STEPS);
+$rolloutSteps = rlEnvInt('RL_ROLLOUT_STEPS',ROLLOUT_STEPS);
 $runner = new Runner(
     $la,$env,$evalEnv,$agent,
     rolloutSteps:$rolloutSteps,
@@ -132,10 +134,10 @@ $runner = new Runner(
     observationFunction:$imageObservation,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-$evalEpisodes = (int)(getenv('RL_EVAL_EPISODES') ?: EVAL_EPISODES);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 
 if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
@@ -159,7 +161,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     for ($episode=1; $episode<=5; $episode++) {
         [$rawObservation] = $env->reset();

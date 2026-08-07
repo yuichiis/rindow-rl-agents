@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -9,6 +10,7 @@ use Rindow\RL\Agents\Agent\A2C\A2CAgent;
 use Rindow\RL\Agents\Agent\A2C\Runner;
 use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 
+const SEED = 42;
 const TOTAL_STEPS = 300_000;
 const ROLLOUT_STEPS = 32;
 const GAMMA = 0.99;
@@ -21,28 +23,18 @@ const EVAL_EPISODES = 10;
 const SOLVED_REWARD = -110.0;
 const MODEL_FILE = __DIR__.'/../models/mountaincar-a2c-shaped.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$seedText = getenv('RL_SEED');
-$seed = $seedText === false ? null : (int)$seedText;
-if ($seed !== null) {
-    $la->setSeed($seed);
-    echo "Random seed: {$seed}\n";
-} else {
-    echo "Random seed: system default (set RL_SEED for reproducible runs)\n";
-}
-
 $env = new MountainCarV0($la);
 $evalEnv = new MountainCarV0($la);
-if ($seed !== null) {
-    $env->observationSpace()->seed($seed);
-    $env->actionSpace()->seed($seed);
-    $evalEnv->observationSpace()->seed($seed+1);
-    $evalEnv->actionSpace()->seed($seed+1);
-}
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $agent = new A2CAgent(
     $nn,
@@ -86,7 +78,7 @@ $mountainCarReward = static function(
     return $energyGain+$stepPenalty+$goalBonus;
 };
 
-$rolloutSteps = (int)(getenv('RL_ROLLOUT_STEPS') ?: ROLLOUT_STEPS);
+$rolloutSteps = rlEnvInt('RL_ROLLOUT_STEPS',ROLLOUT_STEPS);
 $runner = new Runner(
     $la,$env,$evalEnv,$agent,
     rolloutSteps:$rolloutSteps,
@@ -97,10 +89,10 @@ $runner = new Runner(
     rewardFunction:$mountainCarReward,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-$evalEpisodes = (int)(getenv('RL_EVAL_EPISODES') ?: EVAL_EPISODES);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 
 if (is_file($modelFile)) {
     $agent->loadWeightsFromFile($modelFile);
@@ -128,7 +120,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     for ($episode=1; $episode<=5; $episode++) {
         [$obs] = $env->reset();

@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\AI\RL\Environment;
 use Interop\Polite\Math\Matrix\NDArray;
@@ -39,17 +40,18 @@ const IMAGE_HEIGHT = 34; // count(range(0, CROP_HEIGHT-1, DOWNSAMPLE))
 const IMAGE_WIDTH = 100; // count(range(0, SCREEN_WIDTH-1, DOWNSAMPLE))
 const IMAGE_SHAPE = [IMAGE_HEIGHT,IMAGE_WIDTH,FRAME_STACK];
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$la->setSeed(SEED);
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+
 $env = new CartPoleV1($la);
 $evalEnv = new CartPoleV1($la);
-$env->observationSpace()->seed(SEED);
-$env->actionSpace()->seed(SEED);
-$evalEnv->observationSpace()->seed(SEED+1);
-$evalEnv->actionSpace()->seed(SEED+1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $rowIndices = $la->array(range(0,CROP_HEIGHT-1,DOWNSAMPLE),dtype:NDArray::int32);
 $columnIndices = $la->array(range(0,SCREEN_WIDTH-1,DOWNSAMPLE),dtype:NDArray::int32);
@@ -129,7 +131,7 @@ $agent = new DQNAgent(
 );
 $agent->summary();
 
-$bufferSize = (int)(getenv('RL_BUFFER_SIZE') ?: BUFFER_SIZE);
+$bufferSize = rlEnvInt('RL_BUFFER_SIZE',BUFFER_SIZE);
 $runner = new Runner(
     $la,$env,$evalEnv,$agent,
     obsDim:IMAGE_SHAPE,
@@ -139,18 +141,19 @@ $runner = new Runner(
     observationFunction:$imageObservation,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-$learningStarts = (int)(getenv('RL_LEARNING_STARTS') ?: LEARNING_STARTS);
-$trainEvery = (int)(getenv('RL_TRAIN_EVERY') ?: TRAIN_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+$learningStarts = rlEnvInt('RL_LEARNING_STARTS',LEARNING_STARTS);
+$trainEvery = rlEnvInt('RL_TRAIN_EVERY',TRAIN_EVERY);
 
 if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
 } else {
     $history = $runner->train(
-        $totalSteps,$learningStarts,$trainEvery,$evalEvery,EVAL_EPISODES,
+        $totalSteps,$learningStarts,$trainEvery,$evalEvery,$evalEpisodes,
         EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
     );
     if (count($history['step']) > 0) {
@@ -167,7 +170,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     for ($episode=1; $episode<=5; $episode++) {
         [$rawObservation] = $env->reset();

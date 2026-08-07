@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -9,6 +10,7 @@ use Rindow\RL\Agents\Agent\DQN\DQNAgent;
 use Rindow\RL\Agents\Agent\DQN\Runner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
+const SEED = 1234;
 const WIDTH = 3;
 const HEIGHT = 3;
 const EXIT_STATE = 8;
@@ -28,16 +30,15 @@ const EVAL_EVERY = 1_000;
 const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/maze-dqn.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$nn = new NeuralNetworks($mo);
-$plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
-
-$seed = (int)(getenv('RL_SEED') ?: 1234);
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
 
-// Evaluation must use exactly the same maze topology as training.
+$nn = new NeuralNetworks($mo);
+$plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+
 $env = new Maze(
     $la,policy:null,width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
     throwInvalidAction:true,maxEpisodeSteps:MAX_EPISODE_STEPS,
@@ -46,10 +47,7 @@ $evalEnv = new Maze(
     $la,policy:$env->mazeRules(),width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
     throwInvalidAction:true,maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
-$env->actionSpace()->seed($seed);
-$env->observationSpace()->seed($seed);
-$evalEnv->actionSpace()->seed($seed+1);
-$evalEnv->observationSpace()->seed($seed+1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $agent = new DQNAgent(
     $nn,
@@ -71,17 +69,18 @@ $runner = new Runner(
     obsDim:$env->observationSpace()['location']->shape()[0],
     bufferSize:BUFFER_SIZE,
 );
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
 if (is_file($modelFile)) {
     $agent->loadWeightsFromFile($modelFile);
     echo "Model loaded: {$modelFile}\n";
-    printf("Evaluation reward: %.1f\n",$runner->evaluate(EVAL_EPISODES));
+    printf("Evaluation reward: %.1f\n",$runner->evaluate($evalEpisodes));
 } else {
     $history = $runner->train(
-        $totalSteps,LEARNING_STARTS,TRAIN_EVERY,$evalEvery,EVAL_EPISODES,
+        $totalSteps,LEARNING_STARTS,TRAIN_EVERY,$evalEvery,$evalEpisodes,
         EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
     );
     if (is_file($modelFile)) {
@@ -99,7 +98,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     [$observation] = $env->reset();
     $env->render();

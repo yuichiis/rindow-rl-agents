@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -29,18 +30,18 @@ const EVAL_EPISODES = 5;
 const SOLVED_REWARD = 90.0;
 const MODEL_FILE = __DIR__.'/../models/mountaincarcontinuous-sac-gsde-shaped.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$la->setSeed(SEED);
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
 $env = new ContinuousMountainCarV0($la);
 $evalEnv = new ContinuousMountainCarV0($la);
-$env->observationSpace()->seed(SEED);
-$env->actionSpace()->seed(SEED);
-$evalEnv->observationSpace()->seed(SEED+1);
-$evalEnv->actionSpace()->seed(SEED+1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $obsDim = $env->observationSpace()->shape()[0];
 $actionSpace = $env->actionSpace();
@@ -76,20 +77,19 @@ $rewardFunction = static function(
     return $reward+10.0*($nextEnergy-$energy);
 };
 
-$bufferSize = (int)(getenv('RL_BUFFER_SIZE') ?: BUFFER_SIZE);
+$bufferSize = rlEnvInt('RL_BUFFER_SIZE',BUFFER_SIZE);
 $runner = new Runner(
     $la,$nn,$env,$evalEnv,$agent,$obsDim,$actDim,$actLimit,$bufferSize,
     solvedReward:SOLVED_REWARD,
     rewardFunction:$rewardFunction,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$startSteps = (int)(getenv('RL_START_STEPS') !== false
-    ? getenv('RL_START_STEPS') : START_STEPS);
-$updateEvery = (int)(getenv('RL_UPDATE_EVERY') ?: UPDATE_EVERY);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
-$evalEpisodes = (int)(getenv('RL_EVAL_EPISODES') ?: EVAL_EPISODES);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$startSteps = rlEnvInt('RL_START_STEPS',START_STEPS);
+$updateEvery = rlEnvInt('RL_UPDATE_EVERY',UPDATE_EVERY);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 
 if (is_file($modelFile)) {
     echo "Model weights found. Loading: {$modelFile}\n";
@@ -116,7 +116,7 @@ if (is_file($modelFile)) {
     echo "Model weights saved: {$modelFile}\n";
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     for ($episode=1; $episode<=5; $episode++) {
         [$obs,$info] = $env->reset();

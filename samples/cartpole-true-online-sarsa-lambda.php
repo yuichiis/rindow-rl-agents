@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -9,6 +10,7 @@ use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
+const SEED = 42;
 const TOTAL_EPISODES = 2000;
 const NUM_TILINGS = 8;
 const TILES_PER_DIMENSION = 8;
@@ -23,20 +25,17 @@ const EVAL_EPISODES = 10;
 const SOLVED_REWARD = 475.0;
 const MODEL_FILE = __DIR__.'/../models/cartpole-true-online-sarsa-lambda.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
-
-$seed = (int)(getenv('RL_SEED') ?: 42);
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
 
+$plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
+
 $env = new CartPoleV1($la);
 $evalEnv = new CartPoleV1($la);
-$env->observationSpace()->seed($seed);
-$env->actionSpace()->seed($seed);
-$evalEnv->observationSpace()->seed($seed + 1);
-$evalEnv->actionSpace()->seed($seed + 1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 /*
  * CartPoleの速度と角速度の観測範囲は±INFなので、通常の運動範囲を
@@ -63,18 +62,19 @@ $runner = new Runner(
     $la, $env, $evalEnv, $agent, solvedReward:SOLVED_REWARD
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalEpisodes = (int)(getenv('RL_TOTAL_EPISODES') ?: TOTAL_EPISODES);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
 if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
-    printf("Evaluation reward: %.1f\n", $runner->evaluate(EVAL_EPISODES));
+    printf("Evaluation reward: %.1f\n", $runner->evaluate($evalEpisodes));
 } else {
     // CartPoleの生報酬 (+1 per step) をそのまま使用する。
     $history = $runner->train(
-        $totalEpisodes, $evalEvery, EVAL_EPISODES, bestModelFile:$modelFile
+        $totalEpisodes, $evalEvery, $evalEpisodes, bestModelFile:$modelFile
     );
     if (is_file($modelFile)) {
         $agent->loadWeightsFromFile($modelFile);
@@ -94,7 +94,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     for ($episode = 1; $episode <= 5; $episode++) {
         [$observation] = $env->reset();

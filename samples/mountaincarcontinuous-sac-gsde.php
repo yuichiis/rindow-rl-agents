@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
@@ -33,24 +34,24 @@ const EVAL_EPISODES   = 5;
 const SOLVED_REWARD   = 90.0;
 const MODEL_FILE       = __DIR__ . '/../models/mountaincarcontinuous-sac-gsde.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$la->setSeed(SEED);
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer' => true],$mo);
-
-// 短縮診断用。未指定時は従来の定数を使用する。
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
 $env = new ContinuousMountainCarV0($la);
 $evalEnv = new ContinuousMountainCarV0($la);
+rlSeedSpaces($env,$evalEnv,$seed);
 $stateShape = $env->observationSpace()->shape();
 $obsDim = $stateShape[0];
 $actionSpace = $env->actionSpace();
 $actDim = $actionSpace->shape()[0];
-$env->observationSpace()->seed(SEED);
-$env->actionSpace()->seed(SEED);
 $actLimit = 1.0; 
 
 echo "gSDE latent_dim=" . GSDE_LATENT_DIM . "  reset_freq=" . GSDE_RESET_FREQ . "\n";
@@ -74,8 +75,9 @@ $agent  = new SACGSDEAgent(
 
 $agent->summary();
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-[$obs,$info] = $env->reset(seed: SEED);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+[$obs,$info] = $env->reset(seed:$seed);
 
 $runner = new Runner(
     $la,
@@ -109,7 +111,7 @@ if (is_file($modelFile)) {
     UPDATE_EVERY,
     GSDE_RESET_FREQ,
     $evalEvery,
-    EVAL_EPISODES,
+    $evalEpisodes,
     evalgSDE: true,
     );
 
@@ -138,6 +140,7 @@ if (is_file($modelFile)) {
     echo "Model weights saved: {$modelFile}\n";
 }
 
+if (!rlEnvBool('RL_SKIP_DEMO')) {
 echo "Creating demo animation.\n";
 for($i=0;$i<5;$i++) {
     [$obs, $info] = $env->reset();
@@ -160,3 +163,5 @@ for($i=0;$i<5;$i++) {
 echo "\n";
 $filename = $env->show(path:__DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-trained.gif');
 echo "filename: {$filename}\n";
+
+}

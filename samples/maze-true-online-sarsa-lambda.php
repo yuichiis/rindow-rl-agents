@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -9,6 +10,7 @@ use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
+const SEED = 1234;
 const WIDTH = 3;
 const HEIGHT = 3;
 const EXIT_STATE = 8;
@@ -24,13 +26,13 @@ const EVAL_EVERY = 10;
 const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/maze-true-online-sarsa-lambda.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
-
-$seed = (int)(getenv('RL_SEED') ?: 1234);
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+
+$plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
 $env = new Maze(
     $la, policy:null, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
@@ -40,10 +42,7 @@ $evalEnv = new Maze(
     $la, policy:$env->mazeRules(), width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
-$env->actionSpace()->seed($seed);
-$env->observationSpace()->seed($seed);
-$evalEnv->actionSpace()->seed($seed + 1);
-$evalEnv->observationSpace()->seed($seed + 1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $tileCoder = new TileCoder(
     low:[0.0, 0.0],
@@ -64,18 +63,19 @@ $agent = new TrueOnlineSarsaLambdaAgent(
 );
 $runner = new Runner($la, $env, $evalEnv, $agent);
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalEpisodes = (int)(getenv('RL_TOTAL_EPISODES') ?: TOTAL_EPISODES);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
 if (is_file($modelFile)) {
     $agent->loadWeightsFromFile($modelFile);
     echo "Model loaded: {$modelFile}\n";
-    printf("Evaluation reward: %.1f\n", $runner->evaluate(EVAL_EPISODES));
+    printf("Evaluation reward: %.1f\n", $runner->evaluate($evalEpisodes));
 } else {
     // Maze の生報酬 (-1 per step) をそのまま使用する。
     $history = $runner->train(
-        $totalEpisodes, $evalEvery, EVAL_EPISODES, bestModelFile:$modelFile
+        $totalEpisodes, $evalEvery, $evalEpisodes, bestModelFile:$modelFile
     );
     if (is_file($modelFile)) {
         $agent->loadWeightsFromFile($modelFile);
@@ -92,7 +92,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     [$observation] = $env->reset();
     $env->render();

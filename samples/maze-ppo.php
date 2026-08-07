@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -9,6 +10,7 @@ use Rindow\RL\Agents\Agent\PPO\PPOAgent;
 use Rindow\RL\Agents\Agent\PPO\Runner;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
+const SEED = 1234;
 const WIDTH = 3;
 const HEIGHT = 3;
 const EXIT_STATE = 8;
@@ -19,16 +21,15 @@ const EVAL_EVERY = 2048;
 const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/maze-ppo.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
-$nn = new NeuralNetworks($mo);
-$plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
-
-$seed = (int)(getenv('RL_SEED') ?: 1234);
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
 
-// evalEnvにも同じ迷路規則を渡し、異なる迷路を評価しないようにする。
+$nn = new NeuralNetworks($mo);
+$plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
+
 $env = new Maze(
     $la, policy:null, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
@@ -37,10 +38,7 @@ $evalEnv = new Maze(
     $la, policy:$env->mazeRules(), width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
-$env->actionSpace()->seed($seed);
-$env->observationSpace()->seed($seed);
-$evalEnv->actionSpace()->seed($seed + 1);
-$evalEnv->observationSpace()->seed($seed + 1);
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $agent = new PPOAgent(
     $nn,
@@ -69,15 +67,16 @@ $runner = new Runner(
     bootstrapTruncated:false,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 if (is_file($modelFile)) {
     $agent->loadWeightsFromFile($modelFile);
     echo "Model loaded: {$modelFile}\n";
 } else {
     $history = $runner->train(
-        $totalSteps, $evalEvery, EVAL_EPISODES, bestModelFile:$modelFile
+        $totalSteps, $evalEvery, $evalEpisodes, bestModelFile:$modelFile
     );
     if (is_file($modelFile)) {
         $agent->loadWeightsFromFile($modelFile);
@@ -93,7 +92,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     [$obs] = $env->reset();
     $env->render();

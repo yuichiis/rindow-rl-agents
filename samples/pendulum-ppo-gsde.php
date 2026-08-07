@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
@@ -8,33 +9,25 @@ use Rindow\RL\Agents\Agent\PPO\PPOAgent;
 use Rindow\RL\Agents\Agent\PPO\Runner;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 
+const SEED = 42;
 const TOTAL_STEPS = 300_000;
 const ROLLOUT_STEPS = 1024;
 const EVAL_EVERY = 1024;
 const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/pendulum-ppo-gsde.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
-$seedText = getenv('RL_SEED');
-if ($seedText !== false) {
-    $seed = (int)$seedText;
-    $la->setSeed($seed);
-    echo "Random seed: {$seed}\n";
-} else {
-    echo "Random seed: system default (set RL_SEED for reproducible runs)\n";
-}
 
 $env = new PendulumV1($la);
 $evalEnv = new PendulumV1($la);
-if ($seedText !== false) {
-    $env->actionSpace()->seed($seed);
-    $env->observationSpace()->seed($seed);
-    $evalEnv->actionSpace()->seed($seed + 1);
-    $evalEnv->observationSpace()->seed($seed + 1);
-}
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $actionSpace = $env->actionSpace();
 $agent = new PPOAgent(
@@ -70,14 +63,15 @@ $runner = new Runner(
     bootstrapTruncated:false,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 if (is_file($modelFile)) {
     $agent->loadWeightsFromFile($modelFile);
     echo "Model loaded: {$modelFile}\n";
 } else {
-    $history = $runner->train($totalSteps, $evalEvery, EVAL_EPISODES, bestModelFile:$modelFile);
+    $history = $runner->train($totalSteps, $evalEvery, $evalEpisodes, bestModelFile:$modelFile);
     if (is_file($modelFile)) $agent->loadWeightsFromFile($modelFile);
     if (count($history['step']) > 0) {
         $steps = $la->array($history['step']);
@@ -89,7 +83,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
     for ($episode = 1; $episode <= 5; $episode++) {
         [$obs] = $env->reset();

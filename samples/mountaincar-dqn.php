@@ -1,5 +1,6 @@
 <?php
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
@@ -9,6 +10,7 @@ use Rindow\RL\Agents\Agent\DQN\DQNAgent;
 use Rindow\RL\Agents\Agent\DQN\Runner;
 use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 
+const SEED = 42;
 const TOTAL_STEPS = 300_000;
 const BUFFER_SIZE = 100_000;
 const BATCH_SIZE = 64;
@@ -26,23 +28,18 @@ const SOLVED_REWARD = -110.0;
 const SOLVED_EVALUATIONS = 3;
 const MODEL_FILE = __DIR__.'/../models/mountaincar-dqn-shaped.weights';
 
+$seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $la = $mo->laRawMode();
+$la->setSeed($seed);
+echo "Random seed: {$seed}\n";
+
 $nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$seedText = getenv('RL_SEED');
-$seed = $seedText === false ? null : (int)$seedText;
-if ($seed !== null) $la->setSeed($seed);
-
 $env = new MountainCarV0($la);
 $evalEnv = new MountainCarV0($la);
-if ($seed !== null) {
-    $env->observationSpace()->seed($seed);
-    $env->actionSpace()->seed($seed);
-    $evalEnv->observationSpace()->seed($seed+1);
-    $evalEnv->actionSpace()->seed($seed+1);
-}
+rlSeedSpaces($env,$evalEnv,$seed);
 
 $agent = new DQNAgent(
     $nn,
@@ -83,15 +80,16 @@ $runner = new Runner(
     rewardFunction:$mountainCarReward,
 );
 
-$modelFile = getenv('RL_MODEL_FILE') ?: MODEL_FILE;
-$totalSteps = (int)(getenv('RL_TOTAL_STEPS') ?: TOTAL_STEPS);
-$evalEvery = (int)(getenv('RL_EVAL_EVERY') ?: EVAL_EVERY);
+$modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
 } else {
     $history = $runner->train(
-        $totalSteps,LEARNING_STARTS,TRAIN_EVERY,$evalEvery,EVAL_EPISODES,
+        $totalSteps,LEARNING_STARTS,TRAIN_EVERY,$evalEvery,$evalEpisodes,
         EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
     );
     if (is_file($modelFile)) $agent->loadWeightsFromFile($modelFile);
@@ -107,7 +105,7 @@ if (is_file($modelFile)) {
     }
 }
 
-if (getenv('RL_SKIP_DEMO') !== '1') {
+if (!rlEnvBool('RL_SKIP_DEMO')) {
     for ($episode=1; $episode<=5; $episode++) {
         [$obs] = $env->reset();
         $done = false;
