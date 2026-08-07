@@ -20,15 +20,27 @@ class Runner
         private ?float $solvedReward = null,
         private mixed $rewardFunction = null,
         private bool $bootstrapTruncated = true,
+        /** fn(Environment $env, mixed $rawObservation, bool $reset): NDArray|array */
+        private mixed $observationFunction = null,
     ) {
+        if ($observationFunction !== null && !is_callable($observationFunction)) {
+            throw new \InvalidArgumentException('observationFunction must be callable.');
+        }
         $this->buffer = new RolloutBuffer(
             $la,
             $rolloutSteps,
-            $agent->observationDimension(),
+            $agent->observationShape(),
             $agent->isContinuous() ? $env->actionSpace()->shape()[0] : 1,
             $agent->isContinuous(),
             $agent->usesActionMask() ? $env->actionSpace()->n() : 0,
         );
+    }
+
+    private function networkObservation(Env $env, mixed $observation, bool $reset=false) : mixed
+    {
+        return $this->observationFunction === null
+            ? $observation
+            : ($this->observationFunction)($env,$observation,$reset);
     }
 
     public function evaluate(int $episodes = 10) : float
@@ -43,7 +55,8 @@ class Runner
         $transformedTotal = 0.0;
         $stepTotal = 0;
         for ($episode = 0; $episode < $episodes; $episode++) {
-            [$obs] = $this->evalEnv->reset();
+            [$rawObs] = $this->evalEnv->reset();
+            $obs = $this->networkObservation($this->evalEnv,$rawObs,true);
             $done = false;
             while (!$done) {
                 $action = $this->agent->selectActionDeterministic($obs);
@@ -51,16 +64,17 @@ class Runner
                     $action = $this->la->array($action, dtype:NDArray::int32);
                 }
                 $action = $this->agent->clipAction($action);
-                $currentObs = $obs;
-                [$obs, $reward, $terminated, $truncated] = $this->evalEnv->step($action);
+                $currentRawObs = $rawObs;
+                [$rawObs, $reward, $terminated, $truncated] = $this->evalEnv->step($action);
+                $obs = $this->networkObservation($this->evalEnv,$rawObs);
                 $done = $terminated || $truncated;
                 $rawTotal += $reward;
                 $transformedTotal += $this->rewardFunction === null
                     ? $reward
                     : ($this->rewardFunction)(
-                        $currentObs,
+                        $currentRawObs,
                         (int)$this->la->scalar($action),
-                        $obs,
+                        $rawObs,
                         $reward,
                         $terminated,
                         $truncated,
@@ -88,7 +102,8 @@ class Runner
             'evalReward'=>[], 'evalShaped'=>[], 'evalSteps'=>[],
             'policyLoss'=>[], 'valueLoss'=>[], 'entropy'=>[],
         ];
-        [$obs] = $this->env->reset();
+        [$rawObs] = $this->env->reset();
+        $obs = $this->networkObservation($this->env,$rawObs,true);
         $progress->start('Steps', $totalSteps, 50);
         $lastMetrics = ['policy_loss'=>0.0, 'value_loss'=>0.0, 'entropy'=>0.0];
         $best = -INF;
@@ -120,12 +135,15 @@ class Runner
             $envAction = $this->agent->isContinuous()
                 ? $this->agent->clipAction($action)
                 : $this->la->array($action, dtype:NDArray::int32);
-            [$nextObs, $reward, $terminated, $truncated] = $this->env->step(
+            [$nextRawObs, $reward, $terminated, $truncated] = $this->env->step(
                 $envAction
             );
+            $nextObs = $this->networkObservation($this->env,$nextRawObs);
             $trainingReward = $this->rewardFunction === null
                 ? $reward
-                : ($this->rewardFunction)($obs, $action, $nextObs, $reward, $terminated, $truncated);
+                : ($this->rewardFunction)(
+                    $rawObs,$action,$nextRawObs,$reward,$terminated,$truncated
+                );
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
             $this->buffer->add(
                 $state, $action, $trainingReward, $terminalForValue, $terminated || $truncated,
@@ -134,6 +152,7 @@ class Runner
             $episodeShaped += $trainingReward;
             $episodeSteps++;
             $obs = $nextObs;
+            $rawObs = $nextRawObs;
             $lastEpisodeEnd = $terminated || $truncated;
             if ($terminated || $truncated) {
                 $windowShaped += $episodeShaped;
@@ -141,7 +160,8 @@ class Runner
                 $windowEpisodes++;
                 $episodeShaped = 0.0;
                 $episodeSteps = 0;
-                [$obs] = $this->env->reset();
+                [$rawObs] = $this->env->reset();
+                $obs = $this->networkObservation($this->env,$rawObs,true);
             }
 
             if ($this->buffer->full() || $step === $totalSteps) {

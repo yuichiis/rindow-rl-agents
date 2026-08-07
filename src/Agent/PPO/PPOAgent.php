@@ -16,7 +16,7 @@ class PPOAgent
 
     public function __construct(
         private Builder $nn,
-        private int $obsDim,
+        private int|array $obsDim,
         private int $numActions,
         array $hiddenLayers = [64, 64],
         private float $learningRate = 3.0e-4,
@@ -36,7 +36,18 @@ class PPOAgent
         private float $sdeInitialLogStd = -2.0,
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
+        // Optional CNN/RNN feature extractor used by the shared backbone.
+        ?array $featureLayers = null,
     ) {
+        if ($featureLayers === []) $featureLayers = null;
+        $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        if ($observationShape === []
+            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            throw new \InvalidArgumentException('Invalid PPO observation dimensions.');
+        }
+        if ($featureLayers !== null && !$sharedBackbone) {
+            throw new \InvalidArgumentException('featureLayers requires sharedBackbone:true.');
+        }
         if (!in_array($exploration, ['gaussian', 'gsde'], true)) {
             throw new \InvalidArgumentException("exploration must be 'gaussian' or 'gsde'.");
         }
@@ -46,13 +57,16 @@ class PPOAgent
         if ($continuous && $actionMaskField !== null) {
             throw new \InvalidArgumentException('Action masks are supported only for discrete actions.');
         }
+        $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
         $this->network = new ActorCritic(
             $nn, $obsDim, $numActions, $hiddenLayers, $sharedBackbone, $continuous,
-            $exploration === 'gsde', $sdeInitialLogStd
+            $exploration === 'gsde', $sdeInitialLogStd, $featureLayers
         );
-        $dummy = $this->g->Variable($this->la->zeros($this->la->alloc([1, $obsDim])));
+        $dummy = $this->g->Variable($this->la->zeros(
+            $this->la->alloc(array_merge([1],$observationShape),dtype:NDArray::float32)
+        ));
         $this->network->forward($dummy);
         $this->optimizer = $nn->optimizers->Adam(lr:$learningRate, epsilon:1.0e-8);
     }
@@ -63,7 +77,12 @@ class PPOAgent
     }
 
     public function isContinuous() : bool { return $this->continuous; }
-    public function observationDimension() : int { return $this->obsDim; }
+    public function observationDimension() : int { return array_product($this->observationShape()); }
+    /** @return array<int> */
+    public function observationShape() : array
+    {
+        return is_int($this->obsDim) ? [$this->obsDim] : $this->obsDim;
+    }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
     public function usesSDE() : bool { return $this->exploration === 'gsde'; }
     public function sdeSampleFreq() : int { return $this->sdeSampleFreq; }
@@ -121,6 +140,12 @@ class PPOAgent
 
     private function asNetworkState(NDArray $state) : NDArray
     {
+        if ($state->shape() !== $this->observationShape()) {
+            throw new \InvalidArgumentException(sprintf(
+                'Observation shape must be [%s]; [%s] given.',
+                implode(',',$this->observationShape()),implode(',',$state->shape())
+            ));
+        }
         return $this->la->isInt($state)
             ? $this->la->astype($state, dtype:NDArray::float32)
             : $state;
@@ -153,7 +178,7 @@ class PPOAgent
 
     private function selectContinuousAction(NDArray $observation) : array
     {
-        $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
+        $batch = $this->asBatch($observation);
         if ($this->usesSDE()) {
             if ($this->sdeNoise === null) $this->resetExplorationNoise();
             [$sample, $value, $std, $mean] = $this->network->forwardSDE(
@@ -180,7 +205,7 @@ class PPOAgent
     {
         [$observation, $mask] = $this->parseObservation($observation);
         if ($this->continuous) {
-            $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
+            $batch = $this->asBatch($observation);
             [$mean] = $this->network->forward($this->g->Variable($batch), false);
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
@@ -224,7 +249,7 @@ class PPOAgent
 
     private function inference(NDArray $observation, ?NDArray $mask = null) : array
     {
-        $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
+        $batch = $this->asBatch($observation);
         $obsV = $this->g->Variable($batch);
         [$logits, $value] = $this->network->forward($obsV, false);
         $logits = $logits->value();
@@ -234,6 +259,16 @@ class PPOAgent
         }
         $probs = $this->la->softmax($logits);
         return [$probs, (float)$value->value()->toArray()[0][0]];
+    }
+
+    private function asBatch(NDArray $observation) : NDArray
+    {
+        $batch = $this->la->copy($observation)->reshape(
+            array_merge([1],$this->observationShape())
+        );
+        return $this->la->isInt($batch)
+            ? $this->la->astype($batch,dtype:NDArray::float32)
+            : $batch;
     }
 
     /** @return array{policy_loss:float,value_loss:float,entropy:float} */

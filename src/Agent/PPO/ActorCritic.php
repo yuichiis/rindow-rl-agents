@@ -20,13 +20,14 @@ class ActorCritic extends AbstractModel
 
     public function __construct(
         Builder $nn,
-        int $obsDim,
+        int|array $obsDim,
         int $numActions,
         array $hiddenLayers = [64, 64],
         private bool $sharedBackbone = false,
         private bool $continuous = false,
         private bool $useSDE = false,
         private float $sdeInitialLogStd = -2.0,
+        ?array $featureLayers = null,
     ) {
         parent::__construct($nn);
         $this->nnBuilder = $nn;
@@ -35,14 +36,17 @@ class ActorCritic extends AbstractModel
             $this->critic = $this->mlp($nn, $obsDim, $hiddenLayers, 1, 'tanh');
             return;
         }
-        $layers = [];
+        $inputShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
+        $layers = $featureLayers === null
+            ? []
+            : array_map(static fn(object $layer)=>clone $layer,$featureLayers);
         foreach ($hiddenLayers as $i => $units) {
             // The legacy ActorCriticNetwork's MLP uses he_uniform for its
             // ReLU hidden layers.  Keep this explicit; Dense's library
             // default is different and changes the seeded initial policy.
             $options = ['activation' => 'relu', 'kernel_initializer' => 'he_uniform'];
-            if ($i === 0) {
-                $options['input_shape'] = [$obsDim];
+            if ($i === 0 && $featureLayers === null) {
+                $options['input_shape'] = $inputShape;
             }
             $layers[] = $nn->layers->Dense($units, ...$options);
         }
@@ -67,7 +71,7 @@ class ActorCritic extends AbstractModel
 
     private function mlp(
         Builder $nn,
-        int $obsDim,
+        int|array $obsDim,
         array $hiddenLayers,
         int $outputDim,
         string $activation,
@@ -76,7 +80,7 @@ class ActorCritic extends AbstractModel
         foreach ($hiddenLayers as $i => $units) {
             $options = ['activation' => $activation];
             if ($i === 0) {
-                $options['input_shape'] = [$obsDim];
+                $options['input_shape'] = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
             }
             $layers[] = $nn->layers->Dense($units, ...$options);
         }
