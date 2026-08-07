@@ -8,8 +8,8 @@ use Rindow\NeuralNetworks\Gradient\Variable;
 class DQNAgent
 {
     private const CHECKPOINT_VERSION = 1;
-    private object $la;
-    private object $g;
+    protected object $la;
+    protected object $g;
     private object $optimizer;
     private int $updates = 0;
     public QNetwork $qNetwork;
@@ -172,11 +172,7 @@ class DQNAgent
     {
         [$observations,$actions,$rewards,$nextObservations,$dones,$nextActionMasks] =
             $buffer->sample($this->batchSize);
-        $nextQ = $this->targetNetwork->forward($this->g->Variable($nextObservations),false)->value();
-        if ($nextActionMasks !== null) {
-            $nextQ = $this->la->masking($nextActionMasks,$nextQ,fill:-1.0e9);
-        }
-        $nextValues = $this->la->reduceMax($nextQ, axis:1);
+        $nextValues = $this->nextStateValues($nextObservations,$nextActionMasks);
         $notDones = $this->la->fill(
             1.0,
             $this->la->alloc($dones->shape(), dtype:$dones->dtype())
@@ -204,6 +200,23 @@ class DQNAgent
         $this->updates++;
         if ($this->updates % $this->targetUpdateInterval === 0) $this->syncTargetNetwork();
         return ['loss'=>$this->scalar($loss),'q_value'=>$this->scalar($meanQ)];
+    }
+
+    /**
+     * Compute the bootstrap value for each next state.
+     * Subclasses can override this without duplicating the DQN update routine.
+     */
+    protected function nextStateValues(
+        NDArray $nextObservations,
+        ?NDArray $nextActionMasks,
+    ) : NDArray {
+        $nextQ = $this->targetNetwork->forward(
+            $this->g->Variable($nextObservations),false
+        )->value();
+        if ($nextActionMasks !== null) {
+            $nextQ = $this->la->masking($nextActionMasks,$nextQ,fill:-1.0e9);
+        }
+        return $this->la->reduceMax($nextQ,axis:1);
     }
 
     private function syncTargetNetwork() : void
