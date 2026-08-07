@@ -27,7 +27,11 @@ class Runner
         private mixed $rewardFunction=null,
         /** fn(Environment $env, mixed $rawObservation, bool $reset): NDArray|array */
         private mixed $observationFunction=null,
+        private int $solvedEvaluations=1,
     ) {
+        if ($solvedEvaluations < 1) {
+            throw new \InvalidArgumentException('solvedEvaluations must be positive.');
+        }
         if ($rewardFunction !== null && !is_callable($rewardFunction)) {
             throw new \InvalidArgumentException('rewardFunction must be callable.');
         }
@@ -112,6 +116,7 @@ class Runner
         [$rawObs] = $this->env->reset();
         $obs = $this->networkObservation($this->env,$rawObs,true);
         $episodeCount = 0; $episodeStep = 0; $bestEval = -INF; $bestTransformed = -INF;
+        $solvedCount = 0;
         $episodeShaped = 0.0; $windowShaped = 0.0; $windowSteps = 0; $windowEpisodes = 0;
         $progress = new ProgressBar(); $progress->start('Steps',$totalSteps,50);
         for ($step=1; $step<=$totalSteps; $step++) {
@@ -160,26 +165,39 @@ class Runner
                 $history['evalReward'][]=$eval; $history['evalShaped'][]=$evalShaped;
                 $history['evalSteps'][]=$evaluation['steps'];
                 $improved = $eval>$bestEval || ($eval===$bestEval && $evalShaped>$bestTransformed);
-                $marker = $improved ? ' <- best' : '';
+                $marker = $improved ? ' | Best' : '';
                 if ($improved) {
                     $bestEval=$eval; $bestTransformed=$evalShaped;
-                    if ($bestModelFile!==null) $this->agent->saveWeightsToFile($bestModelFile);
+                    if ($bestModelFile!==null) {
+                        $this->agent->saveWeightsToFile($bestModelFile);
+                    }
                 }
+                if ($this->solvedReward!==null) {
+                    $solvedCount = $eval >= $this->solvedReward ? $solvedCount+1 : 0;
+                }
+                $solvedText = $this->solvedReward === null
+                    ? '' : " | SolvedCount={$solvedCount}/{$this->solvedEvaluations}";
                 $progress->clearProgressBar();
                 $transformedText = $this->rewardFunction === null
                     ? '' : sprintf(' | EvalShaped=%+8.2f',$evalShaped);
                 printf(
-                    "Step %7d | TrainShaped=%+8.2f | TrainSteps=%5.1f | EvalDet=%+8.2f%s | EvalSteps=%5.1f | Episodes=%d%s\n",
+                    "Step %7d | TrainShaped=%+8.2f | TrainSteps=%5.1f | EvalReward=%+8.2f%s | EvalSteps=%5.1f | Episodes=%d%s%s\n",
                     $step,$trainShaped,$trainSteps,$eval,$transformedText,
-                    $evaluation['steps'],$episodeCount,$marker
+                    $evaluation['steps'],$episodeCount,$solvedText,$marker
                 );
-                if ($this->solvedReward!==null && $eval >= $this->solvedReward) {
-                    echo "Solved! (deterministic mean reward >= {$this->solvedReward})\n"; break;
+                if ($improved && $bestModelFile!==null) {
+                    echo "Best model saved: {$bestModelFile}\n";
+                }
+                if ($this->solvedReward!==null
+                    && $solvedCount >= $this->solvedEvaluations) {
+                    echo "Solved: EvalReward >= {$this->solvedReward} for "
+                        ."{$this->solvedEvaluations} consecutive evaluations\n";
+                    break;
                 }
                 $windowShaped = 0.0; $windowSteps = 0; $windowEpisodes = 0;
             }
         }
-        echo "\nTraining finished. Best eval reward: {$bestEval} time: {$progress->laptimeString()}\n";
+        echo "\nTraining finished. BestEvalReward={$bestEval} | Time={$progress->laptimeString()}\n";
         return $history;
     }
 }

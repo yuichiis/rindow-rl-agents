@@ -23,7 +23,11 @@ class Runner
         private bool $bootstrapTruncated = true,
         /** fn(Environment $env, mixed $rawObservation, bool $reset): NDArray|array */
         private mixed $observationFunction = null,
+        private int $solvedEvaluations = 1,
     ) {
+        if ($solvedEvaluations < 1) {
+            throw new \InvalidArgumentException('solvedEvaluations must be positive.');
+        }
         if ($observationFunction !== null && !is_callable($observationFunction)) {
             throw new \InvalidArgumentException('observationFunction must be callable.');
         }
@@ -110,6 +114,7 @@ class Runner
         $lastMetrics = ['policy_loss'=>0.0, 'value_loss'=>0.0, 'entropy'=>0.0];
         $best = -INF;
         $bestTransformed = -INF;
+        $solvedCount = 0;
         $episodeShaped = 0.0;
         $episodeSteps = 0;
         $windowShaped = 0.0;
@@ -189,6 +194,12 @@ class Runner
                     $best = $score;
                     $bestTransformed = $transformedScore;
                 }
+                if ($this->solvedReward !== null) {
+                    $solvedCount = $score >= $this->solvedReward ? $solvedCount+1 : 0;
+                }
+                $marker = $improved ? ' | Best' : '';
+                $solvedText = $this->solvedReward === null
+                    ? '' : " | SolvedCount={$solvedCount}/{$this->solvedEvaluations}";
                 foreach (['step'=>$step, 'trainShaped'=>$trainShaped, 'trainSteps'=>$trainSteps,
                     'evalReward'=>$score,
                     'evalShaped'=>$evaluation['transformedReward'],
@@ -202,16 +213,19 @@ class Runner
                     ? ''
                     : sprintf(' | EvalShaped=%6.1f', $evaluation['transformedReward']);
                 printf(
-                    "Step %7d | TrainShaped=%6.1f | TrainSteps=%5.1f | EvalReward=%6.1f%s | EvalSteps=%5.1f | PolicyLoss=%+.3e | ValueLoss=%+.3e | Entropy=%.3f\n",
+                    "Step %7d | TrainShaped=%6.1f | TrainSteps=%5.1f | EvalReward=%6.1f%s | EvalSteps=%5.1f | PolicyLoss=%+.3e | ValueLoss=%+.3e | Entropy=%.3f%s%s\n",
                     $step, $trainShaped, $trainSteps, $score, $transformedText, $evaluation['steps'],
-                    $lastMetrics['policy_loss'], $lastMetrics['value_loss'], $lastMetrics['entropy']
+                    $lastMetrics['policy_loss'], $lastMetrics['value_loss'], $lastMetrics['entropy'],
+                    $solvedText, $marker
                 );
                 if ($improved && $bestModelFile !== null) {
                     $this->agent->saveWeightsToFile($bestModelFile);
                     echo "Best model saved: {$bestModelFile}\n";
                 }
-                if ($this->solvedReward !== null && $score >= $this->solvedReward) {
-                    echo "Solved: mean evaluation reward >= {$this->solvedReward}\n";
+                if ($this->solvedReward !== null
+                    && $solvedCount >= $this->solvedEvaluations) {
+                    echo "Solved: EvalReward >= {$this->solvedReward} for "
+                        ."{$this->solvedEvaluations} consecutive evaluations\n";
                     break;
                 }
                 $windowShaped = 0.0;
@@ -219,7 +233,7 @@ class Runner
                 $windowEpisodes = 0;
             }
         }
-        echo "\nTraining finished. Best evaluation reward: {$best}  time: {$progress->laptimeString()}\n";
+        echo "\nTraining finished. BestEvalReward={$best} | Time={$progress->laptimeString()}\n";
         return $history;
     }
 }

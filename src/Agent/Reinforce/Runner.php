@@ -16,9 +16,13 @@ class Runner
         private float $gamma = 0.99,
         private bool $normalizeReturns = true,
         private ?float $solvedReward = null,
+        private int $solvedEvaluations = 1,
     ) {
         if ($gamma < 0.0 || $gamma > 1.0) {
             throw new \InvalidArgumentException('gamma must be between zero and one.');
+        }
+        if ($solvedEvaluations < 1) {
+            throw new \InvalidArgumentException('solvedEvaluations must be positive.');
         }
     }
 
@@ -54,6 +58,7 @@ class Runner
             'policyLoss'=>[], 'entropy'=>[]];
         $progress->start('Episodes', $totalEpisodes, 50);
         $best = -INF;
+        $solvedCount = 0;
         $windowReward = 0.0;
         $windowEpisodes = 0;
         $lastMetrics = ['policy_loss'=>0.0, 'entropy'=>0.0];
@@ -89,25 +94,34 @@ class Runner
                 $trainReward = $windowReward / $windowEpisodes;
                 $improved = $score > $best;
                 if ($improved) $best = $score;
+                if ($this->solvedReward !== null) {
+                    $solvedCount = $score >= $this->solvedReward ? $solvedCount+1 : 0;
+                }
+                $marker = $improved ? ' | Best' : '';
+                $solvedText = $this->solvedReward === null
+                    ? '' : " | SolvedCount={$solvedCount}/{$this->solvedEvaluations}";
                 foreach (['episode'=>$episode, 'trainReward'=>$trainReward, 'evalReward'=>$score,
                     'policyLoss'=>$lastMetrics['policy_loss'], 'entropy'=>$lastMetrics['entropy']]
                     as $key => $value) $history[$key][] = $value;
                 $progress->clearProgressBar();
-                printf("Episode %5d | TrainReward=%6.1f | EvalReward=%6.1f | PolicyLoss=%+.3e | Entropy=%.3f\n",
-                    $episode, $trainReward, $score, $lastMetrics['policy_loss'], $lastMetrics['entropy']);
+                printf("Episode %5d | TrainReward=%6.1f | EvalReward=%6.1f | PolicyLoss=%+.3e | Entropy=%.3f%s%s\n",
+                    $episode, $trainReward, $score, $lastMetrics['policy_loss'],
+                    $lastMetrics['entropy'], $solvedText, $marker);
                 if ($improved && $bestModelFile !== null) {
                     $this->agent->saveWeightsToFile($bestModelFile);
                     echo "Best model saved: {$bestModelFile}\n";
                 }
-                if ($this->solvedReward !== null && $score >= $this->solvedReward) {
-                    echo "Solved: mean evaluation reward >= {$this->solvedReward}\n";
+                if ($this->solvedReward !== null
+                    && $solvedCount >= $this->solvedEvaluations) {
+                    echo "Solved: EvalReward >= {$this->solvedReward} for "
+                        ."{$this->solvedEvaluations} consecutive evaluations\n";
                     break;
                 }
                 $windowReward = 0.0;
                 $windowEpisodes = 0;
             }
         }
-        echo "\nTraining finished. Best evaluation reward: {$best}  time: {$progress->laptimeString()}\n";
+        echo "\nTraining finished. BestEvalReward={$best} | Time={$progress->laptimeString()}\n";
         return $history;
     }
 

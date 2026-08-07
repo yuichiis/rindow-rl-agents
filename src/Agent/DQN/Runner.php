@@ -183,28 +183,32 @@ class Runner
                 $history['evalShaped'][] = $evalShaped;
                 $history['evalSteps'][] = $evaluation['steps'];
                 $improved = $eval>$bestEval || ($eval===$bestEval && $evalShaped>$bestTransformed);
-                $marker = $improved ? ' <- best' : '';
+                $marker = $improved ? ' | Best' : '';
                 if ($improved) {
                     $bestEval = $eval;
                     $bestTransformed = $evalShaped;
                     if ($bestModelFile!==null) $this->agent->saveWeightsToFile($bestModelFile);
                 }
+                if ($this->solvedReward!==null) {
+                    $solvedCount = $eval >= $this->solvedReward ? $solvedCount+1 : 0;
+                }
+                $solvedText = $this->solvedReward === null
+                    ? '' : " | SolvedCount={$solvedCount}/{$this->solvedEvaluations}";
                 $progress->clearProgressBar();
                 $transformedText = $this->rewardFunction === null
                     ? '' : sprintf(' | EvalShaped=%+8.2f',$evalShaped);
                 printf(
-                    "Step %7d | TrainShaped=%+8.2f | TrainSteps=%5.1f | EvalDet=%+8.2f%s | EvalSteps=%5.1f | Epsilon=%.3f | Episodes=%d%s\n",
+                    "Step %7d | TrainShaped=%+8.2f | TrainSteps=%5.1f | EvalReward=%+8.2f%s | EvalSteps=%5.1f | Epsilon=%.3f | Episodes=%d%s%s\n",
                     $step,$trainShaped,$trainSteps,$eval,$transformedText,$evaluation['steps'],
-                    $epsilon,$episodeCount,$marker
+                    $epsilon,$episodeCount,$solvedText,$marker
                 );
+                if ($improved && $bestModelFile!==null) {
+                    echo "Best model saved: {$bestModelFile}\n";
+                }
                 if ($this->solvedReward!==null) {
-                    $solvedCount = $eval >= $this->solvedReward ? $solvedCount+1 : 0;
-                    if ($solvedCount > 0) {
-                        echo "Solved evaluations: {$solvedCount}/{$this->solvedEvaluations}\n";
-                    }
                     if ($solvedCount >= $this->solvedEvaluations) {
-                        echo "Solved! (deterministic mean reward >= {$this->solvedReward} "
-                            ."for {$this->solvedEvaluations} consecutive evaluations)\n";
+                        echo "Solved: EvalReward >= {$this->solvedReward} for "
+                            ."{$this->solvedEvaluations} consecutive evaluations\n";
                         break;
                     }
                 }
@@ -213,7 +217,7 @@ class Runner
                 $windowEpisodes = 0;
             }
         }
-        echo "\nTraining finished. Best eval reward: {$bestEval} time: {$progress->laptimeString()}\n";
+        echo "\nTraining finished. BestEvalReward={$bestEval} | Time={$progress->laptimeString()}\n";
         return $history;
     }
 }

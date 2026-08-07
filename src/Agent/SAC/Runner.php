@@ -18,6 +18,7 @@ class Runner
     private float $actLimit;
     private ReplayBuffer $buffer;
     private ?float $solvedReward;
+    private int $solvedEvaluations;
     private mixed $rewardFunction;
     private mixed $observationFunction;
     private ProgressBar $progressBar;
@@ -36,6 +37,7 @@ class Runner
         mixed $rewardFunction = null,
         /** fn(Environment $env, mixed $rawObservation, bool $reset): NDArray */
         mixed $observationFunction = null,
+        int $solvedEvaluations = 1,
     )
     {
         $this->la = $la;
@@ -47,6 +49,10 @@ class Runner
 
         $this->buffer = new ReplayBuffer($la, $bufferSize, $obsDim, $actDim);
         $this->solvedReward = $solvedReward;
+        if ($solvedEvaluations < 1) {
+            throw new \InvalidArgumentException('solvedEvaluations must be positive.');
+        }
+        $this->solvedEvaluations = $solvedEvaluations;
         if ($rewardFunction !== null && !is_callable($rewardFunction)) {
             throw new \InvalidArgumentException('rewardFunction must be callable.');
         }
@@ -154,6 +160,7 @@ class Runner
         int $evalEvery,
         int $evalEpisodes,
         ?bool $evalgSDE=null,
+        ?string $bestModelFile=null,
     ) : array
     {
         $la = $this->la;
@@ -172,6 +179,8 @@ class Runner
         $episodeStep   = 0;
         $episodeCount  = 0;
         $bestEval      = -INF;
+        $bestTransformed = -INF;
+        $solvedCount = 0;
         $history = [
             'step' => [],
             'episodes' => [],
@@ -235,7 +244,7 @@ class Runner
                 $strEvalgSDE = "";
                 if($evalgSDE) {
                     $noisyReward = $this->evaluate($agent, $evalEpisodes, $gsdeResetFreq, withExplorationNoise: true);
-                    $strEvalgSDE = sprintf("| EvalgSDE=%+8.2f ",$noisyReward);
+                    $strEvalgSDE = sprintf(" | EvalExploration=%+8.2f",$noisyReward);
                 }
                 $diag = $agent->diagnostics();
                 $history['step'][] = $step;
@@ -246,21 +255,40 @@ class Runner
                 if ($evalgSDE) {
                     $history['evalgSDE'][] = $noisyReward;
                 }
-                $marker = ($deterministicReward > $bestEval) ? " ← best" : "";
-                $bestEval = max($bestEval, $deterministicReward);
+                $improved = $deterministicReward > $bestEval
+                    || ($deterministicReward === $bestEval
+                        && $evaluation['transformedReward'] > $bestTransformed);
+                $marker = $improved ? ' | Best' : '';
+                if ($improved) {
+                    $bestEval = $deterministicReward;
+                    $bestTransformed = $evaluation['transformedReward'];
+                    if ($bestModelFile !== null) {
+                        $agent->saveWeightsToFile($bestModelFile);
+                    }
+                }
+                if ($this->solvedReward !== null) {
+                    $solvedCount = $deterministicReward >= $this->solvedReward
+                        ? $solvedCount+1 : 0;
+                }
+                $solvedText = $this->solvedReward === null
+                    ? '' : " | SolvedCount={$solvedCount}/{$this->solvedEvaluations}";
                 $this->progressBar->clearProgressBar();
                 $shapedText = $this->rewardFunction === null
-                    ? '' : sprintf('| EvalShaped=%+8.2f ',$evaluation['transformedReward']);
+                    ? '' : sprintf(' | EvalShaped=%+8.2f',$evaluation['transformedReward']);
                 printf(
-                    "Step %7d | EvalDet=%+8.2f %s%s| Alpha=%0.4f | Episodes=%d%s\n",
+                    "Step %7d | EvalReward=%+8.2f%s%s | Alpha=%0.4f | Episodes=%d%s%s\n",
                     $step,
                     $deterministicReward,
                     $strEvalgSDE,
                     $shapedText,
                     $agent->alpha()->value()->toArray()[0],
                     $episodeCount,
+                    $solvedText,
                     $marker
                 );
+                if ($improved && $bestModelFile !== null) {
+                    echo "Best model saved: {$bestModelFile}\n";
+                }
                 // printf(
                 //     "  Diag: mu=[%+.4f,%+.4f,%+.4f] log_std=[%+.4f,%+.4f,%+.4f] gradRMS(actor/critic)=[%.3e/%.3e] Q(data/pi/target)=[%+.4f/%+.4f/%+.4f]\n",
                 //     $diag['muMean'], $diag['muMin'], $diag['muMax'],
@@ -269,15 +297,17 @@ class Runner
                 //     $diag['qDataMean'], $diag['qPiMean'], $diag['targetQMean']
                 // );
                 // printf("  Actor grad RMS by variable: %s\n", json_encode($diag['actorGradRmsByVar']));
-                if ($this->solvedReward !== null && $deterministicReward >= $this->solvedReward) {
-                    echo "🎉 Solved! (deterministic mean reward >= {$this->solvedReward})\n";
+                if ($this->solvedReward !== null
+                    && $solvedCount >= $this->solvedEvaluations) {
+                    echo "Solved: EvalReward >= {$this->solvedReward} for "
+                        ."{$this->solvedEvaluations} consecutive evaluations\n";
                     break;
                 }
 
             }
         }
 
-        echo "\nTraining finished. Best eval reward: {$bestEval} time: {$this->progressBar->laptimeString()}\n";
+        echo "\nTraining finished. BestEvalReward={$bestEval} | Time={$this->progressBar->laptimeString()}\n";
         return $history;
     }
 }

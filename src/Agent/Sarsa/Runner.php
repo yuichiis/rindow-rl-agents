@@ -13,7 +13,12 @@ class Runner
         private Env $evalEnv,
         private TrueOnlineSarsaLambdaAgent $agent,
         private ?float $solvedReward = null,
-    ) {}
+        private int $solvedEvaluations = 1,
+    ) {
+        if ($solvedEvaluations < 1) {
+            throw new \InvalidArgumentException('solvedEvaluations must be positive.');
+        }
+    }
 
     public function evaluate(int $episodes = 10) : float
     {
@@ -47,6 +52,7 @@ class Runner
         $progress = new ProgressBar();
         $progress->start('Episodes', $totalEpisodes, 50);
         $best = -INF;
+        $solvedCount = 0;
         $windowReward = 0.0;
         $windowTdError = 0.0;
         $windowSteps = 0;
@@ -83,19 +89,27 @@ class Runner
                 $meanTdError = $windowSteps > 0 ? $windowTdError / $windowSteps : 0.0;
                 $improved = $score > $best;
                 if ($improved) $best = $score;
+                if ($this->solvedReward !== null) {
+                    $solvedCount = $score >= $this->solvedReward ? $solvedCount+1 : 0;
+                }
+                $marker = $improved ? ' | Best' : '';
+                $solvedText = $this->solvedReward === null
+                    ? '' : " | SolvedCount={$solvedCount}/{$this->solvedEvaluations}";
                 foreach (['episode'=>$episode, 'trainReward'=>$trainReward,
                     'evalReward'=>$score, 'tdError'=>$meanTdError] as $key=>$value) {
                     $history[$key][] = $value;
                 }
                 $progress->clearProgressBar();
-                printf("Episode %5d | TrainReward=%7.1f | EvalReward=%7.1f | MeanAbsTD=%.4f\n",
-                    $episode, $trainReward, $score, $meanTdError);
+                printf("Episode %5d | TrainReward=%7.1f | EvalReward=%7.1f | MeanAbsTD=%.4f%s%s\n",
+                    $episode, $trainReward, $score, $meanTdError, $solvedText, $marker);
                 if ($improved && $bestModelFile !== null) {
                     $this->agent->saveWeightsToFile($bestModelFile);
                     echo "Best model saved: {$bestModelFile}\n";
                 }
-                if ($this->solvedReward !== null && $score >= $this->solvedReward) {
-                    echo "Solved: mean evaluation reward >= {$this->solvedReward}\n";
+                if ($this->solvedReward !== null
+                    && $solvedCount >= $this->solvedEvaluations) {
+                    echo "Solved: EvalReward >= {$this->solvedReward} for "
+                        ."{$this->solvedEvaluations} consecutive evaluations\n";
                     break;
                 }
                 $windowReward = 0.0;
@@ -104,7 +118,7 @@ class Runner
                 $windowEpisodes = 0;
             }
         }
-        echo "\nTraining finished. Best evaluation reward: {$best}  time: {$progress->laptimeString()}\n";
+        echo "\nTraining finished. BestEvalReward={$best} | Time={$progress->laptimeString()}\n";
         return $history;
     }
 }
