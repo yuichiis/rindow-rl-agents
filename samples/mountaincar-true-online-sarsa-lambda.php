@@ -5,9 +5,11 @@ require __DIR__.'/include/env.php';
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Plot\Plot;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\Sarsa\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
+use Rindow\RL\Agents\Env\MountainCar\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 
 const SEED = 42;
@@ -25,15 +27,22 @@ const MODEL_FILE = __DIR__.'/../models/mountaincar-true-online-sarsa-lambda.weig
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
-$env = new MountainCarV0($la);
-$evalEnv = new MountainCarV0($la);
+$env = new MountainCarV0($hostLa);
+$evalEnv = new MountainCarV0($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $tileCoder = new TileCoder(
     low:[-1.2, -0.07],
@@ -49,6 +58,7 @@ $agent = new TrueOnlineSarsaLambdaAgent(
     gamma:GAMMA,
     lambda:LAMBDA,
     epsilon:EPSILON,
+    nn:$nn,
 );
 $runner = new Runner($la, $env, $evalEnv, $agent, solvedReward:SOLVED_REWARD);
 
@@ -77,9 +87,9 @@ if (is_file($modelFile)) {
     }
 
     if (count($history['episode']) > 0) {
-        $episodes = $la->array($history['episode']);
-        $trainArt = $plt->plot($episodes, $la->array($history['trainReward']))[0];
-        $evalArt = $plt->plot($episodes, $la->array($history['evalReward']))[0];
+        $episodes = $hostLa->array($history['episode']);
+        $trainArt = $plt->plot($episodes, $hostLa->array($history['trainReward']))[0];
+        $evalArt = $plt->plot($episodes, $hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training episodes');
         $plt->ylabel('Raw reward');
         $plt->legend([$trainArt, $evalArt], ['Training raw reward', 'Evaluation raw reward']);

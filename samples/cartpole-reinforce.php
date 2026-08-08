@@ -8,6 +8,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\Reinforce\ReinforceAgent;
 use Rindow\RL\Agents\Agent\Reinforce\Runner;
+use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
@@ -22,16 +23,22 @@ const MODEL_FILE = __DIR__.'/../models/cartpole-reinforce.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
-$env = new CartPoleV1($la);
-$evalEnv = new CartPoleV1($la);
+$env = new CartPoleV1($hostLa);
+$evalEnv = new CartPoleV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn, $env);
+    $evalEnv = new DeviceWrapper($nn, $evalEnv);
+}
 
 $agent = new ReinforceAgent(
     $nn,
@@ -56,7 +63,7 @@ if (is_file($modelFile)) {
     $history = $runner->train($totalEpisodes, $evalEvery, $evalEpisodes);
     if (count($history['episode']) > 0) {
         $art = $plt->plot(
-            $la->array($history['episode']), $la->array($history['evalReward'])
+            $hostLa->array($history['episode']), $hostLa->array($history['evalReward'])
         )[0];
         $plt->xlabel('Training episodes');
         $plt->ylabel('Evaluation reward');

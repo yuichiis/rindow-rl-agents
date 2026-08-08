@@ -9,6 +9,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0;
 use Rindow\RL\Agents\Agent\SAC\SACGSDEAgent;
 use Rindow\RL\Agents\Agent\SAC\Runner;
+use Rindow\RL\Agents\Env\ContinuousMountainCar\DeviceWrapper;
 
 # ─────────────────────────────────────────────
 # ハイパーパラメータ
@@ -36,18 +37,24 @@ const MODEL_FILE       = __DIR__ . '/../models/mountaincarcontinuous-sac-gsde.we
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer' => true],$mo);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
-$env = new ContinuousMountainCarV0($la);
-$evalEnv = new ContinuousMountainCarV0($la);
+$env = new ContinuousMountainCarV0($hostLa);
+$evalEnv = new ContinuousMountainCarV0($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 $stateShape = $env->observationSpace()->shape();
 $obsDim = $stateShape[0];
 $actionSpace = $env->actionSpace();
@@ -92,7 +99,7 @@ $runner = new Runner(
     solvedReward: SOLVED_REWARD,
 );
 
-function fitplot($la,array $x,float $window,float $bottom) : NDArray
+function fitplot($hostLa,array $x,float $window,float $bottom) : NDArray
 {
     $scale = $window/(max($x)-min($x));
     $bias = -min($x)*$scale+$bottom;
@@ -115,19 +122,19 @@ if (is_file($modelFile)) {
     evalgSDE: true,
     );
 
-    $steps = $la->array($history['step']);
+    $steps = $hostLa->array($history['step']);
     $arts = [];
     $legend = [];
-    $arts[] = $plt->plot($steps, $la->array($history['evalDet']))[0];
+    $arts[] = $plt->plot($steps, $hostLa->array($history['evalDet']))[0];
     $legend[] = 'EvalDet';
-    $arts[] = $plt->plot($steps, $la->array($history['evalgSDE']))[0];
+    $arts[] = $plt->plot($steps, $hostLa->array($history['evalgSDE']))[0];
     $legend[] = 'EvalgSDE';
-    $arts[] = $plt->plot($steps, fitplot($la, $history['alpha'], 100, 100))[0];
+    $arts[] = $plt->plot($steps, fitplot($hostLa, $history['alpha'], 100, 100))[0];
     $legend[] = 'Alpha';
     if (count($history['updateStep']) > 0) {
-        $updateSteps = $la->array($history['updateStep']);
-        $arts[] = $plt->plot($updateSteps, fitplot($la, $history['actorLoss'], 100, 100))[0];
-        $arts[] = $plt->plot($updateSteps, fitplot($la, $history['criticLoss'], 100, 100))[0];
+        $updateSteps = $hostLa->array($history['updateStep']);
+        $arts[] = $plt->plot($updateSteps, fitplot($hostLa, $history['actorLoss'], 100, 100))[0];
+        $arts[] = $plt->plot($updateSteps, fitplot($hostLa, $history['criticLoss'], 100, 100))[0];
         $legend[] = 'ActorLoss';
         $legend[] = 'CriticLoss';
     }

@@ -8,6 +8,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\A2C\A2CAgent;
 use Rindow\RL\Agents\Agent\A2C\Runner;
+use Rindow\RL\Agents\Env\Maze\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
 const SEED = 1234;
@@ -23,22 +24,28 @@ const MODEL_FILE = __DIR__.'/../models/maze-a2c.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
 $env = new Maze(
-    $la, policy:null, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
+    $hostLa, policy:null, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 $evalEnv = new Maze(
-    $la, policy:$env->mazeRules(), width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
+    $hostLa, policy:$env->mazeRules(), width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $agent = new A2CAgent(
     $nn,
@@ -84,8 +91,8 @@ if (is_file($modelFile)) {
         echo "Best model loaded: {$modelFile}\n";
     }
     if (count($history['step']) > 0) {
-        $steps = $la->array($history['step']);
-        $rewardArt = $plt->plot($steps, $la->array($history['evalReward']))[0];
+        $steps = $hostLa->array($history['step']);
+        $rewardArt = $plt->plot($steps, $hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rewardArt], ['A2C with action mask']);

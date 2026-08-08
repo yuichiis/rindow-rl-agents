@@ -9,6 +9,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 use Rindow\RL\Agents\Agent\PPO\PPOAgent;
 use Rindow\RL\Agents\Agent\PPO\Runner;
+use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 
 const SEED = 42;
 const TOTAL_STEPS = 300_000;
@@ -28,16 +29,22 @@ const MODEL_FILE = __DIR__.'/../models/cartpole-ppo.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
-$env = new CartPoleV1($la);
-$evalEnv = new CartPoleV1($la);
+$env = new CartPoleV1($hostLa);
+$evalEnv = new CartPoleV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $agent = new PPOAgent(
     $nn,
@@ -68,8 +75,8 @@ if (is_file($modelFile)) {
 } else {
     $history = $runner->train($totalSteps, $evalEvery, $evalEpisodes);
     if (count($history['step']) > 0) {
-        $steps = $la->array($history['step']);
-        $art = $plt->plot($steps, $la->array($history['evalReward']))[0];
+        $steps = $hostLa->array($history['step']);
+        $art = $plt->plot($steps,$hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$art], ['PPO']);

@@ -19,6 +19,7 @@ class SACGSDEAgent
     private const CHECKPOINT_VERSION = 1;
     private Builder $nn;
     private object $la;
+    private object $backend;
     private object $g;
     private int $actDim;
     private int|array $obsDim;
@@ -59,7 +60,8 @@ class SACGSDEAgent
     )
     {
         $this->nn = $nn;
-        $this->la = $nn->backend()->primaryLA();
+        $this->backend = $nn->backend();
+        $this->la = $this->backend->primaryLA();
         $this->g = $nn->gradient();
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
@@ -168,7 +170,7 @@ class SACGSDEAgent
 
     private function gradientRmsList(array $grads) : array
     {
-        return array_map(fn($v) => $this->rms($v->toArray()), $grads);
+        return array_map(fn($v) => $this->rms($this->hostArray($v)->toArray()), $grads);
     }
 
     private function range(array $values) : array
@@ -186,28 +188,30 @@ class SACGSDEAgent
         $obs = $this->g->Variable($this->la->zeros(
             $this->la->alloc(array_merge([4],$this->observationShape()), dtype:NDArray::float32)
         ));
-        $mu = $this->actor->diagnosticMu($obs)->value()->toArray();
+        $mu = $this->hostArray($this->actor->diagnosticMu($obs)->value())->toArray();
         [$muMin, $muMax, $muMean] = $this->range($mu);
-        [$lsMin, $lsMax, $lsMean] = $this->range($this->actor->diagnosticLogStd()->value()->toArray());
+        [$lsMin, $lsMax, $lsMean] = $this->range(
+            $this->hostArray($this->actor->diagnosticLogStd()->value())->toArray()
+        );
         [$lpMin, $lpMax, $lpMean] = $this->lastLogPi
-            ? $this->range($this->lastLogPi->value()->toArray())
+            ? $this->range($this->hostArray($this->lastLogPi->value())->toArray())
             : [0.0, 0.0, 0.0];
         $sigmaZ = $this->actor->diagnosticSigmaZ();
         [$szMin, $szMax, $szMean] = $sigmaZ
-            ? $this->range($sigmaZ->value()->toArray())
+            ? $this->range($this->hostArray($sigmaZ->value())->toArray())
             : [0.0, 0.0, 0.0];
-        $qDataMean = $this->lastQData ? $this->range($this->lastQData->value()->toArray())[2] : 0.0;
-        $qPiMean = $this->lastQPi ? $this->range($this->lastQPi->value()->toArray())[2] : 0.0;
-        $targetQMean = $this->lastTargetQ ? $this->range($this->lastTargetQ->value()->toArray())[2] : 0.0;
+        $qDataMean = $this->lastQData ? $this->range($this->hostArray($this->lastQData->value())->toArray())[2] : 0.0;
+        $qPiMean = $this->lastQPi ? $this->range($this->hostArray($this->lastQPi->value())->toArray())[2] : 0.0;
+        $targetQMean = $this->lastTargetQ ? $this->range($this->hostArray($this->lastTargetQ->value())->toArray())[2] : 0.0;
         return [
             'muMean' => $muMean, 'muMin' => $muMin, 'muMax' => $muMax,
             'logStdMean' => $lsMean, 'logStdMin' => $lsMin, 'logStdMax' => $lsMax,
             'logPiMean' => $lpMean, 'logPiMin' => $lpMin, 'logPiMax' => $lpMax,
             'sigmaZMean' => $szMean, 'sigmaZMin' => $szMin, 'sigmaZMax' => $szMax,
             'qDataMean' => $qDataMean, 'qPiMean' => $qPiMean, 'targetQMean' => $targetQMean,
-            'actorGradRms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->lastActorGrads)),
+            'actorGradRms' => $this->rms(array_map(fn($v)=>$this->hostArray($v)->toArray(), $this->lastActorGrads)),
             'actorGradRmsByVar' => $this->gradientRmsList($this->lastActorGrads),
-            'criticGradRms' => $this->rms(array_map(fn($v)=>$v->toArray(), $this->lastCriticGrads)),
+            'criticGradRms' => $this->rms(array_map(fn($v)=>$this->hostArray($v)->toArray(), $this->lastCriticGrads)),
         ];
     }
 
@@ -275,7 +279,7 @@ class SACGSDEAgent
         $this->critic->saveWeights($weights['critic'], $portable);
         $this->criticTarget->saveWeights($weights['criticTarget'], $portable);
 
-        $weights['logAlpha'] = $this->logAlpha->value()->toArray();
+        $weights['logAlpha'] = $this->hostArray($this->logAlpha->value())->toArray();
         $checkpoint = [
             'format' => 'rindow-rl-sac-gsde',
             'version' => self::CHECKPOINT_VERSION,
@@ -336,11 +340,24 @@ class SACGSDEAgent
     
     private function clipNdarray(NDArray $x, float $min, float $max) : NDArray
     {
-        $arr = $x->toArray();
-        array_walk_recursive($arr, function(&$v) use ($min, $max) {
-            $v = max(min($v, $max), $min);
-        });
-        return $this->la->array($arr);
+        return $this->la->minimum(
+            $this->la->maximum($this->la->copy($x),$min),$max
+        );
+    }
+
+    private function hostArray(NDArray $value) : NDArray
+    {
+        return $this->backend->ndarray($value);
+    }
+
+    private function scalar(object $value) : float
+    {
+        return (float)$this->la->scalar($value->value());
+    }
+
+    public function alphaValue() : float
+    {
+        return $this->scalar($this->alpha());
     }
 
 
@@ -365,7 +382,7 @@ class SACGSDEAgent
         $actionsV  = $g->Variable($actions);
         $rewardsV  = $g->Variable($rewards);
         $nextObsV = $g->Variable($nextObs);
-        $donesV    = $g->Variable($dones);
+        $notDonesV = $g->sub($g->constant(1.0),$g->Variable($dones));
 
         // ── [A] target_q (勾配不要) ──────────────
         // tape 外で計算 → 自動的に勾配追跡なし
@@ -374,13 +391,12 @@ class SACGSDEAgent
         $nextActionsSc = $g->mul($nextActions, $this->actLimit);
         
         [$q1Next, $q2Next] = $this->criticTarget->forward($nextObsV, $nextActionsSc);
-        $qNextMin = $g->minimum($q1Next, $q2Next);
+        $qNextMin = $g->minimum($q1Next,$q2Next);
         
         $alphaNextLogPi = $g->mul($this->alpha(), $nextLogPi);
         $qNext = $g->sub($qNextMin, $alphaNextLogPi);
         
-        $oneMinusDones = $g->sub(1.0, $donesV);
-        $gammaDonesQNext = $g->mul($this->gamma, $g->mul($oneMinusDones, $qNext));
+        $gammaDonesQNext = $g->mul($this->gamma, $g->mul($notDonesV, $qNext));
         $targetQ = $g->stopGradient($g->add($rewardsV, $gammaDonesQNext));
         $this->lastTargetQ = $targetQ;
 
@@ -392,7 +408,7 @@ class SACGSDEAgent
         use ($g, $critic, $obsV, $actionsV, $targetQ, $agent)
         {
             [$q1, $q2] = $critic->forward($obsV, $actionsV);
-            $agent->lastQData = $g->minimum($q1, $q2);
+            $agent->lastQData = $g->minimum($q1,$q2);
             $criticLoss = $g->add(
                 $g->reduceMean($g->square($g->sub($q1, $targetQ))),
                 $g->reduceMean($g->square($g->sub($q2, $targetQ)))
@@ -417,8 +433,11 @@ class SACGSDEAgent
             [$newActions, $logPi] = $actor->forwardTrain($obsV);
             $newActionsSc = $g->mul($newActions, $actLimit);
             [$q1Pi, $q2Pi] = $critic->forward($obsV, $newActionsSc);
-            $agent->lastQPi = $g->minimum($q1Pi, $q2Pi);
-            $actorLoss = $g->reduceMean($g->sub($g->mul($g->stopGradient($agent->alpha()), $logPi), $g->minimum($q1Pi, $q2Pi)));
+            $agent->lastQPi = $g->minimum($q1Pi,$q2Pi);
+            $actorLoss = $g->reduceMean($g->sub(
+                $g->mul($g->stopGradient($agent->alpha()),$logPi),
+                $agent->lastQPi
+            ));
             return [$actorLoss,$logPi];
         });
         
@@ -438,7 +457,7 @@ class SACGSDEAgent
         $alphaLoss = $this->nn->with($tape = $g->GradientTape(), function()
         use ($g, $logAlpha, $logPi, $targetEntropy)
         {
-            $alphaLoss = $g->scale(-1.0, $g->reduceMean($g->mul($logAlpha, $g->stopGradient($g->add($logPi, $targetEntropy)))));
+            $alphaLoss = $g->scale(-1.0, $g->reduceMean($g->mul($logAlpha, $g->stopGradient($g->add($logPi, $g->constant($targetEntropy))))));
             return $alphaLoss;
         });
         $alphaVars = [$this->logAlpha];
@@ -450,9 +469,9 @@ class SACGSDEAgent
         $this->criticTarget->syncWeightCaches();
 
         return [
-            "critic_loss" => $criticLoss->value()->toArray(),
-            "actor_loss"  => $actorLoss->value()->toArray(),
-            "alpha"       => $this->alpha()->value()->toArray(),
+            "critic_loss" => $this->scalar($criticLoss),
+            "actor_loss"  => $this->scalar($actorLoss),
+            "alpha"       => $this->alphaValue(),
         ];
     }
 }

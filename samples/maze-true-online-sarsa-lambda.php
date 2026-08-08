@@ -4,10 +4,12 @@ require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Agent\Sarsa\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
+use Rindow\RL\Agents\Env\Maze\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
 const SEED = 1234;
@@ -28,21 +30,28 @@ const MODEL_FILE = __DIR__.'/../models/maze-true-online-sarsa-lambda.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
 $env = new Maze(
-    $la, policy:null, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
+    $hostLa, policy:null, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 $evalEnv = new Maze(
-    $la, policy:$env->mazeRules(), width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
+    $hostLa, policy:$env->mazeRules(), width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
     throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $tileCoder = new TileCoder(
     low:[0.0, 0.0],
@@ -60,6 +69,7 @@ $agent = new TrueOnlineSarsaLambdaAgent(
     epsilon:EPSILON,
     stateField:'location',
     actionMaskField:'actionMask',
+    nn:$nn,
 );
 $runner = new Runner($la, $env, $evalEnv, $agent);
 
@@ -82,9 +92,9 @@ if (is_file($modelFile)) {
         echo "Best model loaded: {$modelFile}\n";
     }
     if (count($history['episode']) > 0) {
-        $episodes = $la->array($history['episode']);
-        $trainArt = $plt->plot($episodes, $la->array($history['trainReward']))[0];
-        $evalArt = $plt->plot($episodes, $la->array($history['evalReward']))[0];
+        $episodes = $hostLa->array($history['episode']);
+        $trainArt = $plt->plot($episodes, $hostLa->array($history['trainReward']))[0];
+        $evalArt = $plt->plot($episodes, $hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training episodes');
         $plt->ylabel('Raw reward');
         $plt->legend([$trainArt, $evalArt], ['Training reward', 'Evaluation reward']);

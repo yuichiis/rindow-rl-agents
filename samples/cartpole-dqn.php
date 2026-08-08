@@ -8,6 +8,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\DQN\DQNAgent;
 use Rindow\RL\Agents\Agent\DQN\Runner;
+use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
@@ -30,16 +31,22 @@ const MODEL_FILE = __DIR__.'/../models/cartpole-dqn.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$env = new CartPoleV1($la);
-$evalEnv = new CartPoleV1($la);
+$env = new CartPoleV1($hostLa);
+$evalEnv = new CartPoleV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $agent = new DQNAgent(
     $nn,
@@ -74,7 +81,9 @@ if (is_file($modelFile)) {
         EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
     );
     if (count($history['step']) > 0) {
-        $art = $plt->plot($la->array($history['step']),$la->array($history['evalReward']))[0];
+        $art = $plt->plot(
+            $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
+        )[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$art],['DQN']);

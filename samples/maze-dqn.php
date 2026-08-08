@@ -8,6 +8,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\DQN\DQNAgent;
 use Rindow\RL\Agents\Agent\DQN\Runner;
+use Rindow\RL\Agents\Env\Maze\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
 const SEED = 1234;
@@ -32,22 +33,28 @@ const MODEL_FILE = __DIR__.'/../models/maze-dqn.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
 $env = new Maze(
-    $la,policy:null,width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
+    $hostLa,policy:null,width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
     throwInvalidAction:true,maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 $evalEnv = new Maze(
-    $la,policy:$env->mazeRules(),width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
+    $hostLa,policy:$env->mazeRules(),width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
     throwInvalidAction:true,maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $agent = new DQNAgent(
     $nn,
@@ -89,7 +96,7 @@ if (is_file($modelFile)) {
     }
     if (count($history['step']) > 0) {
         $art = $plt->plot(
-            $la->array($history['step']),$la->array($history['evalReward'])
+            $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
         )[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');

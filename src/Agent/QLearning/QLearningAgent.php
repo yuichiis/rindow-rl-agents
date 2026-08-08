@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Agent\QLearning;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 
 /** Linear one-step Q-Learning with tile-coded observations. */
@@ -22,6 +23,7 @@ class QLearningAgent
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
         float $initialValue = 0.0,
+        private ?Builder $nn = null,
     ) {
         if ($numActions < 2 || $learningRate <= 0.0 || $gamma < 0.0 || $gamma > 1.0
             || $epsilon < 0.0 || $epsilon > 1.0) {
@@ -65,7 +67,8 @@ class QLearningAgent
                     "Observation field '{$this->actionMaskField}' must be an NDArray or array."
                 );
             }
-            $values = $value instanceof NDArray ? $value->toArray() : $value;
+            $values = $value instanceof NDArray
+                ? $this->hostArray($value)->toArray() : $value;
             if (count($values) !== $this->numActions) {
                 throw new \InvalidArgumentException('Action mask size must equal numActions.');
             }
@@ -81,7 +84,9 @@ class QLearningAgent
     {
         $this->validateAction($action);
         [$state] = $this->parseObservation($observation);
-        return $this->valueOfFeatures($this->tileCoder->encode($state), $action);
+        return $this->valueOfFeatures(
+            $this->tileCoder->encode($this->hostArray($state)), $action
+        );
     }
 
     public function selectAction(NDArray|array $observation, ?float $epsilon = null) : int
@@ -92,7 +97,7 @@ class QLearningAgent
         }
         [$state, $mask] = $this->parseObservation($observation);
         $allowed = $this->allowedActions($mask);
-        $random = (float)$this->la->randomUniform([1], 0.0, 1.0)->toArray()[0];
+        $random = $this->scalar($this->la->randomUniform([1], 0.0, 1.0));
         if ($random < $epsilon) return $this->randomAction($allowed);
         return $this->greedyActionFromState($state, $allowed, true);
     }
@@ -116,12 +121,12 @@ class QLearningAgent
         if ($mask !== null && !$mask[$action]) {
             throw new \InvalidArgumentException('The selected action is disabled by the action mask.');
         }
-        $features = $this->tileCoder->encode($state);
+        $features = $this->tileCoder->encode($this->hostArray($state));
         $q = $this->valueOfFeatures($features, $action);
         $nextValue = 0.0;
         if (!$terminal) {
             [$nextState, $nextMask] = $this->parseObservation($nextObservation);
-            $nextFeatures = $this->tileCoder->encode($nextState);
+            $nextFeatures = $this->tileCoder->encode($this->hostArray($nextState));
             $allowed = $this->allowedActions($nextMask);
             $nextValue = $this->valueOfFeatures($nextFeatures, $allowed[0]);
             foreach (array_slice($allowed, 1) as $nextAction) {
@@ -166,7 +171,7 @@ class QLearningAgent
     /** @param int[] $allowed */
     private function greedyActionFromState(NDArray|array $state, array $allowed, bool $randomTie) : int
     {
-        $features = $this->tileCoder->encode($state);
+        $features = $this->tileCoder->encode($this->hostArray($state));
         $best = [$allowed[0]];
         $bestValue = $this->valueOfFeatures($features, $allowed[0]);
         foreach (array_slice($allowed, 1) as $action) {
@@ -180,9 +185,9 @@ class QLearningAgent
     /** @param int[] $allowed */
     private function randomAction(array $allowed) : int
     {
-        $index = (int)$this->la->randomUniform(
+        $index = (int)$this->scalar($this->la->randomUniform(
             [1], 0, count($allowed)-1, dtype:NDArray::int32
-        )->toArray()[0];
+        ));
         return $allowed[$index];
     }
 
@@ -205,5 +210,20 @@ class QLearningAgent
     {
         if ($mask === null) return range(0, $this->numActions-1);
         return array_keys(array_filter($mask, static fn(bool $value) : bool => $value));
+    }
+
+    private function hostArray(NDArray|array $value) : NDArray|array
+    {
+        if (!$value instanceof NDArray || $this->nn === null) {
+            return $value;
+        }
+        return $this->nn->hostArray($value);
+    }
+
+    private function scalar(NDArray $value) : float
+    {
+        $value = $this->la->scalar($value);
+        while (is_array($value)) $value = reset($value);
+        return (float)$value;
     }
 }

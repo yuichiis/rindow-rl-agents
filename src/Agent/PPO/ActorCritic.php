@@ -125,7 +125,9 @@ class ActorCritic extends AbstractModel
                 $g = $this->nnBuilder->gradient();
                 $logStd = $g->clipByValue($this->sdeLogStd, -5.0, 2.0);
                 $variance = $g->matmul($g->square($features), $g->transpose($g->square($g->exp($logStd))));
-                $std = $g->sqrt($g->maximum($variance, $g->constant(1.0e-8)));
+                $std = $g->sqrt($g->maximum(
+                    $variance,$g->constant(1.0e-8)
+                ));
                 return [$mean, $value, $std];
             }
             if ($this->logStdHead === null) {
@@ -145,7 +147,10 @@ class ActorCritic extends AbstractModel
             throw new \LogicException('gSDE is not enabled.');
         }
         $la = $this->nnBuilder->backend()->primaryLA();
-        $logStd = $la->minimum($la->maximum($this->sdeLogStd->value(), -5.0), 2.0);
+        $logStd = $la->minimum(
+            $la->maximum($la->copy($this->sdeLogStd->value()), -5.0),
+            2.0
+        );
         return $la->multiply(
             $la->randomNormal($logStd->shape(), 0.0, 1.0),
             $la->exp($la->copy($logStd)),
@@ -165,7 +170,9 @@ class ActorCritic extends AbstractModel
         $noiseTerm = $g->matmul($features, $g->transpose($g->constant($noise)));
         $logStd = $g->clipByValue($this->sdeLogStd, -5.0, 2.0);
         $variance = $g->matmul($g->square($features), $g->transpose($g->square($g->exp($logStd))));
-        $std = $g->sqrt($g->maximum($variance, $g->constant(1.0e-8)));
+        $std = $g->sqrt($g->maximum(
+            $variance,$g->constant(1.0e-8)
+        ));
         return [$g->add($mean, $noiseTerm), $value, $std, $mean];
     }
 

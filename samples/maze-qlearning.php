@@ -4,7 +4,9 @@ require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\QLearning\QLearningAgent;
+use Rindow\RL\Agents\Env\Maze\DeviceWrapper;
 use Rindow\RL\Agents\Agent\QLearning\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Gym\ClassicControl\Maze\Maze;
@@ -15,16 +17,23 @@ const TOTAL_EPISODES=500, EVAL_EVERY=10, EVAL_EPISODES=10;
 const MODEL_FILE=__DIR__.'/../models/maze-qlearning.weights';
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$env=new Maze($la,null,WIDTH,HEIGHT,EXIT_STATE,true,MAX_EPISODE_STEPS);
-$evalEnv=new Maze($la,$env->mazeRules(),WIDTH,HEIGHT,EXIT_STATE,true,MAX_EPISODE_STEPS);
+$env=new Maze($hostLa,null,WIDTH,HEIGHT,EXIT_STATE,true,MAX_EPISODE_STEPS);
+$evalEnv=new Maze($hostLa,$env->mazeRules(),WIDTH,HEIGHT,EXIT_STATE,true,MAX_EPISODE_STEPS);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 $coder=new TileCoder([0.0,0.0],[HEIGHT-1.0,WIDTH-1.0],4,2);
 $agent=new QLearningAgent($la,$coder,$env->actionSpace()->n(),0.2,1.0,0.1,
-    stateField:'location',actionMaskField:'actionMask');
+    stateField:'location',actionMaskField:'actionMask',nn:$nn);
 $runner=new Runner($la,$env,$evalEnv,$agent);
 $modelFile=rlEnvString('RL_MODEL_FILE',MODEL_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);

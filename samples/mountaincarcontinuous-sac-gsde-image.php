@@ -9,6 +9,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\SAC\SACGSDEAgent;
 use Rindow\RL\Agents\Agent\SAC\Runner;
+use Rindow\RL\Agents\Env\ContinuousMountainCar\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0;
 
 const SEED = 42;
@@ -40,16 +41,22 @@ const IMAGE_SHAPE = [IMAGE_SIZE,IMAGE_SIZE,FRAME_STACK];
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$env = new ContinuousMountainCarV0($la);
-$evalEnv = new ContinuousMountainCarV0($la);
+$env = new ContinuousMountainCarV0($hostLa);
+$evalEnv = new ContinuousMountainCarV0($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 // Keep the whole track visible and stack four grayscale frames so position,
 // velocity and movement direction can be inferred from rendered images alone.
@@ -59,22 +66,22 @@ for ($i=0; $i<IMAGE_SIZE; $i++) {
     $rowValues[] = (int)round($i*(SCREEN_HEIGHT-1)/(IMAGE_SIZE-1));
     $columnValues[] = (int)round($i*(SCREEN_WIDTH-1)/(IMAGE_SIZE-1));
 }
-$rowIndices = $la->array($rowValues,dtype:NDArray::int32);
-$columnIndices = $la->array($columnValues,dtype:NDArray::int32);
+$rowIndices = $hostLa->array($rowValues,dtype:NDArray::int32);
+$columnIndices = $hostLa->array($columnValues,dtype:NDArray::int32);
 $frameHistory = new WeakMap();
 
 $imageObservation = static function(
     Environment $environment,
     mixed $rawObservation,
     bool $reset=false,
-) use ($la,$rowIndices,$columnIndices,$frameHistory) : NDArray {
+) use ($nn,$hostLa,$rowIndices,$columnIndices,$frameHistory) : NDArray {
     $rgb = $environment->render(mode:'rgb_array');
-    $small = $la->gather($rgb,$rowIndices);
-    $small = $la->transpose($small,[1,0,2]);
-    $small = $la->gather($small,$columnIndices);
-    $small = $la->transpose($small,[1,0,2]);
-    $small = $la->astype($small,dtype:NDArray::float32);
-    $gray = $la->scal(1.0/255.0,$la->reduceMean($small,axis:2));
+    $small = $hostLa->gather($rgb,$rowIndices);
+    $small = $hostLa->transpose($small,[1,0,2]);
+    $small = $hostLa->gather($small,$columnIndices);
+    $small = $hostLa->transpose($small,[1,0,2]);
+    $small = $hostLa->astype($small,dtype:NDArray::float32);
+    $gray = $hostLa->scal(1.0/255.0,$hostLa->reduceMean($small,axis:2));
 
     if ($reset || !isset($frameHistory[$environment])) {
         $frameHistory[$environment] = array_fill(0,FRAME_STACK,$gray);
@@ -84,7 +91,7 @@ $imageObservation = static function(
         $frames[] = $gray;
         $frameHistory[$environment] = $frames;
     }
-    return $la->stack($frameHistory[$environment],axis:2);
+    return $nn->deviceArray($hostLa->stack($frameHistory[$environment],axis:2));
 };
 
 $actionSpace = $env->actionSpace();
@@ -166,7 +173,7 @@ if (is_file($modelFile)) {
     );
     if (count($history['step']) > 0) {
         $art = $plt->plot(
-            $la->array($history['step']),$la->array($history['evalDet'])
+            $hostLa->array($history['step']),$hostLa->array($history['evalDet'])
         )[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Gym evaluation reward');

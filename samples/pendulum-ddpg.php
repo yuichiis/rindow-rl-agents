@@ -7,6 +7,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\DDPG\DDPGAgent;
 use Rindow\RL\Agents\Agent\DDPG\Runner;
+use Rindow\RL\Agents\Env\Pendulum\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 
 const SEED = 42;
@@ -28,18 +29,25 @@ const MODEL_FILE = __DIR__.'/../models/pendulum-ddpg.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo); $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+$plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$env = new PendulumV1($la); $evalEnv = new PendulumV1($la);
+$env = new PendulumV1($hostLa); $evalEnv = new PendulumV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
 $obsDim = $env->observationSpace()->shape()[0];
 $actionSpace = $env->actionSpace(); $actDim = $actionSpace->shape()[0];
 $high = $actionSpace->high()->toArray(); while (is_array($high)) $high=reset($high);
 $actLimit = (float)$high;
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $agent = new DDPGAgent($nn,$obsDim,$actDim,$actLimit,HIDDEN_DIM,LR_ACTOR,LR_CRITIC,GAMMA,TAU,BATCH_SIZE);
 $agent->summary();
@@ -58,7 +66,9 @@ if (is_file($modelFile)) {
     $history = $runner->train($totalSteps,$startSteps,$updateAfter,$updateEvery,$evalEvery,$evalEpisodes,$modelFile);
     if (is_file($modelFile)) $agent->loadWeightsFromFile($modelFile);
     if (count($history['step'])) {
-        $art=$plt->plot($la->array($history['step']),$la->array($history['evalReward']))[0];
+        $art=$plt->plot(
+            $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
+        )[0];
         $plt->xlabel('Training steps'); $plt->ylabel('Evaluation reward'); $plt->legend([$art],['DDPG']);
         $plt->show(filename:__DIR__.'/../graphics/pendulum-ddpg-history.png');
     }

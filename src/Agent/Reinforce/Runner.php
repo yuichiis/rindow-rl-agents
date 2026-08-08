@@ -72,7 +72,7 @@ class Runner
             $done = false;
             while (!$done) {
                 $action = $this->agent->selectAction($observation);
-                $observations[] = $observation->toArray();
+                $observations[] = $observation;
                 $actions[] = $action;
                 [$observation, $reward, $terminated, $truncated] = $this->env->step(
                     $this->la->array($action, dtype:NDArray::int32)
@@ -82,7 +82,7 @@ class Runner
             }
             $returns = $this->discountedReturns($rewards);
             $lastMetrics = $this->agent->update(
-                $this->la->array($observations, dtype:NDArray::float32),
+                $this->la->stack($observations),
                 $this->la->array($actions, dtype:NDArray::int32),
                 $this->la->array($returns, dtype:NDArray::float32),
             );

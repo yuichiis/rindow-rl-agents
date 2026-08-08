@@ -9,6 +9,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\DQN\DQNAgent;
 use Rindow\RL\Agents\Agent\DQN\Runner;
+use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
@@ -42,19 +43,25 @@ const IMAGE_SHAPE = [IMAGE_HEIGHT,IMAGE_WIDTH,FRAME_STACK];
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$env = new CartPoleV1($la);
-$evalEnv = new CartPoleV1($la);
+$env = new CartPoleV1($hostLa);
+$evalEnv = new CartPoleV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
-$rowIndices = $la->array(range(0,CROP_HEIGHT-1,DOWNSAMPLE),dtype:NDArray::int32);
-$columnIndices = $la->array(range(0,SCREEN_WIDTH-1,DOWNSAMPLE),dtype:NDArray::int32);
+$rowIndices = $hostLa->array(range(0,CROP_HEIGHT-1,DOWNSAMPLE),dtype:NDArray::int32);
+$columnIndices = $hostLa->array(range(0,SCREEN_WIDTH-1,DOWNSAMPLE),dtype:NDArray::int32);
 $frameHistory = new WeakMap();
 
 // The third argument is true immediately after reset. Keeping separate histories
@@ -63,21 +70,21 @@ $imageObservation = static function(
     Environment $environment,
     mixed $rawObservation,
     bool $reset=false,
-) use ($la,$rowIndices,$columnIndices,$frameHistory) : NDArray {
+) use ($nn,$hostLa,$rowIndices,$columnIndices,$frameHistory) : NDArray {
     $rgb = $environment->render(mode:'rgb_array');       // [400,600,3]
-    $croppedView = $la->slice(
+    $croppedView = $hostLa->slice(
         $rgb,
         begin:[CROP_TOP,0],
         size:[CROP_HEIGHT,SCREEN_WIDTH],
     );
     // imagecopy materializes the selected image area as an independent NDArray.
-    $small = $la->gather($croppedView,$rowIndices);
-    $small = $la->transpose($small,[1,0,2]);
-    $small = $la->gather($small,$columnIndices);
-    $small = $la->transpose($small,[1,0,2]);
-    $small = $la->astype($small,dtype:NDArray::float32);
-    $gray = $la->reduceMean($small,axis:2);
-    $gray = $la->scal(1.0/255.0,$gray);
+    $small = $hostLa->gather($croppedView,$rowIndices);
+    $small = $hostLa->transpose($small,[1,0,2]);
+    $small = $hostLa->gather($small,$columnIndices);
+    $small = $hostLa->transpose($small,[1,0,2]);
+    $small = $hostLa->astype($small,dtype:NDArray::float32);
+    $gray = $hostLa->reduceMean($small,axis:2);
+    $gray = $hostLa->scal(1.0/255.0,$gray);
 
     if ($reset || !isset($frameHistory[$environment])) {
         $frameHistory[$environment] = array_fill(0,FRAME_STACK,$gray);
@@ -87,7 +94,8 @@ $imageObservation = static function(
         $frames[] = $gray;
         $frameHistory[$environment] = $frames;
     }
-    return $la->stack($frameHistory[$environment],axis:2);
+    $frames = $hostLa->stack($frameHistory[$environment],axis:2);
+    return $nn->deviceArray($frames);
 };
 
 $agent = new DQNAgent(
@@ -157,7 +165,9 @@ if (is_file($modelFile)) {
         EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
     );
     if (count($history['step']) > 0) {
-        $art = $plt->plot($la->array($history['step']),$la->array($history['evalReward']))[0];
+        $art = $plt->plot(
+            $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
+        )[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$art],['Image DQN']);

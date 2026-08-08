@@ -4,7 +4,9 @@ require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\QLearning\QLearningAgent;
+use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 use Rindow\RL\Agents\Agent\QLearning\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
@@ -14,14 +16,21 @@ const TOTAL_EPISODES=2000, EVAL_EVERY=25, EVAL_EPISODES=10;
 const MODEL_FILE=__DIR__.'/../models/cartpole-qlearning.weights';
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$env=new CartPoleV1($la); $evalEnv=new CartPoleV1($la);
+$env=new CartPoleV1($hostLa); $evalEnv=new CartPoleV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 $coder=new TileCoder([-2.4,-3.0,-0.2095,-3.5],[2.4,3.0,0.2095,3.5],8,8);
-$agent=new QLearningAgent($la,$coder,$env->actionSpace()->n(),0.1,0.99,0.05,initialValue:100.0);
+$agent=new QLearningAgent($la,$coder,$env->actionSpace()->n(),0.1,0.99,0.05,initialValue:100.0,nn:$nn);
 $runner=new Runner($la,$env,$evalEnv,$agent,475.0);
 $modelFile=rlEnvString('RL_MODEL_FILE',MODEL_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);

@@ -2,6 +2,7 @@
 namespace Rindow\RL\Agents\Agent\Sarsa;
 
 use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\NeuralNetworks\Builder\Builder;
 
 /** Linear True Online Sarsa(lambda) with tile-coded continuous observations. */
 class TrueOnlineSarsaLambdaAgent
@@ -25,6 +26,7 @@ class TrueOnlineSarsaLambdaAgent
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
         float $initialValue = 0.0,
+        private ?Builder $nn = null,
     ) {
         if ($numActions < 2 || $learningRate <= 0.0 || $gamma < 0.0 || $gamma > 1.0
             || $lambda < 0.0 || $lambda > 1.0 || $epsilon < 0.0 || $epsilon > 1.0) {
@@ -72,7 +74,8 @@ class TrueOnlineSarsaLambdaAgent
                     "Observation field '{$this->actionMaskField}' must be an NDArray or array."
                 );
             }
-            $maskValues = $maskValue instanceof NDArray ? $maskValue->toArray() : $maskValue;
+            $maskValues = $maskValue instanceof NDArray
+                ? $this->hostArray($maskValue)->toArray() : $maskValue;
             if (count($maskValues) !== $this->numActions) {
                 throw new \InvalidArgumentException('Action mask size must equal numActions.');
             }
@@ -94,7 +97,9 @@ class TrueOnlineSarsaLambdaAgent
     {
         $this->validateAction($action);
         [$state] = $this->parseObservation($observation);
-        return $this->valueOfFeatures($this->tileCoder->encode($state), $action);
+        return $this->valueOfFeatures(
+            $this->tileCoder->encode($this->hostArray($state)), $action
+        );
     }
 
     public function selectAction(NDArray|array $observation, ?float $epsilon = null) : int
@@ -105,11 +110,11 @@ class TrueOnlineSarsaLambdaAgent
         }
         [$state, $mask] = $this->parseObservation($observation);
         $allowed = $this->allowedActions($mask);
-        $random = (float)$this->la->randomUniform([1], 0.0, 1.0)->toArray()[0];
+        $random = $this->scalar($this->la->randomUniform([1], 0.0, 1.0));
         if ($random < $epsilon) {
-            $index = (int)$this->la->randomUniform(
+            $index = (int)$this->scalar($this->la->randomUniform(
                 [1], 0, count($allowed) - 1, dtype:NDArray::int32
-            )->toArray()[0];
+            ));
             return $allowed[$index];
         }
         return $this->greedyActionFromState($state, $allowed, true);
@@ -128,7 +133,7 @@ class TrueOnlineSarsaLambdaAgent
         bool $randomTie,
     ) : int
     {
-        $features = $this->tileCoder->encode($state);
+        $features = $this->tileCoder->encode($this->hostArray($state));
         $bestActions = [$allowed[0]];
         $bestValue = $this->valueOfFeatures($features, $allowed[0]);
         foreach (array_slice($allowed, 1) as $action) {
@@ -142,9 +147,9 @@ class TrueOnlineSarsaLambdaAgent
         }
         if (!$randomTie) return $bestActions[0];
         // Random tie breaking prevents the initially zero training policy favouring action zero.
-        $index = (int)$this->la->randomUniform(
+        $index = (int)$this->scalar($this->la->randomUniform(
             [1], 0, count($bestActions) - 1, dtype:NDArray::int32
-        )->toArray()[0];
+        ));
         return $bestActions[$index];
     }
 
@@ -165,7 +170,7 @@ class TrueOnlineSarsaLambdaAgent
         if ($mask !== null && !$mask[$action]) {
             throw new \InvalidArgumentException('The selected action is disabled by the action mask.');
         }
-        $features = $this->tileCoder->encode($state);
+        $features = $this->tileCoder->encode($this->hostArray($state));
         $q = $this->valueOfFeatures($features, $action);
         $qNext = $terminal ? 0.0 : $this->value($nextObservation, $nextAction);
         $delta = $reward + $this->gamma * $qNext - $q;
@@ -254,5 +259,20 @@ class TrueOnlineSarsaLambdaAgent
     private function emptyTable() : array
     {
         return array_fill(0, $this->numActions, []);
+    }
+
+    private function hostArray(NDArray|array $value) : NDArray|array
+    {
+        if (!$value instanceof NDArray || $this->nn === null) {
+            return $value;
+        }
+        return $this->nn->hostArray($value);
+    }
+
+    private function scalar(NDArray $value) : float
+    {
+        $value = $this->la->scalar($value);
+        while (is_array($value)) $value = reset($value);
+        return (float)$value;
     }
 }

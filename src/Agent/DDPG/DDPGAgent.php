@@ -12,6 +12,7 @@ class DDPGAgent
 {
     private const CHECKPOINT_VERSION = 1;
     private object $la;
+    private object $backend;
     private object $g;
     private object $actorOptimizer;
     private object $criticOptimizer;
@@ -43,7 +44,8 @@ class DDPGAgent
             throw new \InvalidArgumentException('Invalid DDPG dimensions or update parameters.');
         }
         $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
-        $this->la = $nn->backend()->primaryLA();
+        $this->backend = $nn->backend();
+        $this->la = $this->backend->primaryLA();
         $this->g = $nn->gradient();
         $this->actor = new Actor($nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers);
         $this->actorTarget = new Actor($nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers);
@@ -106,12 +108,17 @@ class DDPGAgent
         $g = $this->g;
         $obsV = $g->Variable($obs); $actionsV = $g->Variable($actions);
         $rewardsV = $g->Variable($rewards); $nextObsV = $g->Variable($nextObs);
-        $donesV = $g->Variable($dones);
+        $notDones = $this->la->fill(
+            1.0,
+            $this->la->alloc($dones->shape(),dtype:$dones->dtype())
+        );
+        $notDones = $this->la->axpy($dones,$notDones,-1.0);
+        $notDonesV = $g->Variable($notDones);
 
         $nextActions = $g->mul($this->actorTarget->forward($nextObsV),$this->actLimit);
         $nextQ = $this->criticTarget->forward($nextObsV,$nextActions);
         $targetQ = $g->stopGradient($g->add($rewardsV,
-            $g->mul($this->gamma,$g->mul($g->sub(1.0,$donesV),$nextQ))));
+            $g->mul($this->gamma,$g->mul($notDonesV,$nextQ))));
 
         $critic = $this->critic;
         $criticLoss = $this->nn->with($criticTape=$g->GradientTape(), function() use($g,$critic,$obsV,$actionsV,$targetQ) {
@@ -149,14 +156,15 @@ class DDPGAgent
 
     private function clip(NDArray $action) : NDArray
     {
-        return $this->la->minimum($this->la->maximum($action,-$this->actLimit),$this->actLimit);
+        return $this->la->minimum(
+            $this->la->maximum($this->la->copy($action),-$this->actLimit),
+            $this->actLimit
+        );
     }
 
     private function scalar(Variable $value) : float
     {
-        $array = $value->value()->toArray();
-        while (is_array($array)) $array = reset($array);
-        return (float)$array;
+        return (float)$this->la->scalar($value->value());
     }
 
     public function saveWeightsToFile(string $filepath, ?bool $portable=true) : void

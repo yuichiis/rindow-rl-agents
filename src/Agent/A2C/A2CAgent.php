@@ -9,6 +9,7 @@ class A2CAgent
 {
     private const CHECKPOINT_VERSION = 4;
     private object $la;
+    private object $backend;
     private object $g;
     private object $optimizer;
     public ActorCritic $network;
@@ -43,7 +44,8 @@ class A2CAgent
             throw new \InvalidArgumentException('Invalid observation or action dimension.');
         }
         $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
-        $this->la = $nn->backend()->primaryLA();
+        $this->backend = $nn->backend();
+        $this->la = $this->backend->primaryLA();
         $this->g = $nn->gradient();
         if ($continuous && ($actionMin === null || $actionMax === null)) {
             throw new \InvalidArgumentException('Continuous actions require actionMin and actionMax.');
@@ -112,7 +114,7 @@ class A2CAgent
             if ($mask->dtype() !== NDArray::bool) {
                 $mask = $this->la->astype($mask, dtype:NDArray::bool);
             }
-            if (!in_array(true, $mask->toArray(), true)) {
+            if (!in_array(true, $this->hostArray($mask)->toArray(), true)) {
                 throw new \InvalidArgumentException('Action mask must allow at least one action.');
             }
         }
@@ -155,7 +157,8 @@ class A2CAgent
         [$probs, $value] = $this->inference($observation, $mask);
         $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
         $rand = $this->la->randomUniform([1], dtype:$probs->dtype(), low:0.0, high:1.0);
-        $action = (int)$this->la->searchsorted($thresholds, $rand, true)->toArray()[0];
+        $selected = $this->la->searchsorted($thresholds, $rand, true);
+        $action = (int)$this->hostArray($selected)->toArray()[0];
         return [$action, $value];
     }
 
@@ -168,7 +171,7 @@ class A2CAgent
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
         [$probs] = $this->inference($observation, $mask);
-        $values = $probs[0]->toArray();
+        $values = $this->hostArray($probs)[0]->toArray();
         $best = 0;
         foreach ($values as $action => $probability) {
             if ($probability > $values[$best]) $best = $action;
@@ -193,7 +196,8 @@ class A2CAgent
             $batchMask = $this->la->expandDims($mask, axis:0);
             $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
         }
-        return [$this->la->softmax($logits), (float)$value->value()->toArray()[0][0]];
+        $hostValue = $this->hostArray($value->value())->toArray();
+        return [$this->la->softmax($logits), (float)$hostValue[0][0]];
     }
 
     private function asBatch(NDArray $observation) : NDArray
@@ -219,7 +223,7 @@ class A2CAgent
         $action = $this->la->add($mu, $this->la->multiply($std, $noise));
         return [
             $this->la->squeeze($action, axis:0),
-            (float)$value->value()->toArray()[0][0],
+            (float)$this->hostArray($value->value())->toArray()[0][0],
         ];
     }
 
@@ -312,9 +316,7 @@ class A2CAgent
 
     private function scalar(object $value) : float
     {
-        $array = $value->value()->toArray();
-        while (is_array($array)) $array = reset($array);
-        return (float)$array;
+        return (float)$this->la->scalar($value->value());
     }
 
     private function clipGradients(array $gradients) : array
@@ -322,18 +324,23 @@ class A2CAgent
         if (is_infinite($this->maxGradNorm)) return $gradients;
         $sumSquares = 0.0;
         foreach ($gradients as $gradient) {
-            $stack = [$gradient->toArray()];
-            while ($stack !== []) {
-                $value = array_pop($stack);
-                if (is_array($value)) foreach ($value as $item) $stack[] = $item;
-                else $sumSquares += (float)$value * (float)$value;
+            $gradientNorm = $this->la->nrm2($gradient);
+            if ($gradientNorm instanceof NDArray) {
+                $gradientNorm = $this->hostArray($gradientNorm)->toArray();
             }
+            $gradientNorm = (float)$gradientNorm;
+            $sumSquares += $gradientNorm * $gradientNorm;
         }
         $norm = sqrt($sumSquares);
         if ($norm <= $this->maxGradNorm || $norm == 0.0) return $gradients;
         $scale = $this->maxGradNorm / ($norm + 1.0e-8);
         foreach ($gradients as $i => $gradient) $gradients[$i] = $this->la->scal($scale, $gradient);
         return $gradients;
+    }
+
+    private function hostArray(NDArray $value) : NDArray
+    {
+        return $this->backend->ndarray($value);
     }
 
     public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void

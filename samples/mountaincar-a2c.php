@@ -8,6 +8,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\A2C\A2CAgent;
 use Rindow\RL\Agents\Agent\A2C\Runner;
+use Rindow\RL\Agents\Env\MountainCar\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 
 const SEED = 42;
@@ -25,16 +26,22 @@ const MODEL_FILE = __DIR__.'/../models/mountaincar-a2c-shaped.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$env = new MountainCarV0($la);
-$evalEnv = new MountainCarV0($la);
+$env = new MountainCarV0($hostLa);
+$evalEnv = new MountainCarV0($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $agent = new A2CAgent(
     $nn,
@@ -63,7 +70,9 @@ $mountainCarReward = static function(
     float $reward,
     bool $terminated,
     bool $truncated,
-) : float {
+) use ($nn) : float {
+    $obs = $nn->hostArray($obs);
+    $nextObs = $nn->hostArray($nextObs);
     $position = (float)$obs[0];
     $velocity = (float)$obs[1];
     $nextPosition = (float)$nextObs[0];
@@ -111,7 +120,7 @@ if (is_file($modelFile)) {
     }
     if (count($history['step']) > 0) {
         $art = $plt->plot(
-            $la->array($history['step']),$la->array($history['evalReward'])
+            $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
         )[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Gym evaluation reward');

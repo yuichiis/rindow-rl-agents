@@ -4,10 +4,12 @@ require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Agent\Sarsa\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
+use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
@@ -27,15 +29,22 @@ const MODEL_FILE = __DIR__.'/../models/cartpole-true-online-sarsa-lambda.weights
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
-$env = new CartPoleV1($la);
-$evalEnv = new CartPoleV1($la);
+$env = new CartPoleV1($hostLa);
+$evalEnv = new CartPoleV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 /*
  * CartPoleの速度と角速度の観測範囲は±INFなので、通常の運動範囲を
@@ -57,6 +66,7 @@ $agent = new TrueOnlineSarsaLambdaAgent(
     lambda:LAMBDA,
     epsilon:EPSILON,
     initialValue:INITIAL_VALUE,
+    nn:$nn,
 );
 $runner = new Runner(
     $la, $env, $evalEnv, $agent, solvedReward:SOLVED_REWARD
@@ -84,9 +94,9 @@ if (is_file($modelFile)) {
         echo "Model saved: {$modelFile}\n";
     }
     if (count($history['episode']) > 0) {
-        $episodes = $la->array($history['episode']);
-        $trainArt = $plt->plot($episodes, $la->array($history['trainReward']))[0];
-        $evalArt = $plt->plot($episodes, $la->array($history['evalReward']))[0];
+        $episodes = $hostLa->array($history['episode']);
+        $trainArt = $plt->plot($episodes, $hostLa->array($history['trainReward']))[0];
+        $evalArt = $plt->plot($episodes, $hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training episodes');
         $plt->ylabel('Raw reward');
         $plt->legend([$trainArt, $evalArt], ['Training reward', 'Evaluation reward']);

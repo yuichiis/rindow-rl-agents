@@ -41,6 +41,7 @@ class Runner
     )
     {
         $this->la = $la;
+        $this->nn = $nn;
         $this->env = $env;
         $this->evalEnv = $evalEnv;
         $this->agent = $agent;
@@ -251,7 +252,7 @@ class Runner
                 $history['episodes'][] = $episodeCount;
                 $history['evalDet'][] = $deterministicReward;
                 $history['evalShaped'][] = $evaluation['transformedReward'];
-                $history['alpha'][] = $agent->alpha()->value()->toArray()[0];
+                $history['alpha'][] = $agent->alphaValue();
                 if ($evalgSDE) {
                     $history['evalgSDE'][] = $noisyReward;
                 }
@@ -281,7 +282,7 @@ class Runner
                     $deterministicReward,
                     $strEvalgSDE,
                     $shapedText,
-                    $agent->alpha()->value()->toArray()[0],
+                    $agent->alphaValue(),
                     $episodeCount,
                     $solvedText,
                     $marker

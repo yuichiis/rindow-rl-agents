@@ -11,6 +11,7 @@ class DQNAgent
 {
     private const CHECKPOINT_VERSION = 1;
     private object $la;
+    private object $backend;
     private object $g;
     private object $optimizer;
     private int $updates = 0;
@@ -41,7 +42,8 @@ class DQNAgent
             || $numActions < 2 || $batchSize < 1 || $targetUpdateInterval < 1) {
             throw new \InvalidArgumentException('Invalid DQN dimensions or update parameters.');
         }
-        $this->la = $nn->backend()->primaryLA();
+        $this->backend = $nn->backend();
+        $this->la = $this->backend->primaryLA();
         $this->g = $nn->gradient();
         $this->obsDim = is_int($obsDim) ? $obsDim : $observationShape;
         $this->qNetwork = new QNetwork($nn,$this->obsDim,$numActions,$hiddenLayers,$featureLayers);
@@ -97,7 +99,7 @@ class DQNAgent
             if ($mask->dtype() !== NDArray::bool) {
                 $mask = $this->la->astype($mask,dtype:NDArray::bool);
             }
-            if (!in_array(true,$mask->toArray(),true)) {
+            if (!in_array(true,$this->hostArray($mask)->toArray(),true)) {
                 throw new \InvalidArgumentException('Action mask must allow at least one action.');
             }
         }
@@ -132,14 +134,18 @@ class DQNAgent
         if ($epsilon < 0.0 || $epsilon > 1.0) {
             throw new \InvalidArgumentException('epsilon must be between zero and one.');
         }
-        $random = (float)$this->la->randomUniform([1], 0.0, 1.0)->toArray()[0];
+        $randomArray = $this->la->randomUniform([1], 0.0, 1.0);
+        $random = (float)$this->hostArray($randomArray)->toArray()[0];
         if ($random < $epsilon) {
             $allowed = $mask === null
                 ? range(0,$this->numActions-1)
-                : array_keys(array_filter($mask->toArray(),static fn($value)=>(bool)$value));
-            $index = (int)$this->la->randomUniform(
+                : array_keys(array_filter(
+                    $this->hostArray($mask)->toArray(),static fn($value)=>(bool)$value
+                ));
+            $indexArray = $this->la->randomUniform(
                 [1],0,count($allowed)-1,dtype:NDArray::int32
-            )->toArray()[0];
+            );
+            $index = (int)$this->hostArray($indexArray)->toArray()[0];
             return $allowed[$index];
         }
         return $this->selectActionDeterministicFromState($observation,$mask);
@@ -158,10 +164,13 @@ class DQNAgent
     {
         $batch = $this->la->copy($observation)->reshape(array_merge([1],$this->observationShape()));
         if ($this->la->isInt($batch)) $batch = $this->la->astype($batch, dtype:NDArray::float32);
-        $values = $this->qNetwork->forward($this->g->Variable($batch),false)->value()[0]->toArray();
+        $qValues = $this->qNetwork->forward($this->g->Variable($batch),false)->value();
+        $values = $this->hostArray($qValues)[0]->toArray();
         $allowed = $mask === null
             ? range(0,$this->numActions-1)
-            : array_keys(array_filter($mask->toArray(),static fn($value)=>(bool)$value));
+            : array_keys(array_filter(
+                $this->hostArray($mask)->toArray(),static fn($value)=>(bool)$value
+            ));
         $best = $allowed[0];
         foreach ($allowed as $action) {
             $value = $values[$action];
@@ -254,12 +263,12 @@ class DQNAgent
         if (is_infinite($this->maxGradNorm)) return $gradients;
         $sumSquares = 0.0;
         foreach ($gradients as $gradient) {
-            $stack = [$gradient->toArray()];
-            while ($stack !== []) {
-                $value = array_pop($stack);
-                if (is_array($value)) foreach ($value as $item) $stack[] = $item;
-                else $sumSquares += (float)$value*(float)$value;
+            $gradientNorm = $this->la->nrm2($gradient);
+            if ($gradientNorm instanceof NDArray) {
+                $gradientNorm = $this->hostArray($gradientNorm)->toArray();
             }
+            $gradientNorm = (float)$gradientNorm;
+            $sumSquares += $gradientNorm*$gradientNorm;
         }
         $norm = sqrt($sumSquares);
         if ($norm <= $this->maxGradNorm || $norm == 0.0) return $gradients;
@@ -270,9 +279,12 @@ class DQNAgent
 
     private function scalar(Variable $value) : float
     {
-        $array = $value->value()->toArray();
-        while (is_array($array)) $array = reset($array);
-        return (float)$array;
+        return (float)$this->la->scalar($value->value());
+    }
+
+    private function hostArray(NDArray $value) : NDArray
+    {
+        return $this->backend->ndarray($value);
     }
 
     public function saveWeightsToFile(string $filepath, ?bool $portable=true) : void

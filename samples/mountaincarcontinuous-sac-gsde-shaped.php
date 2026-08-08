@@ -8,6 +8,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\SAC\SACGSDEAgent;
 use Rindow\RL\Agents\Agent\SAC\Runner;
+use Rindow\RL\Agents\Env\ContinuousMountainCar\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\ContinuousMountainCar\ContinuousMountainCarV0;
 
 const SEED = 42;
@@ -32,16 +33,22 @@ const MODEL_FILE = __DIR__.'/../models/mountaincarcontinuous-sac-gsde-shaped.wei
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
 
-$env = new ContinuousMountainCarV0($la);
-$evalEnv = new ContinuousMountainCarV0($la);
+$env = new ContinuousMountainCarV0($hostLa);
+$evalEnv = new ContinuousMountainCarV0($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $obsDim = $env->observationSpace()->shape()[0];
 $actionSpace = $env->actionSpace();
@@ -71,7 +78,9 @@ $rewardFunction = static function(
     float $reward,
     bool $terminated,
     bool $truncated,
-) : float {
+) use ($nn) : float {
+    $obs = $nn->hostArray($obs);
+    $nextObs = $nn->hostArray($nextObs);
     $energy = sin(3.0*(float)$obs[0]) + 0.5*(float)$obs[1]**2;
     $nextEnergy = sin(3.0*(float)$nextObs[0]) + 0.5*(float)$nextObs[1]**2;
     return $reward+10.0*($nextEnergy-$energy);
@@ -102,9 +111,9 @@ if (is_file($modelFile)) {
     );
 
     if (count($history['step']) > 0) {
-        $steps = $la->array($history['step']);
-        $rawArt = $plt->plot($steps,$la->array($history['evalDet']))[0];
-        $shapedArt = $plt->plot($steps,$la->array($history['evalShaped']))[0];
+        $steps = $hostLa->array($history['step']);
+        $rawArt = $plt->plot($steps,$hostLa->array($history['evalDet']))[0];
+        $shapedArt = $plt->plot($steps,$hostLa->array($history['evalShaped']))[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rawArt,$shapedArt],['Gym raw reward','Shaped reward']);

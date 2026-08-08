@@ -9,6 +9,7 @@ class ReinforceAgent
 {
     private const CHECKPOINT_VERSION = 1;
     private object $la;
+    private object $backend;
     private object $g;
     private object $optimizer;
     public PolicyNetwork $network;
@@ -26,7 +27,8 @@ class ReinforceAgent
         if ($obsDim < 1 || $numActions < 2 || $learningRate <= 0.0) {
             throw new \InvalidArgumentException('Invalid REINFORCE dimensions or learning rate.');
         }
-        $this->la = $nn->backend()->primaryLA();
+        $this->backend = $nn->backend();
+        $this->la = $this->backend->primaryLA();
         $this->g = $nn->gradient();
         $this->network = new PolicyNetwork(
             $nn, $obsDim, $numActions, $hiddenLayers, $activation
@@ -47,12 +49,14 @@ class ReinforceAgent
         $probs = $this->probabilities($observation);
         $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
         $random = $this->la->randomUniform([1], dtype:$probs->dtype(), low:0.0, high:1.0);
-        return (int)$this->la->searchsorted($thresholds, $random, true)->toArray()[0];
+        $selected = $this->la->searchsorted($thresholds, $random, true);
+        return (int)$this->backend->ndarray($selected)->toArray()[0];
     }
 
     public function selectActionDeterministic(NDArray $observation) : int
     {
-        $values = $this->probabilities($observation)[0]->toArray();
+        $probabilities = $this->backend->ndarray($this->probabilities($observation));
+        $values = $probabilities[0]->toArray();
         $best = 0;
         foreach ($values as $action => $probability) {
             if ($probability > $values[$best]) $best = $action;
@@ -109,9 +113,7 @@ class ReinforceAgent
 
     private function scalar(object $value) : float
     {
-        $array = $value->value()->toArray();
-        while (is_array($array)) $array = reset($array);
-        return (float)$array;
+        return (float)$this->la->scalar($value->value());
     }
 
     private function clipGradients(array $gradients) : array
@@ -119,12 +121,12 @@ class ReinforceAgent
         if (is_infinite($this->maxGradNorm)) return $gradients;
         $sumSquares = 0.0;
         foreach ($gradients as $gradient) {
-            $stack = [$gradient->toArray()];
-            while ($stack !== []) {
-                $value = array_pop($stack);
-                if (is_array($value)) foreach ($value as $item) $stack[] = $item;
-                else $sumSquares += (float)$value * (float)$value;
+            $gradientNorm = $this->la->nrm2($gradient);
+            if ($gradientNorm instanceof NDArray) {
+                $gradientNorm = $this->backend->ndarray($gradientNorm)->toArray();
             }
+            $gradientNorm = (float)$gradientNorm;
+            $sumSquares += $gradientNorm * $gradientNorm;
         }
         $norm = sqrt($sumSquares);
         if ($norm <= $this->maxGradNorm || $norm == 0.0) return $gradients;

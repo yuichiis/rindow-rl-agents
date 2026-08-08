@@ -10,6 +10,7 @@ use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 
 use Rindow\RL\Agents\Agent\SAC\SACGSDEAgent;
 use Rindow\RL\Agents\Agent\SAC\Runner;
+use Rindow\RL\Agents\Env\Pendulum\DeviceWrapper;
 
 # ─────────────────────────────────────────────
 # ハイパーパラメータ
@@ -37,23 +38,29 @@ const MODEL_FILE       = __DIR__ . '/../models/pendulum-sac-gsde.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer' => true],$mo);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
-$env = new PendulumV1($la);
-$evalEnv = new PendulumV1($la);
+$env = new PendulumV1($hostLa);
+$evalEnv = new PendulumV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
 $stateShape = $env->observationSpace()->shape();
 $obsDim = $stateShape[0];
 $actionSpace = $env->actionSpace();
 $actDim = $actionSpace->shape()[0];
 $actLimit = 1.0; 
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 echo "gSDE latent_dim=" . GSDE_LATENT_DIM . "  reset_freq=" . GSDE_RESET_FREQ . "\n";
 echo "Env: ".ENV_ID."  obs_dim={$obsDim}  act_dim={$actDim}  act_limit={$actLimit}\n";
@@ -116,24 +123,26 @@ if (is_file($modelFile)) {
     evalgSDE: false,
     );
 
-    $steps = $la->array($history['step']);
-    $arts = [];
-    $legend = [];
-    $arts[] = $plt->plot($steps, $la->array($history['evalDet']))[0];
-    $legend[] = 'EvalDet';
-    $arts[] = $plt->plot($steps, fitplot($la, $history['alpha'], 1000, 0))[0];
-    $legend[] = 'Alpha';
-    if (count($history['updateStep']) > 0) {
-        $updateSteps = $la->array($history['updateStep']);
-        $arts[] = $plt->plot($updateSteps, fitplot($la, $history['actorLoss'], 1000, 0))[0];
-        $arts[] = $plt->plot($updateSteps, fitplot($la, $history['criticLoss'], 1000, 0))[0];
-        $legend[] = 'ActorLoss';
-        $legend[] = 'CriticLoss';
+    if (count($history['step']) > 0) {
+        $steps = $hostLa->array($history['step']);
+        $arts = [];
+        $legend = [];
+        $arts[] = $plt->plot($steps,$hostLa->array($history['evalDet']))[0];
+        $legend[] = 'EvalDet';
+        $arts[] = $plt->plot($steps,fitplot($hostLa,$history['alpha'],1000,0))[0];
+        $legend[] = 'Alpha';
+        if (count($history['updateStep']) > 0) {
+            $updateSteps = $hostLa->array($history['updateStep']);
+            $arts[] = $plt->plot($updateSteps,fitplot($hostLa,$history['actorLoss'],1000,0))[0];
+            $arts[] = $plt->plot($updateSteps,fitplot($hostLa,$history['criticLoss'],1000,0))[0];
+            $legend[] = 'ActorLoss';
+            $legend[] = 'CriticLoss';
+        }
+        $plt->xlabel('Training steps');
+        $plt->ylabel('Metric');
+        $plt->legend($arts, $legend);
+        $plt->show(filename:__DIR__.'/../graphics/pendulum-sac-gsde-history.png');
     }
-    $plt->xlabel('Training steps');
-    $plt->ylabel('Metric');
-    $plt->legend($arts, $legend);
-    $plt->show(filename:__DIR__.'/../graphics/pendulum-sac-gsde-history.png');
 
     $agent->saveWeightsToFile($modelFile);
     echo "Model weights saved: {$modelFile}\n";

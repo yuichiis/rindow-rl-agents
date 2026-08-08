@@ -205,11 +205,15 @@ class GSDEActor extends AbstractModel
         $twoSigmaZSq = $g->mul(2.0, $sigmaZSq);
         $term3 = $g->div($diffSq, $twoSigmaZSq);
         
-        $logProb = $g->sub(-0.91893853320467, $logSigma);
+        $logProb = $g->add(
+            $g->scale(-1.0,$logSigma),$g->constant(-0.91893853320467)
+        );
         $logProb = $g->sub($logProb, $term3);
 
         $yTSq = $g->square($yT);
-        $tanhCorrInner = $g->add($g->sub(1.0, $yTSq), 1e-6); # tanh 補正
+        $tanhCorrInner = $g->sub(
+            $g->constant(1.0+1e-6),$yTSq
+        ); # tanh 補正
         $tanhCorr = $g->log($tanhCorrInner);
         $logProb = $g->sub($logProb, $tanhCorr);
         

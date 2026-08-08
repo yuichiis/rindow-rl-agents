@@ -7,6 +7,7 @@ use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\PPO\PPOAgent;
 use Rindow\RL\Agents\Agent\PPO\Runner;
+use Rindow\RL\Agents\Env\Pendulum\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\Pendulum\PendulumV1;
 
 const SEED = 42;
@@ -18,16 +19,22 @@ const MODEL_FILE = __DIR__.'/../models/pendulum-ppo-gsde.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
-$la = $mo->laRawMode();
+$nn = new NeuralNetworks($mo);
+$la = $nn->la();
+$hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
+echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
-$nn = new NeuralNetworks($mo);
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
-$env = new PendulumV1($la);
-$evalEnv = new PendulumV1($la);
+$env = new PendulumV1($hostLa);
+$evalEnv = new PendulumV1($hostLa);
 rlSeedSpaces($env,$evalEnv,$seed);
+if ($la->accelerated()) {
+    $env = new DeviceWrapper($nn,$env);
+    $evalEnv = new DeviceWrapper($nn,$evalEnv);
+}
 
 $actionSpace = $env->actionSpace();
 $agent = new PPOAgent(
@@ -45,8 +52,8 @@ $agent = new PPOAgent(
     clipValueLoss:true,
     sharedBackbone:true,
     continuous:true,
-    actionMin:$actionSpace->low(),
-    actionMax:$actionSpace->high(),
+    actionMin:$nn->deviceArray($actionSpace->low()),
+    actionMax:$nn->deviceArray($actionSpace->high()),
     exploration:'gsde',
     // -1 keeps one exploration matrix for each complete PPO rollout.
     sdeSampleFreq:-1,
@@ -74,8 +81,8 @@ if (is_file($modelFile)) {
     $history = $runner->train($totalSteps, $evalEvery, $evalEpisodes, bestModelFile:$modelFile);
     if (is_file($modelFile)) $agent->loadWeightsFromFile($modelFile);
     if (count($history['step']) > 0) {
-        $steps = $la->array($history['step']);
-        $rewardArt = $plt->plot($steps, $la->array($history['evalReward']))[0];
+        $steps = $hostLa->array($history['step']);
+        $rewardArt = $plt->plot($steps, $hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rewardArt], ['PPO gSDE']);
