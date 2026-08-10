@@ -99,7 +99,7 @@ class Runner
             [$action, $value] = $this->agent->selectActionFromState($state, $actionMask);
             $envAction = $this->agent->isContinuous()
                 ? $this->agent->clipAction($action)
-                : $this->la->array($action, dtype:NDArray::int32);
+                : $action;
             [$nextRawObservation, $reward, $terminated, $truncated] = $this->env->step(
                 $envAction
             );
@@ -109,7 +109,10 @@ class Runner
             $trainingReward = $this->rewardFunction === null
                 ? $reward
                 : ($this->rewardFunction)(
-                    $rawObservation,$action,$nextRawObservation,$reward,$terminated,$truncated
+                    $rawObservation,
+                    $this->agent->isContinuous()
+                        ? $action : (int)$this->la->scalar($action),
+                    $nextRawObservation,$reward,$terminated,$truncated
                 );
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
             $this->buffer->add($state, $action, $trainingReward, $terminalForValue,

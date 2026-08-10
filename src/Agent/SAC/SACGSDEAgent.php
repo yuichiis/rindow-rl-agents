@@ -157,27 +157,44 @@ class SACGSDEAgent
         return $this->g->exp($this->logAlpha);
     }
 
-    private function rms(array $values) : float
+    /** @return array{NDArray,NDArray,NDArray} */
+    private function rangeStatistics(NDArray $values) : array
     {
-        $sum = 0.0;
+        $flat = $values->reshape([$values->size()]);
+        return [
+            $this->la->min($flat),
+            $this->la->max($flat),
+            $this->la->reduceMean($flat,axis:0),
+        ];
+    }
+
+    private function rmsStatistic(NDArray $values) : NDArray
+    {
+        $flat = $values->reshape([$values->size()]);
+        return $this->la->sqrt($this->la->reduceMean(
+            $this->la->square($this->la->copy($flat)),axis:0
+        ));
+    }
+
+    /** @param array<NDArray> $gradients */
+    private function gradientRms(array $gradients) : NDArray
+    {
+        if (count($gradients)===0) {
+            return $this->la->array(0.0,dtype:NDArray::float32);
+        }
+        $sumSquares = $this->la->zeros($this->la->alloc(
+            [],dtype:$gradients[0]->dtype()
+        ));
         $count = 0;
-        array_walk_recursive($values, function($v) use (&$sum, &$count) {
-            $sum += (float)$v * (float)$v;
-            $count++;
-        });
-        return $count ? sqrt($sum / $count) : 0.0;
-    }
-
-    private function gradientRmsList(array $grads) : array
-    {
-        return array_map(fn($v) => $this->rms($this->hostArray($v)->toArray()), $grads);
-    }
-
-    private function range(array $values) : array
-    {
-        $flat = [];
-        array_walk_recursive($values, function($v) use (&$flat) { $flat[] = (float)$v; });
-        return [min($flat), max($flat), count($flat) ? array_sum($flat) / count($flat) : 0.0];
+        foreach ($gradients as $gradient) {
+            $flat = $gradient->reshape([$gradient->size()]);
+            $squares = $this->la->square($this->la->copy($flat));
+            $this->la->axpy(
+                $this->la->reduceSum($squares,axis:0),$sumSquares
+            );
+            $count += $gradient->size();
+        }
+        return $this->la->sqrt($this->la->scal(1.0/$count,$sumSquares));
     }
 
     public function diagnostics() : array
@@ -188,31 +205,54 @@ class SACGSDEAgent
         $obs = $this->g->Variable($this->la->zeros(
             $this->la->alloc(array_merge([4],$this->observationShape()), dtype:NDArray::float32)
         ));
-        $mu = $this->hostArray($this->actor->diagnosticMu($obs)->value())->toArray();
-        [$muMin, $muMax, $muMean] = $this->range($mu);
-        [$lsMin, $lsMax, $lsMean] = $this->range(
-            $this->hostArray($this->actor->diagnosticLogStd()->value())->toArray()
+        [$muMin, $muMax, $muMean] = $this->rangeStatistics(
+            $this->actor->diagnosticMu($obs)->value()
         );
+        [$lsMin, $lsMax, $lsMean] = $this->rangeStatistics(
+            $this->actor->diagnosticLogStd()->value()
+        );
+        $zero = $this->la->array(0.0,dtype:NDArray::float32);
         [$lpMin, $lpMax, $lpMean] = $this->lastLogPi
-            ? $this->range($this->hostArray($this->lastLogPi->value())->toArray())
-            : [0.0, 0.0, 0.0];
+            ? $this->rangeStatistics($this->lastLogPi->value())
+            : [$zero, $zero, $zero];
         $sigmaZ = $this->actor->diagnosticSigmaZ();
         [$szMin, $szMax, $szMean] = $sigmaZ
-            ? $this->range($this->hostArray($sigmaZ->value())->toArray())
-            : [0.0, 0.0, 0.0];
-        $qDataMean = $this->lastQData ? $this->range($this->hostArray($this->lastQData->value())->toArray())[2] : 0.0;
-        $qPiMean = $this->lastQPi ? $this->range($this->hostArray($this->lastQPi->value())->toArray())[2] : 0.0;
-        $targetQMean = $this->lastTargetQ ? $this->range($this->hostArray($this->lastTargetQ->value())->toArray())[2] : 0.0;
-        return [
+            ? $this->rangeStatistics($sigmaZ->value())
+            : [$zero, $zero, $zero];
+        $qDataMean = $this->lastQData
+            ? $this->rangeStatistics($this->lastQData->value())[2] : $zero;
+        $qPiMean = $this->lastQPi
+            ? $this->rangeStatistics($this->lastQPi->value())[2] : $zero;
+        $targetQMean = $this->lastTargetQ
+            ? $this->rangeStatistics($this->lastTargetQ->value())[2] : $zero;
+
+        $metrics = [
             'muMean' => $muMean, 'muMin' => $muMin, 'muMax' => $muMax,
             'logStdMean' => $lsMean, 'logStdMin' => $lsMin, 'logStdMax' => $lsMax,
             'logPiMean' => $lpMean, 'logPiMin' => $lpMin, 'logPiMax' => $lpMax,
             'sigmaZMean' => $szMean, 'sigmaZMin' => $szMin, 'sigmaZMax' => $szMax,
             'qDataMean' => $qDataMean, 'qPiMean' => $qPiMean, 'targetQMean' => $targetQMean,
-            'actorGradRms' => $this->rms(array_map(fn($v)=>$this->hostArray($v)->toArray(), $this->lastActorGrads)),
-            'actorGradRmsByVar' => $this->gradientRmsList($this->lastActorGrads),
-            'criticGradRms' => $this->rms(array_map(fn($v)=>$this->hostArray($v)->toArray(), $this->lastCriticGrads)),
+            'actorGradRms' => $this->gradientRms($this->lastActorGrads),
+            'criticGradRms' => $this->gradientRms($this->lastCriticGrads),
         ];
+        $actorGradKeys = [];
+        foreach ($this->lastActorGrads as $i => $gradient) {
+            $key = "actorGradRmsByVar.$i";
+            $actorGradKeys[] = $key;
+            $metrics[$key] = $this->rmsStatistic($gradient);
+        }
+
+        // All diagnostics cross the device boundary in one small vector.
+        $values = $this->hostArray(
+            $this->la->stack(array_values($metrics))
+        )->toArray();
+        $diagnostics = array_combine(array_keys($metrics),array_map('floatval',$values));
+        $diagnostics['actorGradRmsByVar'] = [];
+        foreach ($actorGradKeys as $key) {
+            $diagnostics['actorGradRmsByVar'][] = $diagnostics[$key];
+            unset($diagnostics[$key]);
+        }
+        return $diagnostics;
     }
 
 

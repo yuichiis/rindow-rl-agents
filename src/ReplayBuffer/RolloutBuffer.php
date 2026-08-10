@@ -14,10 +14,7 @@ class RolloutBuffer
     private ?NDArray $actionMasks = null;
     private array $terminated = [];
     private array $episodeEnds = [];
-    private array $rewardValues = [];
-    private array $stateValues = [];
     private int $index = 0;
-    private bool $accelerated;
 
     public function __construct(
         private object $la,
@@ -48,8 +45,6 @@ class RolloutBuffer
                 'Action masks are only supported for discrete actions.'
             );
         }
-        $this->accelerated = $la->accelerated();
-
         $this->observations = $la->zeros($la->alloc(
             array_merge([$capacity],$observationShape),dtype:NDArray::float32
         ));
@@ -76,8 +71,8 @@ class RolloutBuffer
         float $reward,
         bool $terminated,
         bool $episodeEnd,
-        float $value,
-        ?float $logProbability=null,
+        float|NDArray $value,
+        float|NDArray|null $logProbability=null,
         ?NDArray $actionMask=null,
     ) : void {
         if ($this->full()) {
@@ -106,23 +101,21 @@ class RolloutBuffer
         $rewardValue = $reward;
         $stateValue = $value;
         $logProbabilityValue = $logProbability;
-        if ($this->accelerated) {
-            if (!($action instanceof NDArray)) {
-                $actionValue = $this->la->array($action,dtype:NDArray::int32);
-            }
-            $rewardValue = $this->la->array($reward,dtype:NDArray::float32);
+        if (!($action instanceof NDArray)) {
+            $actionValue = $this->la->array($action,dtype:NDArray::int32);
+        }
+        $rewardValue = $this->la->array($reward,dtype:NDArray::float32);
+        if (!($value instanceof NDArray)) {
             $stateValue = $this->la->array($value,dtype:NDArray::float32);
-            if ($logProbability !== null) {
-                $logProbabilityValue = $this->la->array(
-                    $logProbability,dtype:NDArray::float32
-                );
-            }
+        }
+        if ($logProbability !== null && !($logProbability instanceof NDArray)) {
+            $logProbabilityValue = $this->la->array(
+                $logProbability,dtype:NDArray::float32
+            );
         }
         $this->actions[$i] = $actionValue;
         $this->rewards[$i] = $rewardValue;
         $this->values[$i] = $stateValue;
-        $this->rewardValues[$i] = $reward;
-        $this->stateValues[$i] = $value;
         $this->terminated[$i] = $terminated;
         $this->episodeEnds[$i] = $episodeEnd;
         if ($this->logProbabilities !== null) {
@@ -151,13 +144,19 @@ class RolloutBuffer
         }
         $advantageValues = array_fill(0,$size,0.0);
         $returnValues = array_fill(0,$size,0.0);
+        $rewardValues = $this->la->toNDArray(
+            $this->la->slice($this->rewards,[0],[$size])
+        )->toArray();
+        $stateValues = $this->la->toNDArray(
+            $this->la->slice($this->values,[0],[$size])
+        )->toArray();
         $gae = 0.0;
         for ($i = $size-1; $i >= 0; $i--) {
-            $value = $this->stateValues[$i];
+            $value = $stateValues[$i];
             $nextValue = $this->terminated[$i]
                 ? 0.0
-                : ($i+1 < $size ? $this->stateValues[$i+1] : $lastValue);
-            $delta = $this->rewardValues[$i]+$gamma*$nextValue-$value;
+                : ($i+1 < $size ? $stateValues[$i+1] : $lastValue);
+            $delta = $rewardValues[$i]+$gamma*$nextValue-$value;
             $gae = $delta+$gamma*$gaeLambda*($this->episodeEnds[$i] ? 0.0 : 1.0)*$gae;
             $advantageValues[$i] = $gae;
             $returnValues[$i] = $gae+$value;
@@ -199,7 +198,5 @@ class RolloutBuffer
         $this->index = 0;
         $this->terminated = [];
         $this->episodeEnds = [];
-        $this->rewardValues = [];
-        $this->stateValues = [];
     }
 }

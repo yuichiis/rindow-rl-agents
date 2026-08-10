@@ -14,7 +14,6 @@ class ReplayBuffer
     private NDArray $dones;
     private ?NDArray $nextActionMasks = null;
     private bool $continuousActions;
-    private bool $accelerated;
 
     public function __construct(
         private object $la,
@@ -47,7 +46,6 @@ class ReplayBuffer
         $bufferShape = array_merge([$capacity],$observationShape);
         $continuousActions = $actionDimension !== null;
         $this->continuousActions = $continuousActions;
-        $this->accelerated = $la->accelerated();
         $this->observations = $la->zeros($la->alloc($bufferShape,dtype:NDArray::float32));
         $this->actions = $la->zeros($la->alloc(
             $continuousActions ? [$capacity,$actionDimension] : [$capacity],
@@ -77,14 +75,12 @@ class ReplayBuffer
         $actionValue = $action;
         $rewardValue = $reward;
         $doneValue = $done ? 1.0 : 0.0;
-        if ($this->accelerated) {
-            $actionValue = $action instanceof NDArray ? $action : $this->la->array(
-                $action,
-                dtype:$this->continuousActions ? NDArray::float32 : NDArray::int32,
-            );
-            $rewardValue = $this->la->array($reward,dtype:NDArray::float32);
-            $doneValue = $this->la->array($doneValue,dtype:NDArray::float32);
-        }
+        $actionValue = $action instanceof NDArray ? $action : $this->la->array(
+            $action,
+            dtype:$this->continuousActions ? NDArray::float32 : NDArray::int32,
+        );
+        $rewardValue = $this->la->array($reward,dtype:NDArray::float32);
+        $doneValue = $this->la->array($doneValue,dtype:NDArray::float32);
         $this->actions[$i] = $actionValue;
         if ($this->continuousActions) {
             $this->rewards[$i][0] = $rewardValue;

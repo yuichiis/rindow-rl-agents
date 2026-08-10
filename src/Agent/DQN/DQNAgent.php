@@ -2,6 +2,8 @@
 namespace Rindow\RL\Agents\Agent\DQN;
 
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
+use Rindow\RL\Agents\Util\GradientClipping;
+use Rindow\RL\Agents\Util\ActionMask;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
@@ -99,7 +101,7 @@ class DQNAgent
             if ($mask->dtype() !== NDArray::bool) {
                 $mask = $this->la->astype($mask,dtype:NDArray::bool);
             }
-            if (!in_array(true,$this->hostArray($mask)->toArray(),true)) {
+            if (!ActionMask::hasAny($this->la,$mask)) {
                 throw new \InvalidArgumentException('Action mask must allow at least one action.');
             }
         }
@@ -260,21 +262,9 @@ class DQNAgent
 
     private function clipGradients(array $gradients) : array
     {
-        if (is_infinite($this->maxGradNorm)) return $gradients;
-        $sumSquares = 0.0;
-        foreach ($gradients as $gradient) {
-            $gradientNorm = $this->la->nrm2($gradient);
-            if ($gradientNorm instanceof NDArray) {
-                $gradientNorm = $this->hostArray($gradientNorm)->toArray();
-            }
-            $gradientNorm = (float)$gradientNorm;
-            $sumSquares += $gradientNorm*$gradientNorm;
-        }
-        $norm = sqrt($sumSquares);
-        if ($norm <= $this->maxGradNorm || $norm == 0.0) return $gradients;
-        $scale = $this->maxGradNorm/($norm+1.0e-8);
-        foreach ($gradients as $i=>$gradient) $gradients[$i] = $this->la->scal($scale,$gradient);
-        return $gradients;
+        return GradientClipping::clipByGlobalNorm(
+            $this->la,$gradients,$this->maxGradNorm
+        );
     }
 
     private function scalar(Variable $value) : float

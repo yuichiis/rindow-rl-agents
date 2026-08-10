@@ -3,6 +3,7 @@ namespace Rindow\RL\Agents\Agent\Reinforce;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\RL\Agents\Util\GradientClipping;
 
 /** Monte Carlo policy-gradient agent for discrete action spaces. */
 class ReinforceAgent
@@ -47,21 +48,15 @@ class ReinforceAgent
     public function selectAction(NDArray $observation) : int
     {
         $probs = $this->probabilities($observation);
-        $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
-        $random = $this->la->randomUniform([1], dtype:$probs->dtype(), low:0.0, high:1.0);
-        $selected = $this->la->searchsorted($thresholds, $random, true);
-        return (int)$this->backend->ndarray($selected)->toArray()[0];
+        $selected = $this->la->randomCategorical($probs);
+        return (int)$this->la->scalar($selected)[0];
     }
 
     public function selectActionDeterministic(NDArray $observation) : int
     {
-        $probabilities = $this->backend->ndarray($this->probabilities($observation));
-        $values = $probabilities[0]->toArray();
-        $best = 0;
-        foreach ($values as $action => $probability) {
-            if ($probability > $values[$best]) $best = $action;
-        }
-        return $best;
+        $probabilities = $this->probabilities($observation);
+        $best = $this->la->reduceArgMax($probabilities,axis:1);
+        return (int)$this->la->scalar($best)[0];
     }
 
     private function probabilities(NDArray $observation) : NDArray
@@ -118,23 +113,9 @@ class ReinforceAgent
 
     private function clipGradients(array $gradients) : array
     {
-        if (is_infinite($this->maxGradNorm)) return $gradients;
-        $sumSquares = 0.0;
-        foreach ($gradients as $gradient) {
-            $gradientNorm = $this->la->nrm2($gradient);
-            if ($gradientNorm instanceof NDArray) {
-                $gradientNorm = $this->backend->ndarray($gradientNorm)->toArray();
-            }
-            $gradientNorm = (float)$gradientNorm;
-            $sumSquares += $gradientNorm * $gradientNorm;
-        }
-        $norm = sqrt($sumSquares);
-        if ($norm <= $this->maxGradNorm || $norm == 0.0) return $gradients;
-        $scale = $this->maxGradNorm / ($norm + 1.0e-8);
-        foreach ($gradients as $i => $gradient) {
-            $gradients[$i] = $this->la->scal($scale, $gradient);
-        }
-        return $gradients;
+        return GradientClipping::clipByGlobalNorm(
+            $this->la,$gradients,$this->maxGradNorm
+        );
     }
 
     public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void

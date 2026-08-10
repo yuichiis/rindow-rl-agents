@@ -3,6 +3,8 @@ namespace Rindow\RL\Agents\Agent\PPO;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\RL\Agents\Util\GradientClipping;
+use Rindow\RL\Agents\Util\ActionMask;
 
 /** 離散行動とGaussian/gSDE連続行動に対応するPPOエージェント。 */
 class PPOAgent
@@ -133,7 +135,7 @@ class PPOAgent
             if ($mask->dtype() !== NDArray::bool) {
                 $mask = $this->la->astype($mask, dtype:NDArray::bool);
             }
-            if (!in_array(true, $this->hostArray($mask)->toArray(), true)) {
+            if (!ActionMask::hasAny($this->la,$mask)) {
                 throw new \InvalidArgumentException('Action mask must allow at least one action.');
             }
         }
@@ -153,31 +155,28 @@ class PPOAgent
             : $state;
     }
 
-    /** @return array{mixed,float,float} action, log probability, value */
+    /** @return array{NDArray,NDArray,NDArray} action, log probability, value */
     public function selectAction(NDArray|array $observation) : array
     {
         [$observation, $mask] = $this->parseObservation($observation);
         return $this->selectActionFromState($observation, $mask);
     }
 
-    /** @return array{mixed,float,float} action, log probability, value */
+    /** @return array{NDArray,NDArray,NDArray} action, log probability, value */
     public function selectActionFromState(NDArray $observation, ?NDArray $mask = null) : array
     {
         if ($this->continuous) return $this->selectContinuousAction($observation);
         [$probs, $value] = $this->inference($observation, $mask);
-        // Match the legacy Random::randomCategorical implementation exactly:
-        // it draws a LA randomUniform value, then applies cumsum/searchsorted.
-        // Calling the newer convenience randomCategorical() can use a
-        // different backend path and consume a different RNG sequence.
-        $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
-        $rand = $this->la->randomUniform(
-            [1], dtype:$probs->dtype(), low:0.0, high:1.0
-        );
-        $selected = $this->la->searchsorted($thresholds, $rand, true);
-        $action = (int)$this->hostArray($selected)->toArray()[0];
-        $hostProbs = $this->hostArray($probs)->toArray();
-        $p = max(1.0e-8, (float)$hostProbs[0][$action]);
-        return [$action, log($p), $value];
+        $selected = $this->la->randomCategorical($probs);
+        $selectedProbability = $this->la->gather($probs,$selected,axis:1);
+        $logProbability = $this->la->log($this->la->maximum(
+            $this->la->copy($selectedProbability),1.0e-8
+        ));
+        return [
+            $this->la->squeeze($selected,axis:0),
+            $this->la->squeeze($logProbability,axis:0),
+            $value,
+        ];
     }
 
     private function selectContinuousAction(NDArray $observation) : array
@@ -194,7 +193,7 @@ class PPOAgent
             // its PPO likelihood is the marginal state-dependent Gaussian.
             $logp = $this->gaussianLogProb($action, $mean->value(), $ls);
             return [$this->la->squeeze($action, axis:0), $logp,
-                (float)$this->hostArray($value->value())->toArray()[0][0]];
+                $this->la->copy($value->value())->reshape([])];
         }
         [$mean, $value, $logStd] = $this->network->forward($this->g->Variable($batch), false);
         $mu = $mean->value();
@@ -204,7 +203,7 @@ class PPOAgent
         $action = $this->la->add($mu, $this->la->multiply($std, $noise));
         $logp = $this->gaussianLogProb($action, $mu, $ls);
         return [$this->la->squeeze($action, axis:0), $logp,
-            (float)$this->hostArray($value->value())->toArray()[0][0]];
+            $this->la->copy($value->value())->reshape([])];
     }
 
     public function selectActionDeterministic(NDArray|array $observation) : mixed
@@ -216,14 +215,8 @@ class PPOAgent
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
         [$probs] = $this->inference($observation, $mask);
-        $values = $this->hostArray($probs)[0]->toArray();
-        $best = 0;
-        foreach ($values as $action => $probability) {
-            if ($probability > $values[$best]) {
-                $best = $action;
-            }
-        }
-        return $best;
+        $best = $this->la->reduceArgMax($probs,axis:1);
+        return (int)$this->la->scalar($best)[0];
     }
 
     private function gaussianLogProb(mixed $actions, mixed $mean, mixed $logStd) : mixed
@@ -236,11 +229,9 @@ class PPOAgent
                 $this->la->scal(-0.5, $this->la->square($z)),
                 $this->la->scal(-1.0, $logStd)
             );
-            $value = $this->hostArray(
-                $this->la->reduceSum($term, axis:1)
-            )->toArray();
-            while (is_array($value)) $value = reset($value);
-            return (float)$value;
+            return $this->la->squeeze(
+                $this->la->reduceSum($term, axis:1),axis:0
+            );
         }
         $g = $this->g;
         $actionConst = $g->constant($this->la->copy($actions));
@@ -252,7 +243,7 @@ class PPOAgent
     {
         [$observation, $mask] = $this->parseObservation($observation);
         [, $value] = $this->inference($observation, $mask);
-        return $value;
+        return (float)$this->la->scalar($value);
     }
 
     private function inference(NDArray $observation, ?NDArray $mask = null) : array
@@ -266,8 +257,7 @@ class PPOAgent
             $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
         }
         $probs = $this->la->softmax($logits);
-        return [$probs,
-            (float)$this->hostArray($value->value())->toArray()[0][0]];
+        return [$probs,$this->la->copy($value->value())->reshape([])];
     }
 
     private function asBatch(NDArray $observation) : NDArray
@@ -305,30 +295,12 @@ class PPOAgent
         $policyTotal = $valueTotal = $entropyTotal = 0.0;
         $updates = 0;
         for ($epoch = 0; $epoch < $this->epochs; $epoch++) {
-            // Match NDArrayDataset's shuffle semantics used by the old PPO:
-            // shuffle batch blocks first, then shuffle items inside each block.
-            // PHP's shuffle() uses a different RNG stream and breaks seeded
-            // reproducibility even when the LA seed is identical.
-            $batchCount = (int)ceil($count / $this->batchSize);
-            $batchOrder = $batchCount > 1
-                ? $this->hostArray($this->la->randomSequence($batchCount))->toArray()
-                : null;
-            for ($batchNo = 0; $batchNo < $batchCount; $batchNo++) {
-                $block = $batchOrder === null ? 0 : (int)$batchOrder[$batchNo];
-                $start = $block * $this->batchSize;
-                $size = min($this->batchSize, $count - $start);
-                if ($size > 1) {
-                    $itemOrder = $this->hostArray(
-                        $this->la->randomSequence($size)
-                    )->toArray();
-                    $batchIndices = [];
-                    for ($i = 0; $i < $size; $i++) {
-                        $batchIndices[] = $start + (int)$itemOrder[$i];
-                    }
-                } else {
-                    $batchIndices = [$start];
-                }
-                $idx = $this->la->array($batchIndices, dtype:NDArray::int32);
+            // Keep the permutation and mini-batch indices on the current
+            // device.  Only the slice offset and size are PHP scalars.
+            $permutation = $this->la->randomSequence($count);
+            for ($offset = 0; $offset < $count; $offset += $this->batchSize) {
+                $size = min($this->batchSize, $count - $offset);
+                $idx = $this->la->slice($permutation,[$offset],[$size]);
                 $obs = $this->la->gather($observations, $idx);
                 $act = $this->la->gather($actions, $idx);
                 $oldLog = $this->la->gather($oldLogProbs, $idx);
@@ -452,24 +424,9 @@ class PPOAgent
 
     private function clipGradients(array $gradients) : array
     {
-        $sumSquares = 0.0;
-        foreach ($gradients as $gradient) {
-            $gradientNorm = $this->la->nrm2($gradient);
-            if ($gradientNorm instanceof NDArray) {
-                $gradientNorm = $this->hostArray($gradientNorm)->toArray();
-            }
-            $gradientNorm = (float)$gradientNorm;
-            $sumSquares += $gradientNorm * $gradientNorm;
-        }
-        $norm = sqrt($sumSquares);
-        if ($norm <= $this->maxGradNorm || $norm == 0.0) {
-            return $gradients;
-        }
-        $scale = $this->maxGradNorm / ($norm + 1.0e-8);
-        foreach ($gradients as $i => $gradient) {
-            $gradients[$i] = $this->la->scal($scale, $gradient);
-        }
-        return $gradients;
+        return GradientClipping::clipByGlobalNorm(
+            $this->la,$gradients,$this->maxGradNorm
+        );
     }
 
     private function hostArray(NDArray $value) : NDArray

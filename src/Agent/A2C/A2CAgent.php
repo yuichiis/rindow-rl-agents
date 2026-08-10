@@ -3,6 +3,8 @@ namespace Rindow\RL\Agents\Agent\A2C;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\RL\Agents\Util\GradientClipping;
+use Rindow\RL\Agents\Util\ActionMask;
 
 /** Synchronous advantage actor-critic for discrete and Gaussian continuous actions. */
 class A2CAgent
@@ -114,7 +116,7 @@ class A2CAgent
             if ($mask->dtype() !== NDArray::bool) {
                 $mask = $this->la->astype($mask, dtype:NDArray::bool);
             }
-            if (!in_array(true, $this->hostArray($mask)->toArray(), true)) {
+            if (!ActionMask::hasAny($this->la,$mask)) {
                 throw new \InvalidArgumentException('Action mask must allow at least one action.');
             }
         }
@@ -143,23 +145,20 @@ class A2CAgent
         return $action;
     }
 
-    /** @return array{int|NDArray,float} sampled action and V(s) */
+    /** @return array{NDArray,NDArray} sampled action and V(s) */
     public function selectAction(NDArray|array $observation) : array
     {
         [$observation, $mask] = $this->parseObservation($observation);
         return $this->selectActionFromState($observation, $mask);
     }
 
-    /** @return array{int|NDArray,float} sampled action and V(s) */
+    /** @return array{NDArray,NDArray} sampled action and V(s) */
     public function selectActionFromState(NDArray $observation, ?NDArray $mask = null) : array
     {
         if ($this->continuous) return $this->selectContinuousAction($observation);
         [$probs, $value] = $this->inference($observation, $mask);
-        $thresholds = $this->la->cumsum($this->la->copy($probs), axis:-1);
-        $rand = $this->la->randomUniform([1], dtype:$probs->dtype(), low:0.0, high:1.0);
-        $selected = $this->la->searchsorted($thresholds, $rand, true);
-        $action = (int)$this->hostArray($selected)->toArray()[0];
-        return [$action, $value];
+        $selected = $this->la->randomCategorical($probs);
+        return [$this->la->squeeze($selected,axis:0), $value];
     }
 
     public function selectActionDeterministic(NDArray|array $observation) : int|NDArray
@@ -171,22 +170,18 @@ class A2CAgent
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
         [$probs] = $this->inference($observation, $mask);
-        $values = $this->hostArray($probs)[0]->toArray();
-        $best = 0;
-        foreach ($values as $action => $probability) {
-            if ($probability > $values[$best]) $best = $action;
-        }
-        return $best;
+        $best = $this->la->reduceArgMax($probs,axis:1);
+        return (int)$this->la->scalar($best)[0];
     }
 
     public function value(NDArray|array $observation) : float
     {
         [$observation, $mask] = $this->parseObservation($observation);
         [, $value] = $this->inference($observation, $mask);
-        return $value;
+        return (float)$this->la->scalar($value);
     }
 
-    /** @return array{NDArray,float} */
+    /** @return array{NDArray,NDArray} */
     private function inference(NDArray $observation, ?NDArray $mask = null) : array
     {
         $batch = $this->asBatch($observation);
@@ -196,8 +191,10 @@ class A2CAgent
             $batchMask = $this->la->expandDims($mask, axis:0);
             $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
         }
-        $hostValue = $this->hostArray($value->value())->toArray();
-        return [$this->la->softmax($logits), (float)$hostValue[0][0]];
+        return [
+            $this->la->softmax($logits),
+            $this->la->copy($value->value())->reshape([]),
+        ];
     }
 
     private function asBatch(NDArray $observation) : NDArray
@@ -210,7 +207,7 @@ class A2CAgent
         );
     }
 
-    /** @return array{NDArray,float} */
+    /** @return array{NDArray,NDArray} */
     private function selectContinuousAction(NDArray $observation) : array
     {
         [$mean, $value, $logStd] = $this->network->forward(
@@ -223,7 +220,7 @@ class A2CAgent
         $action = $this->la->add($mu, $this->la->multiply($std, $noise));
         return [
             $this->la->squeeze($action, axis:0),
-            (float)$this->hostArray($value->value())->toArray()[0][0],
+            $this->la->copy($value->value())->reshape([]),
         ];
     }
 
@@ -321,21 +318,9 @@ class A2CAgent
 
     private function clipGradients(array $gradients) : array
     {
-        if (is_infinite($this->maxGradNorm)) return $gradients;
-        $sumSquares = 0.0;
-        foreach ($gradients as $gradient) {
-            $gradientNorm = $this->la->nrm2($gradient);
-            if ($gradientNorm instanceof NDArray) {
-                $gradientNorm = $this->hostArray($gradientNorm)->toArray();
-            }
-            $gradientNorm = (float)$gradientNorm;
-            $sumSquares += $gradientNorm * $gradientNorm;
-        }
-        $norm = sqrt($sumSquares);
-        if ($norm <= $this->maxGradNorm || $norm == 0.0) return $gradients;
-        $scale = $this->maxGradNorm / ($norm + 1.0e-8);
-        foreach ($gradients as $i => $gradient) $gradients[$i] = $this->la->scal($scale, $gradient);
-        return $gradients;
+        return GradientClipping::clipByGlobalNorm(
+            $this->la,$gradients,$this->maxGradNorm
+        );
     }
 
     private function hostArray(NDArray $value) : NDArray

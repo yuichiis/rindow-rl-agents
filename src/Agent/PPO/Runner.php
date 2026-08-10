@@ -141,7 +141,7 @@ class Runner
             }
             $envAction = $this->agent->isContinuous()
                 ? $this->agent->clipAction($action)
-                : $this->la->array($action, dtype:NDArray::int32);
+                : $action;
             [$nextRawObs, $reward, $terminated, $truncated] = $this->env->step(
                 $envAction
             );
@@ -149,7 +149,10 @@ class Runner
             $trainingReward = $this->rewardFunction === null
                 ? $reward
                 : ($this->rewardFunction)(
-                    $rawObs,$action,$nextRawObs,$reward,$terminated,$truncated
+                    $rawObs,
+                    $this->agent->isContinuous()
+                        ? $action : (int)$this->la->scalar($action),
+                    $nextRawObs,$reward,$terminated,$truncated
                 );
             $terminalForValue = $terminated || ($truncated && !$this->bootstrapTruncated);
             $this->buffer->add(
