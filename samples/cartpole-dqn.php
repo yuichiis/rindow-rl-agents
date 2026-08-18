@@ -28,6 +28,8 @@ const EVAL_EPISODES = 30;
 const SOLVED_REWARD = 475.0;
 const SOLVED_EVALUATIONS = 3;
 const MODEL_FILE = __DIR__.'/../models/cartpole-dqn.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/cartpole-dqn-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/cartpole-dqn-animation.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -58,6 +60,7 @@ $agent = new DQNAgent(
     batchSize:BATCH_SIZE,
     targetUpdateInterval:TARGET_UPDATE_INTERVAL,
     maxGradNorm:10.0,
+    ddqn:true,
 );
 $agent->summary();
 $runner = new Runner(
@@ -68,6 +71,8 @@ $runner = new Runner(
     solvedEvaluations:SOLVED_EVALUATIONS,
 );
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -87,7 +92,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$art],['DQN']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-dqn-history.png');
+        $plt->show(filename:$historyFile);
     }
     if (count($history['step']) > 0) {
         // Runner saves every new best checkpoint. Restore it for the demo and
@@ -118,6 +123,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         }
         echo "Test Episode {$episode}, Steps: {$steps}, Total Reward: {$totalReward}\n";
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/cartpole-dqn-trained.gif');
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

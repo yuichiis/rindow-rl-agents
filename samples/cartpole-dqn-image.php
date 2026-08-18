@@ -14,32 +14,29 @@ use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
 const TOTAL_STEPS = 300_000;
-// Image transitions are much larger than vector observations. At 34x100x4,
-// both observation arrays in this buffer use about 218 MB as float32.
+// An 84x84x4 float32 transition takes about 221 KiB for current and next
+// observations. BUFFER_SIZE=2,000 therefore needs roughly 431 MiB.
 const BUFFER_SIZE = 2_000;
 const BATCH_SIZE = 32;
 const LEARNING_STARTS = 1_000;
 const TRAIN_EVERY = 4;
 const TARGET_UPDATE_INTERVAL = 1_000;
 const GAMMA = 0.99;
-const LEARNING_RATE = 2.5e-4;
+const LEARNING_RATE = 1.0e-4;
 const EPSILON_START = 1.0;
 const EPSILON_END = 0.05;
-const EPSILON_DECAY_STEPS = 100_000;
+const EPSILON_DECAY_STEPS = 50_000;
 const EVAL_EVERY = 5_000;
 const EVAL_EPISODES = 10;
 const SOLVED_REWARD = 475.0;
 const SOLVED_EVALUATIONS = 3;
-const MODEL_FILE = __DIR__.'/../models/cartpole-dqn-image.weights';
+const MODEL_FILE = __DIR__.'/../models/cartpole-double-dqn-image.weights';
 
-const CROP_TOP = 60;
-const CROP_HEIGHT = 200;
+const SCREEN_HEIGHT = 400;
 const SCREEN_WIDTH = 600;
-const DOWNSAMPLE = 6;
+const IMAGE_SIZE = 84;
 const FRAME_STACK = 4;
-const IMAGE_HEIGHT = 34; // count(range(0, CROP_HEIGHT-1, DOWNSAMPLE))
-const IMAGE_WIDTH = 100; // count(range(0, SCREEN_WIDTH-1, DOWNSAMPLE))
-const IMAGE_SHAPE = [IMAGE_HEIGHT,IMAGE_WIDTH,FRAME_STACK];
+const IMAGE_SHAPE = [IMAGE_SIZE,IMAGE_SIZE,FRAME_STACK];
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -60,33 +57,37 @@ if ($la->accelerated()) {
     $evalEnv = new DeviceWrapper($nn,$evalEnv);
 }
 
-$rowIndices = $hostLa->array(range(0,CROP_HEIGHT-1,DOWNSAMPLE),dtype:NDArray::int32);
-$columnIndices = $hostLa->array(range(0,SCREEN_WIDTH-1,DOWNSAMPLE),dtype:NDArray::int32);
+// Nearest-neighbour sample positions for resizing the complete 400x600 screen.
+// Keeping the whole rail visible preserves the cart's absolute position.
+$rowValues = [];
+$columnValues = [];
+for ($i=0; $i<IMAGE_SIZE; $i++) {
+    $rowValues[] = (int)round($i*(SCREEN_HEIGHT-1)/(IMAGE_SIZE-1));
+    $columnValues[] = (int)round($i*(SCREEN_WIDTH-1)/(IMAGE_SIZE-1));
+}
+$rowIndices = $hostLa->array($rowValues,dtype:NDArray::int32);
+$columnIndices = $hostLa->array($columnValues,dtype:NDArray::int32);
 $frameHistory = new WeakMap();
 
-// The third argument is true immediately after reset. Keeping separate histories
-// for env and evalEnv prevents evaluations from contaminating training frames.
 $imageObservation = static function(
     Environment $environment,
     mixed $rawObservation,
     bool $reset=false,
 ) use ($nn,$hostLa,$rowIndices,$columnIndices,$frameHistory) : NDArray {
-    $rgb = $environment->render(mode:'rgb_array');       // [400,600,3]
-    $croppedView = $hostLa->slice(
-        $rgb,
-        begin:[CROP_TOP,0],
-        size:[CROP_HEIGHT,SCREEN_WIDTH],
-    );
-    // imagecopy materializes the selected image area as an independent NDArray.
-    $small = $hostLa->gather($croppedView,$rowIndices);
+    $rgb = $environment->render(mode:'rgb_array'); // [400,600,3]
+
+    // gather() samples its first dimension. Transpose once to sample width.
+    $small = $hostLa->gather($rgb,$rowIndices);
     $small = $hostLa->transpose($small,[1,0,2]);
     $small = $hostLa->gather($small,$columnIndices);
-    $small = $hostLa->transpose($small,[1,0,2]);
+    $small = $hostLa->transpose($small,[1,0,2]); // [84,84,3]
+
     $small = $hostLa->astype($small,dtype:NDArray::float32);
     $gray = $hostLa->reduceMean($small,axis:2);
     $gray = $hostLa->scal(1.0/255.0,$gray);
 
     if ($reset || !isset($frameHistory[$environment])) {
+        // Repeating the first frame avoids artificial motion at episode start.
         $frameHistory[$environment] = array_fill(0,FRAME_STACK,$gray);
     } else {
         $frames = $frameHistory[$environment];
@@ -94,8 +95,7 @@ $imageObservation = static function(
         $frames[] = $gray;
         $frameHistory[$environment] = $frames;
     }
-    $frames = $hostLa->stack($frameHistory[$environment],axis:2);
-    return $nn->deviceArray($frames);
+    return $nn->deviceArray($hostLa->stack($frameHistory[$environment],axis:2)); // [84,84,4]
 };
 
 $agent = new DQNAgent(
@@ -136,6 +136,7 @@ $agent = new DQNAgent(
     batchSize:BATCH_SIZE,
     targetUpdateInterval:TARGET_UPDATE_INTERVAL,
     maxGradNorm:10.0,
+    ddqn:true,
 );
 $agent->summary();
 
@@ -150,9 +151,9 @@ $runner = new Runner(
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
-$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+$evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $learningStarts = rlEnvInt('RL_LEARNING_STARTS',LEARNING_STARTS);
 $trainEvery = rlEnvInt('RL_TRAIN_EVERY',TRAIN_EVERY);
 
@@ -165,13 +166,11 @@ if (is_file($modelFile)) {
         EPSILON_START,EPSILON_END,EPSILON_DECAY_STEPS,$modelFile
     );
     if (count($history['step']) > 0) {
-        $art = $plt->plot(
-            $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
-        )[0];
+        $art = $plt->plot($hostLa->array($history['step']),$hostLa->array($history['evalReward']))[0];
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
-        $plt->legend([$art],['Image DQN']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-dqn-image-history.png');
+        $plt->legend([$art],['Image Double DQN']);
+        $plt->show(filename:__DIR__.'/../graphics/cartpole-double-dqn-image-history.png');
         $agent->loadWeightsFromFile($modelFile);
         echo "Best model restored: {$modelFile}\n";
     } else {
@@ -200,6 +199,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         }
         echo "Test Episode {$episode}, Steps: {$steps}, Total Reward: {$totalReward}\n";
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/cartpole-dqn-image-trained.gif');
+    $filename = $env->show(path:__DIR__.'/../graphics/cartpole-double-dqn-image-trained.gif');
     echo "filename: {$filename}\n";
 }

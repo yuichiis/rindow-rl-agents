@@ -22,6 +22,7 @@ class Runner
     private mixed $rewardFunction;
     private mixed $observationFunction;
     private ProgressBar $progressBar;
+    private bool $solved = false;
 
     public function __construct(
         object $la,
@@ -170,6 +171,7 @@ class Runner
         $buffer = $this->buffer;
         $evalgSDE ??= false;
 
+        $this->solved = false;
         $this->progressBar = new ProgressBar();
         
         [$rawObs,$info] = $env->reset();
@@ -302,6 +304,7 @@ class Runner
                     && $solvedCount >= $this->solvedEvaluations) {
                     echo "Solved: EvalReward >= {$this->solvedReward} for "
                         ."{$this->solvedEvaluations} consecutive evaluations\n";
+                    $this->solved = true;
                     break;
                 }
 
@@ -310,5 +313,10 @@ class Runner
 
         echo "\nTraining finished. BestEvalReward={$bestEval} | Time={$this->progressBar->laptimeString()}\n";
         return $history;
+    }
+
+    public function isSolved() : bool
+    {
+        return $this->solved;
     }
 }

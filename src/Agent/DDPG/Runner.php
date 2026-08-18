@@ -9,6 +9,7 @@ class Runner
 {
     private ReplayBuffer $buffer;
     private OrnsteinUhlenbeckNoise $noise;
+    private bool $solved = false;
 
     public function __construct(
         private object $la,
@@ -110,6 +111,7 @@ class Runner
         ?string $bestModelFile=null,
     ) : array {
         if ($updateEvery < 1 || $evalEvery < 1) throw new \InvalidArgumentException('Update/evaluation intervals must be positive.');
+        $this->solved = false;
         $history = ['step'=>[],'episodes'=>[],'trainShaped'=>[],'trainSteps'=>[],
             'evalReward'=>[],'evalShaped'=>[],'evalSteps'=>[],'updateStep'=>[],
             'actorLoss'=>[],'criticLoss'=>[]];
@@ -192,6 +194,7 @@ class Runner
                     && $solvedCount >= $this->solvedEvaluations) {
                     echo "Solved: EvalReward >= {$this->solvedReward} for "
                         ."{$this->solvedEvaluations} consecutive evaluations\n";
+                    $this->solved = true;
                     break;
                 }
                 $windowShaped = 0.0; $windowSteps = 0; $windowEpisodes = 0;
@@ -199,5 +202,10 @@ class Runner
         }
         echo "\nTraining finished. BestEvalReward={$bestEval} | Time={$progress->laptimeString()}\n";
         return $history;
+    }
+
+    public function isSolved() : bool
+    {
+        return $this->solved;
     }
 }

@@ -20,7 +20,9 @@ const VALUE_LOSS_WEIGHT = 0.5;
 const ENTROPY_WEIGHT = 0.001;
 const EVAL_EVERY = 4_000;
 const EVAL_EPISODES = 10;
-const MODEL_FILE = __DIR__.'/../models/pendulum-a2c-gaussian-v4.weights';
+const MODEL_FILE = __DIR__.'/../models/pendulum-a2c.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/pendulum-a2c-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/pendulum-a2c-trained.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -75,6 +77,8 @@ $runner = new Runner(
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -91,7 +95,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rewardArt], ['A2C Gaussian']);
-        $plt->show(filename:__DIR__.'/../graphics/pendulum-a2c-history.png');
+        $plt->show(filename:$historyFile);
     }
 }
 
@@ -113,6 +117,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         }
         printf("Test Episode %d, Steps: %d, Total Reward: %.1f\n", $episode, $steps, $totalReward);
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/pendulum-a2c-trained.gif');
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

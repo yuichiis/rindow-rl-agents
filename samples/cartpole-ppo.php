@@ -25,6 +25,7 @@ const ENTROPY_WEIGHT = 0.05;
 const EVAL_EVERY = 5_000;
 const EVAL_EPISODES = 10;
 const SOLVED_REWARD = 475.0;
+const SOLVED_EVALUATIONS = 3;
 const MODEL_FILE = __DIR__.'/../models/cartpole-ppo.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
@@ -62,7 +63,8 @@ $agent = new PPOAgent(
 $agent->summary();
 $runner = new Runner(
     $la, $env, $evalEnv, $agent, ROLLOUT_STEPS, GAMMA, GAE_LAMBDA,
-    SOLVED_REWARD
+    SOLVED_REWARD,
+    solvedEvaluations:SOLVED_EVALUATIONS,
 );
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
@@ -73,7 +75,9 @@ if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
 } else {
-    $history = $runner->train($totalSteps, $evalEvery, $evalEpisodes);
+    $history = $runner->train(
+        $totalSteps,$evalEvery,$evalEpisodes,bestModelFile:$modelFile
+    );
     if (count($history['step']) > 0) {
         $steps = $hostLa->array($history['step']);
         $art = $plt->plot($steps,$hostLa->array($history['evalReward']))[0];
@@ -82,8 +86,8 @@ if (is_file($modelFile)) {
         $plt->legend([$art], ['PPO']);
         $plt->show(filename:__DIR__.'/../graphics/cartpole-ppo-history.png');
     }
-    $agent->saveWeightsToFile($modelFile);
-    echo "Model saved: {$modelFile}\n";
+    $agent->loadWeightsFromFile($modelFile);
+    echo "Best model loaded: {$modelFile}\n";
 }
 
 if (!rlEnvBool('RL_SKIP_DEMO')) {

@@ -35,6 +35,8 @@ const EVAL_EVERY      = 1000; # 5_000;
 const EVAL_EPISODES   = 5;
 const SOLVED_REWARD   = -200.0;
 const MODEL_FILE       = __DIR__ . '/../models/pendulum-sac-gsde.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/pendulum-sac-gsde-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/pendulum-sac-gsde-trained.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -84,6 +86,8 @@ $agent  = new SACGSDEAgent(
 $agent->summary();
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 [$obs,$info] = $env->reset(seed:$seed);
 
@@ -102,7 +106,11 @@ $runner = new Runner(
 
 function fitplot($la,array $x,float $window,float $bottom) : NDArray
 {
-    $scale = $window/(max($x)-min($x));
+    if(max($x)==min($x)) {
+        $scale = 1.0;
+    } else {
+        $scale = $window/(max($x)-min($x));
+    }
     $bias = -min($x)*$scale+$bottom;
     return $la->increment($la->scal($scale,$la->array($x)),$bias);
 }
@@ -141,7 +149,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Metric');
         $plt->legend($arts, $legend);
-        $plt->show(filename:__DIR__.'/../graphics/pendulum-sac-gsde-history.png');
+        $plt->show(filename:$historyFile);
     }
 
     $agent->saveWeightsToFile($modelFile);
@@ -149,27 +157,27 @@ if (is_file($modelFile)) {
 }
 
 if (!rlEnvBool('RL_SKIP_DEMO')) {
-echo "Creating demo animation.\n";
-for($i=0;$i<5;$i++) {
-    [$obs, $info] = $env->reset();
-    $env->render();
-    $done=false;
-    $step = 0;
-    $total = 0.0;
-    while (!$done) {
-        $action = $agent->selectActionDeterministic($obs);
-        [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
-        $done = $terminated || $truncated;
-        $obs = $nextObs;
-        $total += $reward;
-        $step  += 1;
+    echo "Creating demo animation.\n";
+    for($i=0;$i<5;$i++) {
+        [$obs, $info] = $env->reset();
         $env->render();
+        $done=false;
+        $step = 0;
+        $total = 0.0;
+        while (!$done) {
+            $action = $agent->selectActionDeterministic($obs);
+            [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
+            $done = $terminated || $truncated;
+            $obs = $nextObs;
+            $total += $reward;
+            $step  += 1;
+            $env->render();
+        }
+        $ep = $i+1;
+        echo "Test Episode {$ep}, Steps: {$step}, Total Reward: {$total}\n";
     }
-    $ep = $i+1;
-    echo "Test Episode {$ep}, Steps: {$step}, Total Reward: {$total}\n";
-}
-echo "\n";
-$filename = $env->show(path:__DIR__.'/../graphics/pendulum-sac-gsde-trained.gif');
-echo "filename: {$filename}\n";
+    echo "\n";
+    $filename = $env->show(path:$animationFile);
+    echo "filename: {$filename}\n";
 
 }

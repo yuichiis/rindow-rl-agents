@@ -243,8 +243,16 @@ class SACGSDEAgent
         }
 
         // All diagnostics cross the device boundary in one small vector.
+        // min()/max() return PHP scalars on the CPU backend, but zero-dimensional
+        // NDArrays on the GPU backend. Normalize both forms before stacking.
+        $metricValues = array_map(
+            fn($value) => $value instanceof NDArray
+                ? $value
+                : $this->la->array($value,dtype:NDArray::float32),
+            array_values($metrics)
+        );
         $values = $this->hostArray(
-            $this->la->stack(array_values($metrics))
+            $this->la->stack($metricValues)
         )->toArray();
         $diagnostics = array_combine(array_keys($metrics),array_map('floatval',$values));
         $diagnostics['actorGradRmsByVar'] = [];

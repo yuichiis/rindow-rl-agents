@@ -19,7 +19,11 @@ const EPOCHS = 10;
 const EVAL_EVERY = 4096;
 const EVAL_EPISODES = 5;
 const SOLVED_REWARD = 90.0;
+const SOLVED_EVALUATIONS = 3;
+const POTENTIAL_SCALE = 10.0;
 const MODEL_FILE = __DIR__.'/../models/mountaincarcontinuous-ppo-gsde-raw.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/mountaincarcontinuous-ppo-gsde-rawhistory.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/mountaincarcontinuous-ppo-gsde-animation.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -86,11 +90,14 @@ $runner = new Runner(
     gamma:0.99,
     gaeLambda:0.95,
     solvedReward:SOLVED_REWARD,
+    solvedEvaluations:SOLVED_EVALUATIONS,
     //rewardFunction:$rewardFunction,
     bootstrapTruncated:false,
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -101,7 +108,10 @@ if (is_file($modelFile)) {
     $history = $runner->train(
         $totalSteps, $evalEvery, $evalEpisodes, bestModelFile:$modelFile
     );
-    if (is_file($modelFile)) {
+    if ($runner->isSolved() || !is_file($modelFile)) {
+        $agent->saveWeightsToFile($modelFile);
+        echo "Model saved: {$modelFile}\n";
+    } else {
         $agent->loadWeightsFromFile($modelFile);
         echo "Best model loaded: {$modelFile}\n";
     }
@@ -112,7 +122,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rawArt, $shapedArt], ['Gym raw reward', 'Shaped reward']);
-        $plt->show(filename:__DIR__.'/../graphics/mountaincarcontinuous-ppo-gsde-rawhistory.png');
+        $plt->show(filename:$historyFile);
     }
 }
 
@@ -132,8 +142,11 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
             $steps++;
             $env->render();
         }
-        printf("Test Episode %d, Steps: %d, Total Reward: %.1f\n", $episode, $steps, $total);
+        printf(
+            "Test Episode %d | Steps=%d | Total Reward=%+.1f | Goal=%s\n",
+            $episode, $steps, $total, $terminated ? 'yes' : 'no'
+        );
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/mountaincarcontinuous-ppo-gsde-raw-trained.gif');
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

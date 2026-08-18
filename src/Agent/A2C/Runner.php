@@ -10,6 +10,7 @@ use Rindow\RL\Agents\ReplayBuffer\RolloutBuffer;
 class Runner
 {
     private RolloutBuffer $buffer;
+    private bool $solved = false;
 
     public function __construct(
         private object $la,
@@ -77,6 +78,7 @@ class Runner
         if ($totalSteps < 1 || $evalEvery < 1 || $evalEpisodes < 1) {
             throw new \InvalidArgumentException('Training and evaluation counts must be positive.');
         }
+        $this->solved = false;
         $progress = new ProgressBar();
         $history = ['step'=>[], 'trainReward'=>[], 'trainSteps'=>[], 'evalReward'=>[],
             'policyLoss'=>[], 'valueLoss'=>[], 'entropy'=>[], 'std'=>[]];
@@ -172,6 +174,7 @@ class Runner
                     && $solvedCount >= $this->solvedEvaluations) {
                     echo "Solved: EvalReward >= {$this->solvedReward} for "
                         ."{$this->solvedEvaluations} consecutive evaluations\n";
+                    $this->solved = true;
                     break;
                 }
                 $windowReward = 0.0;
@@ -181,5 +184,10 @@ class Runner
         }
         echo "\nTraining finished. BestEvalReward={$best} | Time={$progress->laptimeString()}\n";
         return $history;
+    }
+
+    public function isSolved() : bool
+    {
+        return $this->solved;
     }
 }

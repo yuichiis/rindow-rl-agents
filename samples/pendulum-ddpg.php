@@ -26,6 +26,8 @@ const NOISE_SIGMA = 0.20;
 const EVAL_EVERY = 2_000;
 const EVAL_EPISODES = 5;
 const MODEL_FILE = __DIR__.'/../models/pendulum-ddpg.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/pendulum-ddpg-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/pendulum-ddpg-trained.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -54,6 +56,8 @@ $agent->summary();
 $runner = new Runner($la,$env,$evalEnv,$agent,$obsDim,$actDim,$actLimit,BUFFER_SIZE,
     solvedReward:-200.0,noiseSigma:NOISE_SIGMA);
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -70,7 +74,7 @@ if (is_file($modelFile)) {
             $hostLa->array($history['step']),$hostLa->array($history['evalReward'])
         )[0];
         $plt->xlabel('Training steps'); $plt->ylabel('Evaluation reward'); $plt->legend([$art],['DDPG']);
-        $plt->show(filename:__DIR__.'/../graphics/pendulum-ddpg-history.png');
+        $plt->show(filename:$historyFile);
     }
 }
 if (!rlEnvBool('RL_SKIP_DEMO')) {
@@ -84,5 +88,5 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         }
         printf("Test Episode %d, Steps: %d, Total Reward: %.1f\n",$episode,$steps,$total);
     }
-    echo 'filename: '.$env->show(path:__DIR__.'/../graphics/pendulum-ddpg-trained.gif')."\n";
+    echo 'filename: '.$env->show(path:$animationFile)."\n";
 }

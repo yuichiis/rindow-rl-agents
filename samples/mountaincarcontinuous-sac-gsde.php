@@ -33,7 +33,10 @@ const UPDATE_EVERY    = 1;
 const EVAL_EVERY      = 2_000;
 const EVAL_EPISODES   = 5;
 const SOLVED_REWARD   = 90.0;
+const SOLVED_EVALUATIONS = 3;
 const MODEL_FILE       = __DIR__ . '/../models/mountaincarcontinuous-sac-gsde.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-rawhistory.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-animation.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -83,6 +86,8 @@ $agent  = new SACGSDEAgent(
 $agent->summary();
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 [$obs,$info] = $env->reset(seed:$seed);
 
@@ -97,13 +102,18 @@ $runner = new Runner(
     $actLimit,
     BUFFER_SIZE,
     solvedReward: SOLVED_REWARD,
+    solvedEvaluations:SOLVED_EVALUATIONS,
 );
 
 function fitplot($hostLa,array $x,float $window,float $bottom) : NDArray
 {
-    $scale = $window/(max($x)-min($x));
+    if(max($x)==min($x)) {
+        $scale = 1.0;
+    } else {
+        $scale = $window/(max($x)-min($x));
+    }
     $bias = -min($x)*$scale+$bottom;
-    return $la->increment($la->scal($scale,$la->array($x)),$bias);
+    return $hostLa->increment($hostLa->scal($scale,$hostLa->array($x)),$bias);
 }
 
 
@@ -113,14 +123,21 @@ if (is_file($modelFile)) {
     echo "Training skipped.\n";
 } else {
     $history = $runner->train(
-    $totalSteps,
-    START_STEPS,
-    UPDATE_EVERY,
-    GSDE_RESET_FREQ,
-    $evalEvery,
-    $evalEpisodes,
-    evalgSDE: true,
+        $totalSteps,
+        START_STEPS,
+        UPDATE_EVERY,
+        GSDE_RESET_FREQ,
+        $evalEvery,
+        $evalEpisodes,
+        evalgSDE: true,
     );
+    if ($runner->isSolved() || !is_file($modelFile)) {
+        $agent->saveWeightsToFile($modelFile);
+        echo "Model saved: {$modelFile}\n";
+    } else {
+        $agent->loadWeightsFromFile($modelFile);
+        echo "Best model loaded: {$modelFile}\n";
+    }
 
     $steps = $hostLa->array($history['step']);
     $arts = [];
@@ -141,34 +158,31 @@ if (is_file($modelFile)) {
     $plt->xlabel('Training steps');
     $plt->ylabel('Metric');
     $plt->legend($arts, $legend);
-    $plt->show(filename:__DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-history.png');
-
-    $agent->saveWeightsToFile($modelFile);
-    echo "Model weights saved: {$modelFile}\n";
+    $plt->show(filename:$historyFile);
 }
 
 if (!rlEnvBool('RL_SKIP_DEMO')) {
-echo "Creating demo animation.\n";
-for($i=0;$i<5;$i++) {
-    [$obs, $info] = $env->reset();
-    $env->render();
-    $done=false;
-    $step = 0;
-    $total = 0.0;
-    while (!$done) {
-        $action = $agent->selectActionDeterministic($obs);
-        [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
-        $done = $terminated || $truncated;
-        $obs = $nextObs;
-        $total += $reward;
-        $step  += 1;
+    echo "Creating demo animation.\n";
+    for($episode = 1; $episode <= 5; $episode++) {
+        [$obs, $info] = $env->reset();
         $env->render();
+        $done=false;
+        $steps = 0;
+        $total = 0.0;
+        while (!$done) {
+            $action = $agent->selectActionDeterministic($obs);
+            [$nextObs, $reward, $terminated, $truncated, $info] = $env->step($action);
+            $done = $terminated || $truncated;
+            $obs = $nextObs;
+            $total += $reward;
+            $steps  += 1;
+            $env->render();
+        }
+        printf(
+            "Test Episode %d | Steps=%d | Total Reward=%+.1f | Goal=%s\n",
+            $episode, $steps, $total, $terminated ? 'yes' : 'no'
+        );
     }
-    $ep = $i+1;
-    echo "Test Episode {$ep}, Steps: {$step}, Total Reward: {$total}\n";
-}
-echo "\n";
-$filename = $env->show(path:__DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-trained.gif');
-echo "filename: {$filename}\n";
-
+    $filename = $env->show(path:$animationFile);
+    echo "filename: {$filename}\n";
 }

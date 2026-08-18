@@ -9,23 +9,24 @@ use Rindow\Math\Plot\Plot;
 use Rindow\RL\Agents\Agent\Sarsa\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
-use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
-use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
+use Rindow\RL\Agents\Env\Maze\DeviceWrapper;
+use Rindow\RL\Gym\ClassicControl\Maze\Maze;
 
-const SEED = 42;
-const TOTAL_EPISODES = 2000;
-const NUM_TILINGS = 8;
-const TILES_PER_DIMENSION = 8;
-const LEARNING_RATE = 0.1;
-const GAMMA = 0.99;
+const SEED = 1234;
+const WIDTH = 3;
+const HEIGHT = 3;
+const EXIT_STATE = 8;
+const MAX_EPISODE_STEPS = 100;
+const TOTAL_EPISODES = 500;
+const NUM_TILINGS = 4;
+const TILES_PER_DIMENSION = 2;
+const LEARNING_RATE = 0.2;
+const GAMMA = 1.0;
 const LAMBDA = 0.9;
-const EPSILON = 0.05;
-// 生報酬+1の割引無限期間価値 1/(1-GAMMA)。早期失敗を負のTD誤差にする。
-const INITIAL_VALUE = 100.0;
-const EVAL_EVERY = 25;
+const EPSILON = 0.1;
+const EVAL_EVERY = 10;
 const EVAL_EPISODES = 10;
-const SOLVED_REWARD = 475.0;
-const MODEL_FILE = __DIR__.'/../models/cartpole-true-online-sarsa-lambda.weights';
+const MODEL_FILE = __DIR__.'/../models/maze-true-online-sarsa-lambda.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -38,22 +39,35 @@ echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
-$env = new CartPoleV1($hostLa);
-$evalEnv = new CartPoleV1($hostLa);
+$mazeRules = $hostLa->array([
+//   UP    DOWN  RIGHT LEFT
+    [false,  true,  true, false], // 0  +-+-+-+
+    [false,  true,  true,  true], // 1  |0 1 2|
+    [false, false, false,  true], // 2  + + +-+
+    [ true,  true, false, false], // 3  |3|4 5|
+    [ true, false,  true, false], // 4  + +-+ +
+    [false,  true, false,  true], // 5  |6 7|8|
+    [ true, false,  true, false], // 6  +-+-+-+
+    [false, false, false,  true], // 7
+    [ true, false, false, false], // 8
+],dtype:NDArray::bool);
+$env = new Maze(
+    $hostLa, policy:$mazeRules, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
+    throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
+);
+$evalEnv = new Maze(
+    $hostLa, policy:$mazeRules, width:WIDTH, height:HEIGHT, exit:EXIT_STATE,
+    throwInvalidAction:true, maxEpisodeSteps:MAX_EPISODE_STEPS,
+);
 rlSeedSpaces($env,$evalEnv,$seed);
 if ($la->accelerated()) {
     $env = new DeviceWrapper($nn,$env);
     $evalEnv = new DeviceWrapper($nn,$evalEnv);
 }
 
-/*
- * CartPoleの速度と角速度の観測範囲は±INFなので、通常の運動範囲を
- * Tile Codingの有限境界として使用する。範囲外の値は端のタイルへ
- * 自動的にクリップされる。
- */
 $tileCoder = new TileCoder(
-    low:[-2.4, -3.0, -0.2095, -3.5],
-    high:[2.4, 3.0, 0.2095, 3.5],
+    low:[0.0, 0.0],
+    high:[HEIGHT - 1.0, WIDTH - 1.0],
     numTilings:NUM_TILINGS,
     tilesPerDimension:TILES_PER_DIMENSION,
 );
@@ -65,12 +79,11 @@ $agent = new TrueOnlineSarsaLambdaAgent(
     gamma:GAMMA,
     lambda:LAMBDA,
     epsilon:EPSILON,
-    initialValue:INITIAL_VALUE,
+    stateField:'location',
+    actionMaskField:'actionMask',
     nn:$nn,
 );
-$runner = new Runner(
-    $la, $env, $evalEnv, $agent, solvedReward:SOLVED_REWARD
-);
+$runner = new Runner($la, $env, $evalEnv, $agent);
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
@@ -78,20 +91,16 @@ $totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
 
 if (is_file($modelFile)) {
-    echo "Loading model: {$modelFile}\n";
     $agent->loadWeightsFromFile($modelFile);
+    echo "Model loaded: {$modelFile}\n";
     printf("Evaluation reward: %.1f\n", $runner->evaluate($evalEpisodes));
 } else {
-    // CartPoleの生報酬 (+1 per step) をそのまま使用する。
     $history = $runner->train(
         $totalEpisodes, $evalEvery, $evalEpisodes, bestModelFile:$modelFile
     );
     if (is_file($modelFile)) {
         $agent->loadWeightsFromFile($modelFile);
         echo "Best model loaded: {$modelFile}\n";
-    } else {
-        $agent->saveWeightsToFile($modelFile);
-        echo "Model saved: {$modelFile}\n";
     }
     if (count($history['episode']) > 0) {
         $episodes = $hostLa->array($history['episode']);
@@ -100,33 +109,30 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training episodes');
         $plt->ylabel('Raw reward');
         $plt->legend([$trainArt, $evalArt], ['Training reward', 'Evaluation reward']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-true-online-sarsa-lambda-history.png');
+        $plt->show(filename:__DIR__.'/../graphics/maze-true-online-sarsa-lambda-history.png');
     }
 }
 
 if (!rlEnvBool('RL_SKIP_DEMO')) {
     echo "Creating demo animation.\n";
-    for ($episode = 1; $episode <= 5; $episode++) {
-        [$observation] = $env->reset();
-        $done = false;
-        $totalReward = 0.0;
-        $steps = 0;
+    [$observation] = $env->reset();
+    $env->render();
+    $done = false;
+    $totalReward = 0.0;
+    $steps = 0;
+    while (!$done) {
+        $action = $la->array(
+            $agent->selectActionDeterministic($observation), dtype:NDArray::int32
+        );
+        [$observation, $reward, $terminated, $truncated] = $env->step($action);
+        $done = $terminated || $truncated;
+        $totalReward += $reward;
+        $steps++;
         $env->render();
-        while (!$done) {
-            $action = $la->array(
-                $agent->selectActionDeterministic($observation), dtype:NDArray::int32
-            );
-            [$observation, $reward, $terminated, $truncated] = $env->step($action);
-            $done = $terminated || $truncated;
-            $totalReward += $reward;
-            $steps++;
-            $env->render();
-        }
-        printf("Test Episode %d | Steps=%d | RawReward=%+.1f\n",
-            $episode, $steps, $totalReward);
     }
+    printf("Test Episode 1 | Steps=%d | RawReward=%+.1f\n", $steps, $totalReward);
     $filename = $env->show(
-        path:__DIR__.'/../graphics/cartpole-true-online-sarsa-lambda-trained.gif'
+        path:__DIR__.'/../graphics/maze-true-online-sarsa-lambda-trained.gif', delay:100
     );
     echo "filename: {$filename}\n";
 }

@@ -4,27 +4,28 @@ require __DIR__.'/include/env.php';
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
-use Rindow\Math\Plot\Plot;
 use Rindow\NeuralNetworks\Builder\NeuralNetworks;
-use Rindow\RL\Agents\Agent\QLearning\QLearningAgent;
-use Rindow\RL\Agents\Agent\QLearning\Runner;
+use Rindow\Math\Plot\Plot;
+use Rindow\RL\Agents\Agent\Sarsa\Runner;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
+use Rindow\RL\Agents\Agent\Sarsa\TrueOnlineSarsaLambdaAgent;
 use Rindow\RL\Agents\Env\CartPole\DeviceWrapper;
 use Rindow\RL\Gym\ClassicControl\CartPole\CartPoleV1;
 
 const SEED = 42;
-const TOTAL_EPISODES = 2_000;
+const TOTAL_EPISODES = 2000;
 const NUM_TILINGS = 8;
 const TILES_PER_DIMENSION = 8;
 const LEARNING_RATE = 0.1;
 const GAMMA = 0.99;
+const LAMBDA = 0.9;
 const EPSILON = 0.05;
-// Raw reward is +1 per step. Its infinite-horizon discounted value is 1/(1-GAMMA).
+// 生報酬+1の割引無限期間価値 1/(1-GAMMA)。早期失敗を負のTD誤差にする。
 const INITIAL_VALUE = 100.0;
 const EVAL_EVERY = 25;
 const EVAL_EPISODES = 10;
 const SOLVED_REWARD = 475.0;
-const MODEL_FILE = __DIR__.'/../models/cartpole-qlearning.weights';
+const MODEL_FILE = __DIR__.'/../models/cartpole-true-online-sarsa-lambda.weights';
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -46,8 +47,9 @@ if ($la->accelerated()) {
 }
 
 /*
- * CartPole's velocity observations have infinite bounds, so use practical
- * motion ranges for tile coding. Values outside them are clipped to edge tiles.
+ * CartPoleの速度と角速度の観測範囲は±INFなので、通常の運動範囲を
+ * Tile Codingの有限境界として使用する。範囲外の値は端のタイルへ
+ * 自動的にクリップされる。
  */
 $tileCoder = new TileCoder(
     low:[-2.4, -3.0, -0.2095, -3.5],
@@ -55,12 +57,13 @@ $tileCoder = new TileCoder(
     numTilings:NUM_TILINGS,
     tilesPerDimension:TILES_PER_DIMENSION,
 );
-$agent = new QLearningAgent(
+$agent = new TrueOnlineSarsaLambdaAgent(
     $la,
     $tileCoder,
     numActions:$env->actionSpace()->n(),
     learningRate:LEARNING_RATE,
     gamma:GAMMA,
+    lambda:LAMBDA,
     epsilon:EPSILON,
     initialValue:INITIAL_VALUE,
     nn:$nn,
@@ -96,7 +99,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training episodes');
         $plt->ylabel('Raw reward');
         $plt->legend([$trainArt, $evalArt], ['Training reward', 'Evaluation reward']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-qlearning-history.png');
+        $plt->show(filename:__DIR__.'/../graphics/cartpole-true-online-sarsa-lambda-history.png');
     }
 }
 
@@ -122,7 +125,7 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
             $episode, $steps, $totalReward);
     }
     $filename = $env->show(
-        path:__DIR__.'/../graphics/cartpole-qlearning-trained.gif'
+        path:__DIR__.'/../graphics/cartpole-true-online-sarsa-lambda-trained.gif'
     );
     echo "filename: {$filename}\n";
 }

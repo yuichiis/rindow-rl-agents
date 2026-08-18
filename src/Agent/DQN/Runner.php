@@ -9,6 +9,7 @@ use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 class Runner
 {
     private ReplayBuffer $buffer;
+    private bool $solved = false;
 
     public function __construct(
         private object $la,
@@ -113,6 +114,7 @@ class Runner
             || $evalEvery < 1 || $epsilonDecaySteps < 1) {
             throw new \InvalidArgumentException('Invalid DQN training parameters.');
         }
+        $this->solved = false;
         $history = ['step'=>[],'episodes'=>[],'trainShaped'=>[],'trainSteps'=>[],
             'evalReward'=>[],'evalShaped'=>[],'evalSteps'=>[],
             'updateStep'=>[],'loss'=>[],'qValue'=>[],'epsilon'=>[]];
@@ -209,6 +211,7 @@ class Runner
                     if ($solvedCount >= $this->solvedEvaluations) {
                         echo "Solved: EvalReward >= {$this->solvedReward} for "
                             ."{$this->solvedEvaluations} consecutive evaluations\n";
+                        $this->solved = true;
                         break;
                     }
                 }
@@ -219,5 +222,10 @@ class Runner
         }
         echo "\nTraining finished. BestEvalReward={$bestEval} | Time={$progress->laptimeString()}\n";
         return $history;
+    }
+
+    public function isSolved() : bool
+    {
+        return $this->solved;
     }
 }

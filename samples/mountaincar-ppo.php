@@ -15,20 +15,26 @@ const SEED = 42;
 const TOTAL_STEPS = 300_000;
 const ROLLOUT_STEPS = 2048;
 const BATCH_SIZE = 64;
-const EPOCHS = 10;
+const EPOCHS = 10; #5;
 const GAMMA = 0.99;
 const GAE_LAMBDA = 0.95;
-const LEARNING_RATE = 3.0e-4;
+const LEARNING_RATE = 3.0e-4; #1.0e-4; 
 const CLIP_RANGE = 0.2;
-const VALUE_LOSS_WEIGHT = 0.5;
-const ENTROPY_WEIGHT = 0.001;
+const VALUE_LOSS_WEIGHT = 0.5; #0.25;
+const ENTROPY_WEIGHT = 0.01; #0.02;0.05; #0.001;
 const EVAL_EVERY = 2048;
 const EVAL_EPISODES = 10;
 const SOLVED_REWARD = -110.0;
+//const POTENTIAL_SCALE = 10.0;
 // 失敗した旧構成のcheckpointとの誤読込を避けるため別名にする。
-const MODEL_FILE = __DIR__.'/../models/mountaincar-ppo-shared.weights';
+const MODEL_FILE = __DIR__.'/../models/mountaincar-ppo-shaped.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/mountaincar-ppo-shaped-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/mountaincar-ppo-shaped-animation.gif';
 
 $seed = rlEnvInt('RL_SEED',SEED);
+$epochs = rlEnvInt('RL_EPOCHS',EPOCHS);
+$learningRate = rlEnvFloat('RL_LEARNING_RATE',LEARNING_RATE);
+$entropyWeight = rlEnvFloat('RL_ENTROPY_WEIGHT',ENTROPY_WEIGHT);
 $mo = new MatrixOperator();
 $nn = new NeuralNetworks($mo);
 $la = $nn->la();
@@ -36,6 +42,15 @@ $hostLa = $mo->laRawMode();
 $la->setSeed($seed);
 echo "Random seed: {$seed}\n";
 echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
+echo "Rollout steps: ".ROLLOUT_STEPS."\n";
+echo "Batch size: ".BATCH_SIZE."\n";
+echo "Epochs: ". $epochs . "\n";
+echo "Gamma: ".GAMMA."\n";
+echo "GAE lambda: ".GAE_LAMBDA."\n";
+echo "Learning rate: ". $learningRate . "\n";
+echo "Clip range: ".CLIP_RANGE."\n";
+echo "Value loss weight: ".VALUE_LOSS_WEIGHT."\n";
+echo "Entropy weight: ". $entropyWeight . "\n";
 
 $plt = new Plot(['renderer.skipRunViewer'=>true], $mo);
 
@@ -52,17 +67,34 @@ $agent = new PPOAgent(
     obsDim:$env->observationSpace()->shape()[0],
     numActions:$env->actionSpace()->n(),
     hiddenLayers:[128, 128],
-    learningRate:LEARNING_RATE,
+    learningRate:$learningRate,
     clipRange:CLIP_RANGE,
     valueLossWeight:VALUE_LOSS_WEIGHT,
-    entropyWeight:ENTROPY_WEIGHT,
-    epochs:EPOCHS,
+    entropyWeight:$entropyWeight,
+    epochs:$epochs,
     batchSize:BATCH_SIZE,
     maxGradNorm:0.5,
     clipValueLoss:true,
     sharedBackbone:true,
 );
 $agent->summary();
+
+/*
+ * Potential-based reward shaping:
+ *
+ *     r'(s,a,s') = r(s,a,s') + gamma * Phi(s') - Phi(s)
+ *
+ * PhiはMountainCarの正規化した高さと速度エネルギーから作る。速度の符号を
+ * 消すことで、左右どちらへ振っていても運動エネルギーの蓄積を評価する。
+ * 終端ではPhi(s')=0とし、元のGym報酬が定める最適方策を変えない。
+ */
+// $mountainCarPotential = static function(float $position, float $velocity) : float {
+//     // sin(3p)を概ね[0,1]へ、速度をMountainCarの上限0.07で正規化する。
+//     $height = 0.5 * (sin(3.0 * $position) + 1.0);
+//     $normalizedVelocity = $velocity / 0.07;
+//     $velocityEnergy = 0.5 * $normalizedVelocity ** 2;
+//     return POTENTIAL_SCALE * ($height + $velocityEnergy);
+// };
 
 /*
  * MountainCarの生報酬は成功するまで常に-1なので、初期方策には学習信号が
@@ -84,13 +116,30 @@ $mountainCarReward = static function(
     $nextPosition = (float)$nextObs[0];
     $nextVelocity = (float)$nextObs[1];
 
-    $energy = sin(3.0 * $position) + 0.5 * $velocity ** 2;
-    $nextEnergy = sin(3.0 * $nextPosition) + 0.5 * $nextVelocity ** 2;
+    // >>>>>>>>>>>>>>>>>>>>>>>>>
+    // 1.物理エネルギーの増加量を報酬とする。
+    //$energy = sin(3.0 * $position) + 0.5 * $velocity ** 2;
+    //$nextEnergy = sin(3.0 * $nextPosition) + 0.5 * $nextVelocity ** 2;
+    //
+    //$energyGain = 10.0 * ($nextEnergy - $energy);
+    //$stepPenalty = -0.1;
+    //$goalBonus = $terminated ? 100.0 : 0.0;
+    //return $energyGain + $stepPenalty + $goalBonus;
+    // >>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-    $energyGain = 10.0 * ($nextEnergy - $energy);
-    $stepPenalty = -0.1;
-    $goalBonus = $terminated ? 100.0 : 0.0;
-    return $energyGain + $stepPenalty + $goalBonus;
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<
+    // 2.速度の絶対値を直接報酬にする
+    $velocityReward = 10.0 * abs($nextVelocity);
+    return $velocityReward - 0.1 + ($terminated ? 100.0 : 0.0);
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<
+
+    // >>>>>>>>>>>>>>>>>>>>>>>>>>>
+    // 3. Potential-based shapingにする
+    // $potential = $mountainCarPotential($position, $velocity);
+    // $nextPotential = ($terminated || $truncated)
+    //     ? 0.0
+    //     : $mountainCarPotential($nextPosition, $nextVelocity);
+    // return $reward + GAMMA * $nextPotential - $potential;
 };
 
 $runner = new Runner(
@@ -107,9 +156,14 @@ $runner = new Runner(
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+echo "Total steps: {$totalSteps}\n";
+echo "Evaluation every: {$evalEvery}\n";
+echo "Eval episodes: {$evalEpisodes}\n";
 
 if (is_file($modelFile)) {
     echo "Loading model: {$modelFile}\n";
@@ -137,7 +191,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rawRewardArt, $shapedRewardArt], ['Gym raw reward', 'Shaped reward']);
-        $plt->show(filename:__DIR__.'/../graphics/mountaincar-ppo-history.png');
+        $plt->show(filename:$historyFile);
     }
 }
 
@@ -177,6 +231,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
             $episode, $steps, $rawTotal, $shapedTotal, $goal ? 'yes' : 'no'
         );
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/mountaincar-ppo-trained.gif');
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

@@ -41,13 +41,25 @@ echo "Random seed: {$seed}\n";
 echo 'Accelerated: '.($la->accelerated() ? 'true' : 'false')."\n";
 
 $plt = new Plot(['renderer.skipRunViewer'=>true],$mo);
+$mazeRules = $hostLa->array([
+//   UP    DOWN  RIGHT LEFT
+    [false,  true,  true, false], // 0  +-+-+-+
+    [false,  true,  true,  true], // 1  |0 1 2|
+    [false, false, false,  true], // 2  + + +-+
+    [ true,  true, false, false], // 3  |3|4 5|
+    [ true, false,  true, false], // 4  + +-+ +
+    [false,  true, false,  true], // 5  |6 7|8|
+    [ true, false,  true, false], // 6  +-+-+-+
+    [false, false, false,  true], // 7
+    [ true, false, false, false], // 8
+],dtype:NDArray::bool);
 
 $env = new Maze(
-    $hostLa,policy:null,width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
+    $hostLa,policy:$mazeRules,width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
     throwInvalidAction:true,maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 $evalEnv = new Maze(
-    $hostLa,policy:$env->mazeRules(),width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
+    $hostLa,policy:$mazeRules,width:WIDTH,height:HEIGHT,exit:EXIT_STATE,
     throwInvalidAction:true,maxEpisodeSteps:MAX_EPISODE_STEPS,
 );
 rlSeedSpaces($env,$evalEnv,$seed);
