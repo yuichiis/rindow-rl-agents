@@ -36,12 +36,14 @@ class DeviceWrapper implements Environment
         return $this->env->actionSpace();
     }
 
+    /** @return array{array{location:NDArray,actionMask:NDArray},array<string,mixed>} */
     public function reset(?int $seed=null) : array
     {
         [$observation, $info] = $this->env->reset($seed);
         return [$this->deviceObservation($observation), $info];
     }
 
+    /** @return array{array{location:NDArray,actionMask:NDArray},float,bool,bool,array<string,mixed>} */
     public function step(mixed $action) : array
     {
         if (!($action instanceof NDArray)) {
@@ -59,6 +61,7 @@ class DeviceWrapper implements Environment
         ];
     }
 
+    /** @return array{location:NDArray,actionMask:NDArray} */
     private function deviceObservation(mixed $observation) : array
     {
         if (!is_array($observation)

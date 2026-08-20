@@ -36,12 +36,14 @@ class DeviceWrapper implements Environment
         return $this->env->actionSpace();
     }
 
+    /** @return array{NDArray,array<string,mixed>} */
     public function reset(?int $seed=null) : array
     {
         [$observation, $info] = $this->env->reset($seed);
         return [$this->nn->deviceArray($observation), $info];
     }
 
+    /** @return array{NDArray,float,bool,bool,array<string,mixed>} */
     public function step(mixed $action) : array
     {
         if (!($action instanceof NDArray)) {

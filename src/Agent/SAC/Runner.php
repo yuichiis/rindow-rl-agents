@@ -2,15 +2,12 @@
 namespace Rindow\RL\Agents\Agent\SAC;
 
 use Interop\Polite\AI\RL\Environment as Env;
-use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\RL\Agents\Util\ProgressBar;
 use Rindow\RL\Agents\ReplayBuffer\ReplayBuffer;
 
 class Runner
 {
-    private object $mo;
     private object $la;
-    private Builder $nn;
     private Env $env;
     private Env $evalEnv;
     private SACGSDEAgent $agent;
@@ -24,9 +21,9 @@ class Runner
     private ProgressBar $progressBar;
     private bool $solved = false;
 
+    /** @param int|array<int,int> $obsDim */
     public function __construct(
         object $la,
-        Builder $nn,
         Env $env,
         Env $evalEnv,
         SACGSDEAgent $agent,
@@ -42,7 +39,6 @@ class Runner
     )
     {
         $this->la = $la;
-        $this->nn = $nn;
         $this->env = $env;
         $this->evalEnv = $evalEnv;
         $this->agent = $agent;
@@ -150,6 +146,7 @@ class Runner
     }
 
     /** Runs the environment interaction and update loop. */
+    /** @return array<string,array<int,int|float>> */
     public function train(
         int $totalSteps,
         int $startSteps,

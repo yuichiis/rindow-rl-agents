@@ -12,10 +12,13 @@ class RolloutBuffer
     private NDArray $values;
     private ?NDArray $logProbabilities = null;
     private ?NDArray $actionMasks = null;
+    /** @var array<int,bool> */
     private array $terminated = [];
+    /** @var array<int,bool> */
     private array $episodeEnds = [];
     private int $index = 0;
 
+    /** @param int|array<int,int> $observationDimensions */
     public function __construct(
         private object $la,
         private int $capacity,
@@ -29,7 +32,7 @@ class RolloutBuffer
             ? [$observationDimensions]
             : array_values($observationDimensions);
         if ($capacity < 1 || $observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)) {
             throw new \InvalidArgumentException(
                 'Capacity and observation dimensions must be positive.'
             );
@@ -136,6 +139,7 @@ class RolloutBuffer
         return $this->index;
     }
 
+    /** @return array<int,NDArray> */
     public function finish(float $gamma, float $gaeLambda, float $lastValue=0.0) : array
     {
         $size = $this->index;

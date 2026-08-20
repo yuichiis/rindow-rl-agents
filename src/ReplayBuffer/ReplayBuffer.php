@@ -15,6 +15,7 @@ class ReplayBuffer
     private ?NDArray $nextActionMasks = null;
     private bool $continuousActions;
 
+    /** @param int|array<int,int> $observationDimensions */
     public function __construct(
         private object $la,
         private int $capacity,
@@ -26,7 +27,7 @@ class ReplayBuffer
             ? [$observationDimensions]
             : array_values($observationDimensions);
         if ($capacity < 1 || $observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)) {
             throw new \InvalidArgumentException(
                 'Capacity and observation dimensions must be positive.'
             );
@@ -107,6 +108,7 @@ class ReplayBuffer
         return $this->size;
     }
 
+    /** @return array<int,NDArray|null> */
     public function sample(int $batchSize) : array
     {
         if ($batchSize < 1) {

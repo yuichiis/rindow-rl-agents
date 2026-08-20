@@ -21,6 +21,10 @@ class DDPGAgent
     public Critic $critic;
     public Critic $criticTarget;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         private Builder $nn,
         private int|array $obsDim,
@@ -39,7 +43,7 @@ class DDPGAgent
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
         if ($observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)
             || $actDim < 1 || $actLimit <= 0.0 || $batchSize < 1) {
             throw new \InvalidArgumentException('Invalid DDPG dimensions or update parameters.');
         }
@@ -102,6 +106,7 @@ class DDPGAgent
         return $this->clip($action);
     }
 
+    /** @return array{actor_loss:float,critic_loss:float} */
     public function update(ReplayBuffer $buffer) : array
     {
         [$obs,$actions,$rewards,$nextObs,$dones] = $buffer->sample($this->batchSize);

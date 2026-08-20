@@ -11,6 +11,7 @@ class Runner
     private OrnsteinUhlenbeckNoise $noise;
     private bool $solved = false;
 
+    /** @param int|array<int,int> $obsDim */
     public function __construct(
         private object $la,
         private Env $env,
@@ -101,6 +102,7 @@ class Runner
             );
     }
 
+    /** @return array<string,array<int,int|float>> */
     public function train(
         int $totalSteps,
         int $startSteps,

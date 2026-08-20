@@ -18,6 +18,11 @@ class ActorCritic extends AbstractModel
     private ?NDArray $actionScale = null;
     private ?NDArray $actionShift = null;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,int> $hiddenLayers
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,
@@ -86,7 +91,10 @@ class ActorCritic extends AbstractModel
         $this->valueHead = $nn->layers->Dense(1);
     }
 
-    /** Discrete: logits/value. Continuous: mean/value/log standard deviation. */
+    /**
+     * Discrete: logits/value. Continuous: mean/value/log standard deviation.
+     * @return array<int,Variable>
+     */
     public function call(Variable $observations, ?bool $training = null) : array
     {
         $features = $this->features->forward($observations, $training);

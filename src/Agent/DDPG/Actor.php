@@ -10,6 +10,10 @@ class Actor extends AbstractModel
 {
     protected AbstractModel $model;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,

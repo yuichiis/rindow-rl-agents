@@ -17,6 +17,10 @@ class Critic extends AbstractModel
     public QNetwork $q1;
     public QNetwork $q2;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,
@@ -30,6 +34,7 @@ class Critic extends AbstractModel
         $this->q2 = new QNetwork($nn,$obsDim,$actDim,$hiddenDim,$featureLayers);
     }
 
+    /** @return array{Variable,Variable} */
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array
     {
         return [$this->q1->forward($obs, $action, $training), $this->q2->forward($obs, $action, $training)];

@@ -17,12 +17,17 @@ class PPOAgent
     public ActorCritic $network;
     private ?NDArray $sdeNoise = null;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,int> $hiddenLayers
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         private Builder $nn,
         private int|array $obsDim,
         private int $numActions,
         array $hiddenLayers = [64, 64],
-        private float $learningRate = 3.0e-4,
+        float $learningRate = 3.0e-4,
         private float $clipRange = 0.2,
         private float $valueLossWeight = 0.5,
         private float $entropyWeight = 0.01,
@@ -36,7 +41,7 @@ class PPOAgent
         private ?NDArray $actionMax = null,
         private string $exploration = 'gaussian',
         private int $sdeSampleFreq = -1,
-        private float $sdeInitialLogStd = -2.0,
+        float $sdeInitialLogStd = -2.0,
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
         // Optional CNN/RNN feature extractor used by the shared backbone.
@@ -45,7 +50,7 @@ class PPOAgent
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
         if ($observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)) {
             throw new \InvalidArgumentException('Invalid PPO observation dimensions.');
         }
         if ($featureLayers !== null && !$sharedBackbone) {
@@ -105,7 +110,10 @@ class PPOAgent
         return $out;
     }
 
-    /** @return array{NDArray,?NDArray} state and action mask */
+    /**
+     * @param NDArray|array<string,mixed> $observation
+     * @return array{NDArray,?NDArray} state and action mask
+     */
     public function parseObservation(NDArray|array $observation) : array
     {
         if ($observation instanceof NDArray) {
@@ -155,7 +163,10 @@ class PPOAgent
             : $state;
     }
 
-    /** @return array{NDArray,NDArray,NDArray} action, log probability, value */
+    /**
+     * @param NDArray|array<string,mixed> $observation
+     * @return array{NDArray,NDArray,NDArray} action, log probability, value
+     */
     public function selectAction(NDArray|array $observation) : array
     {
         [$observation, $mask] = $this->parseObservation($observation);
@@ -179,6 +190,7 @@ class PPOAgent
         ];
     }
 
+    /** @return array{NDArray,NDArray,NDArray} */
     private function selectContinuousAction(NDArray $observation) : array
     {
         $batch = $this->asBatch($observation);
@@ -206,6 +218,7 @@ class PPOAgent
             $this->la->copy($value->value())->reshape([])];
     }
 
+    /** @param NDArray|array<string,mixed> $observation */
     public function selectActionDeterministic(NDArray|array $observation) : mixed
     {
         [$observation, $mask] = $this->parseObservation($observation);
@@ -239,6 +252,7 @@ class PPOAgent
         return $g->squeeze($g->scale(-0.5, $g->square($diff)), axis:1);
     }
 
+    /** @param NDArray|array<string,mixed> $observation */
     public function value(NDArray|array $observation) : float
     {
         [$observation, $mask] = $this->parseObservation($observation);
@@ -246,6 +260,7 @@ class PPOAgent
         return (float)$this->la->scalar($value);
     }
 
+    /** @return array{NDArray,NDArray} */
     private function inference(NDArray $observation, ?NDArray $mask = null) : array
     {
         $batch = $this->asBatch($observation);
@@ -270,7 +285,10 @@ class PPOAgent
             : $batch;
     }
 
-    /** @return array{policy_loss:float,value_loss:float,entropy:float} */
+    /**
+     * @param array<int,NDArray> $rollout
+     * @return array{policy_loss:float,value_loss:float,entropy:float}
+     */
     public function update(array $rollout) : array
     {
         [$observations, $actions, $oldLogProbs, $advantages, $returns, $oldValues] = $rollout;
@@ -324,6 +342,7 @@ class PPOAgent
         ];
     }
 
+    /** @return array{float,float,float} */
     private function updateBatch(
         NDArray $obs,
         NDArray $actions,
@@ -421,16 +440,15 @@ class PPOAgent
         return (float)$this->la->scalar($value->value());
     }
 
+    /**
+     * @param array<int,NDArray> $gradients
+     * @return array<int,NDArray>
+     */
     private function clipGradients(array $gradients) : array
     {
         return GradientClipping::clipByGlobalNorm(
             $this->la,$gradients,$this->maxGradNorm
         );
-    }
-
-    private function hostArray(NDArray $value) : NDArray
-    {
-        return $this->backend->ndarray($value);
     }
 
     public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void

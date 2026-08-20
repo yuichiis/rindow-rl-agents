@@ -3,8 +3,6 @@ parameters:
 #		-
 #			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray::setPortableSerializeMode\\(\\)#"
 		-
-			message: "#of function count expects array\\|Countable, Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray given#"
-		-
 			message: "#^Call to an undefined method Interop\\\\Polite\\\\AI\\\\RL\\\\Environment::reset\\(\\)#"
 		-
 			message: "#^Call to an undefined method Interop\\\\Polite\\\\AI\\\\RL\\\\Spaces\\\\Space::shape\\(\\)#"

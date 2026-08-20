@@ -41,6 +41,7 @@ class Runner
         return $total / $episodes;
     }
 
+    /** @return array<string,array<int,int|float>> */
     public function train(
         int $totalEpisodes,
         int $evalEvery = 50,
@@ -89,7 +90,7 @@ class Runner
             if ($episode % $evalEvery === 0 || $episode === $totalEpisodes) {
                 $score = $this->evaluate($evalEpisodes);
                 $trainReward = $windowReward / $windowEpisodes;
-                $meanTdError = $windowSteps > 0 ? $windowTdError / $windowSteps : 0.0;
+                $meanTdError = $windowTdError / $windowSteps;
                 $improved = $score > $best;
                 if ($improved) $best = $score;
                 if ($this->solvedReward !== null) {

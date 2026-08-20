@@ -11,6 +11,10 @@ class QNetwork extends AbstractModel
     protected ?AbstractModel $featureModel = null;
     protected AbstractModel $model; // must be protected or public to be found by trainable variables
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,

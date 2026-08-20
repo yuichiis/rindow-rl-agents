@@ -16,7 +16,7 @@ class Runner
         private Env $env,
         private Env $evalEnv,
         private PPOAgent $agent,
-        private int $rolloutSteps = 2048,
+        int $rolloutSteps = 2048,
         private float $gamma = 0.99,
         private float $gaeLambda = 0.95,
         private ?float $solvedReward = null,
@@ -96,6 +96,7 @@ class Runner
         ];
     }
 
+    /** @return array<string,array<int,int|float>> */
     public function train(
         int $totalSteps,
         int $evalEvery = 10_000,

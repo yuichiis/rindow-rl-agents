@@ -2,7 +2,7 @@
 namespace Rindow\RL\Agents\Agent\QLearning;
 
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 use Rindow\RL\Agents\Agent\Sarsa\TileCoder;
 
 /** Linear one-step Q-Learning with tile-coded observations. */
@@ -23,7 +23,7 @@ class QLearningAgent
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
         float $initialValue = 0.0,
-        private ?Builder $nn = null,
+        private ?NeuralNetworks $nn = null,
     ) {
         if ($numActions < 2 || $learningRate <= 0.0 || $gamma < 0.0 || $gamma > 1.0
             || $epsilon < 0.0 || $epsilon > 1.0) {
@@ -43,7 +43,10 @@ class QLearningAgent
     public function epsilon() : float { return $this->epsilon; }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
 
-    /** @return array{NDArray|array,?array<int,bool>} */
+    /**
+     * @param NDArray|array<int,float|int>|array<string,mixed> $observation
+     * @return array{NDArray|array<int,float|int>,?array<int,bool>}
+     */
     public function parseObservation(NDArray|array $observation) : array
     {
         if ($observation instanceof NDArray) {
@@ -80,6 +83,7 @@ class QLearningAgent
         return [$state, $mask];
     }
 
+    /** @param NDArray|array<int,float|int>|array<string,mixed> $observation */
     public function value(NDArray|array $observation, int $action) : float
     {
         $this->validateAction($action);
@@ -89,6 +93,7 @@ class QLearningAgent
         );
     }
 
+    /** @param NDArray|array<int,float|int>|array<string,mixed> $observation */
     public function selectAction(NDArray|array $observation, ?float $epsilon = null) : int
     {
         $epsilon ??= $this->epsilon;
@@ -102,13 +107,18 @@ class QLearningAgent
         return $this->greedyActionFromState($state, $allowed, true);
     }
 
+    /** @param NDArray|array<int,float|int>|array<string,mixed> $observation */
     public function selectActionDeterministic(NDArray|array $observation) : int
     {
         [$state, $mask] = $this->parseObservation($observation);
         return $this->greedyActionFromState($state, $this->allowedActions($mask), false);
     }
 
-    /** Performs one off-policy Q-Learning update and returns its TD error. */
+    /**
+     * Performs one off-policy Q-Learning update and returns its TD error.
+     * @param NDArray|array<int,float|int>|array<string,mixed> $observation
+     * @param NDArray|array<int,float|int>|array<string,mixed> $nextObservation
+     */
     public function update(
         NDArray|array $observation,
         int $action,
@@ -168,7 +178,10 @@ class QLearningAgent
         $this->weights = $checkpoint['weights'];
     }
 
-    /** @param int[] $allowed */
+    /**
+     * @param NDArray|array<int,float|int> $state
+     * @param array<int,int> $allowed
+     */
     private function greedyActionFromState(NDArray|array $state, array $allowed, bool $randomTie) : int
     {
         $features = $this->tileCoder->encode($this->hostArray($state));
@@ -191,6 +204,7 @@ class QLearningAgent
         return $allowed[$index];
     }
 
+    /** @param array<int,int> $features */
     private function valueOfFeatures(array $features, int $action) : float
     {
         $value = 0.0;
@@ -205,13 +219,20 @@ class QLearningAgent
         }
     }
 
-    /** @param ?array<int,bool> $mask @return int[] */
+    /**
+     * @param ?array<int,bool> $mask
+     * @return array<int,int>
+     */
     private function allowedActions(?array $mask) : array
     {
         if ($mask === null) return range(0, $this->numActions-1);
         return array_keys(array_filter($mask, static fn(bool $value) : bool => $value));
     }
 
+    /**
+     * @param NDArray|array<int,float|int> $value
+     * @return NDArray|array<int,float|int>
+     */
     private function hostArray(NDArray|array $value) : NDArray|array
     {
         if (!$value instanceof NDArray || $this->nn === null) {

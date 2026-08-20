@@ -13,7 +13,7 @@ class ProgressBar
     /**
      * override this method to change the output destination of the progress bar.
      */
-    protected function console(string $message)
+    protected function console(string $message) : void
     {
         if(defined('STDERR')) {
             fwrite(STDERR,$message);

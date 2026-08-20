@@ -12,6 +12,10 @@ class Critic extends AbstractModel
     protected ?AbstractModel $featureModel = null;
     protected AbstractModel $valueModel;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,

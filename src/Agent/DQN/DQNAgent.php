@@ -20,6 +20,11 @@ class DQNAgent
     public QNetwork $qNetwork;
     public QNetwork $targetNetwork;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,int> $hiddenLayers
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         private Builder $nn,
         private int|array $obsDim,
@@ -40,7 +45,7 @@ class DQNAgent
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
         if ($observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)
             || $numActions < 2 || $batchSize < 1 || $targetUpdateInterval < 1) {
             throw new \InvalidArgumentException('Invalid DQN dimensions or update parameters.');
         }
@@ -69,7 +74,10 @@ class DQNAgent
     public function actionDimension() : int { return $this->numActions; }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
 
-    /** @return array{NDArray,?NDArray} network state and optional action mask */
+    /**
+     * @param NDArray|array<string,mixed> $observation
+     * @return array{NDArray,?NDArray} network state and optional action mask
+     */
     public function parseObservation(NDArray|array $observation) : array
     {
         if ($observation instanceof NDArray) {
@@ -121,6 +129,7 @@ class DQNAgent
             : $state;
     }
 
+    /** @param NDArray|array<string,mixed> $observation */
     public function selectAction(NDArray|array $observation, float $epsilon=0.0) : int
     {
         [$state,$mask] = $this->parseObservation($observation);
@@ -153,6 +162,7 @@ class DQNAgent
         return $this->selectActionDeterministicFromState($observation,$mask);
     }
 
+    /** @param NDArray|array<string,mixed> $observation */
     public function selectActionDeterministic(NDArray|array $observation) : int
     {
         [$state,$mask] = $this->parseObservation($observation);
@@ -260,6 +270,10 @@ class DQNAgent
         }
     }
 
+    /**
+     * @param array<int,NDArray> $gradients
+     * @return array<int,NDArray>
+     */
     private function clipGradients(array $gradients) : array
     {
         return GradientClipping::clipByGlobalNorm(

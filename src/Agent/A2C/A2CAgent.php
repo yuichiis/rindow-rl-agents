@@ -16,6 +16,11 @@ class A2CAgent
     private object $optimizer;
     public ActorCritic $network;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,int> $hiddenLayers
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         private Builder $nn,
         private int|array $obsDim,
@@ -41,7 +46,7 @@ class A2CAgent
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
         if ($observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)
             || $numActions < ($continuous ? 1 : 2)) {
             throw new \InvalidArgumentException('Invalid observation or action dimension.');
         }
@@ -84,7 +89,10 @@ class A2CAgent
     public function isContinuous() : bool { return $this->continuous; }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
 
-    /** @return array{NDArray,?NDArray} network state and optional action mask */
+    /**
+     * @param NDArray|array<string,mixed> $observation
+     * @return array{NDArray,?NDArray} network state and optional action mask
+     */
     public function parseObservation(NDArray|array $observation) : array
     {
         if ($observation instanceof NDArray) {
@@ -145,7 +153,10 @@ class A2CAgent
         return $action;
     }
 
-    /** @return array{NDArray,NDArray} sampled action and V(s) */
+    /**
+     * @param NDArray|array<string,mixed> $observation
+     * @return array{NDArray,NDArray} sampled action and V(s)
+     */
     public function selectAction(NDArray|array $observation) : array
     {
         [$observation, $mask] = $this->parseObservation($observation);
@@ -161,6 +172,7 @@ class A2CAgent
         return [$this->la->squeeze($selected,axis:0), $value];
     }
 
+    /** @param NDArray|array<string,mixed> $observation */
     public function selectActionDeterministic(NDArray|array $observation) : int|NDArray
     {
         [$observation, $mask] = $this->parseObservation($observation);
@@ -174,6 +186,7 @@ class A2CAgent
         return (int)$this->la->scalar($best)[0];
     }
 
+    /** @param NDArray|array<string,mixed> $observation */
     public function value(NDArray|array $observation) : float
     {
         [$observation, $mask] = $this->parseObservation($observation);
@@ -224,7 +237,10 @@ class A2CAgent
         ];
     }
 
-    /** @return array{policy_loss:float,value_loss:float,entropy:float} */
+    /**
+     * @param array<int,NDArray> $rollout
+     * @return array{policy_loss:float,value_loss:float,entropy:float,std:float}
+     */
     public function update(array $rollout) : array
     {
         [$observations, $actions, $advantages, $returns] = $rollout;
@@ -315,16 +331,15 @@ class A2CAgent
         return (float)$this->la->scalar($value->value());
     }
 
+    /**
+     * @param array<int,NDArray> $gradients
+     * @return array<int,NDArray>
+     */
     private function clipGradients(array $gradients) : array
     {
         return GradientClipping::clipByGlobalNorm(
             $this->la,$gradients,$this->maxGradNorm
         );
-    }
-
-    private function hostArray(NDArray $value) : NDArray
-    {
-        return $this->backend->ndarray($value);
     }
 
     public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void

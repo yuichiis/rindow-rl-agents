@@ -46,6 +46,7 @@ class Runner
         return $total / $episodes;
     }
 
+    /** @return array<string,array<int,int|float>> */
     public function train(
         int $totalEpisodes,
         int $evalEvery = 50,
@@ -134,7 +135,10 @@ class Runner
         return $this->solved;
     }
 
-    /** @param float[] $rewards @return float[] */
+    /**
+     * @param array<int,float> $rewards
+     * @return array<int,float>
+     */
     private function discountedReturns(array $rewards) : array
     {
         $returns = array_fill(0, count($rewards), 0.0);

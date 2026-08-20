@@ -72,6 +72,7 @@ class Runner
         return $total / $episodes;
     }
 
+    /** @return array<string,array<int,int|float>> */
     public function train(int $totalSteps, int $evalEvery = 5_000, int $evalEpisodes = 10,
         ?string $bestModelFile = null) : array
     {

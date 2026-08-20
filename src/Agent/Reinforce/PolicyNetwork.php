@@ -10,6 +10,7 @@ class PolicyNetwork extends AbstractModel
 {
     protected AbstractModel $policy;
 
+    /** @param array<int,int> $hiddenLayers */
     public function __construct(
         Builder $nn,
         int $obsDim,

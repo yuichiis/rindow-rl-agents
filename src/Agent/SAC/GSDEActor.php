@@ -21,12 +21,15 @@ class GSDEActor extends AbstractModel
     private ?Variable $lastSigmaZ = null;
     private object $la;
     private object $g;
-    private int $actDim;
     private int $latentsDim;
     protected Model $phiNet;  // must be protected or public to be found by trainable variables
-    protected Layer $muHead;    // must be protected or public
+    protected object $muHead;    // must be protected or public
     protected Variable $logStd; // must be protected of public
     
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,
@@ -40,7 +43,6 @@ class GSDEActor extends AbstractModel
         $this->la = $nn->backend()->primaryLA();
         $this->g = $nn->gradient();
         
-        $this->actDim    = $actDim;
         $this->latentsDim = $latentDim;
 
         // Shared feature extractor (phi_net).
@@ -68,6 +70,7 @@ class GSDEActor extends AbstractModel
     }
 
     // Shared features make both the mean and exploration scale state-dependent.
+    /** @return array{Variable,Variable} */
     private function phiAndMu(Variable $obs) : array
     {
         $phi = $this->phiNet->forward($obs);    # (B, latent_dim)
@@ -157,6 +160,7 @@ class GSDEActor extends AbstractModel
      *     W     = eps * std_W[tf.newaxis, :, :]
      *     noise = tf.einsum("bl,bal->ba", phi, W)
      */
+    /** @return array{Variable,Variable} */
     public function forwardTrain(Variable $obs) : array
     {
         $g = $this->g;
@@ -214,6 +218,7 @@ class GSDEActor extends AbstractModel
     /**
      * The generic model call uses the differentiable training path.
      */
+    /** @return array{Variable,Variable} */
     public function call(Variable $obs) : array
     {
         return $this->forwardTrain($obs);

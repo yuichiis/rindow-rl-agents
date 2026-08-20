@@ -15,6 +15,7 @@ class ReinforceAgent
     private object $optimizer;
     public PolicyNetwork $network;
 
+    /** @param array<int,int> $hiddenLayers */
     public function __construct(
         private Builder $nn,
         private int $obsDim,
@@ -110,6 +111,10 @@ class ReinforceAgent
         return (float)$this->la->scalar($value->value());
     }
 
+    /**
+     * @param array<int,NDArray> $gradients
+     * @return array<int,NDArray>
+     */
     private function clipGradients(array $gradients) : array
     {
         return GradientClipping::clipByGlobalNorm(

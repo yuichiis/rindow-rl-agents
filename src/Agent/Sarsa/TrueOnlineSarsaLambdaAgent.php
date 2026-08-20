@@ -2,7 +2,7 @@
 namespace Rindow\RL\Agents\Agent\Sarsa;
 
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\NeuralNetworks\Builder\Builder;
+use Rindow\NeuralNetworks\Builder\NeuralNetworks;
 
 /** Linear True Online Sarsa(lambda) with tile-coded continuous observations. */
 class TrueOnlineSarsaLambdaAgent
@@ -26,7 +26,7 @@ class TrueOnlineSarsaLambdaAgent
         private ?string $stateField = null,
         private ?string $actionMaskField = null,
         float $initialValue = 0.0,
-        private ?Builder $nn = null,
+        private ?NeuralNetworks $nn = null,
     ) {
         if ($numActions < 2 || $learningRate <= 0.0 || $gamma < 0.0 || $gamma > 1.0
             || $lambda < 0.0 || $lambda > 1.0 || $epsilon < 0.0 || $epsilon > 1.0) {
@@ -48,7 +48,10 @@ class TrueOnlineSarsaLambdaAgent
     public function epsilon() : float { return $this->epsilon; }
     public function usesActionMask() : bool { return $this->actionMaskField !== null; }
 
-    /** @return array{NDArray|array,?array<int,bool>} tile-coder state and action mask */
+    /**
+     * @param NDArray|array<int,float|int>|array<string,mixed> $observation
+     * @return array{NDArray|array<int,float|int>,?array<int,bool>}
+     */
     public function parseObservation(NDArray|array $observation) : array
     {
         if ($observation instanceof NDArray) {
@@ -93,6 +96,7 @@ class TrueOnlineSarsaLambdaAgent
         $this->qOld = 0.0;
     }
 
+    /** @param NDArray|array<int,float|int>|array<string,mixed> $observation */
     public function value(NDArray|array $observation, int $action) : float
     {
         $this->validateAction($action);
@@ -102,6 +106,7 @@ class TrueOnlineSarsaLambdaAgent
         );
     }
 
+    /** @param NDArray|array<int,float|int>|array<string,mixed> $observation */
     public function selectAction(NDArray|array $observation, ?float $epsilon = null) : int
     {
         $epsilon ??= $this->epsilon;
@@ -120,13 +125,17 @@ class TrueOnlineSarsaLambdaAgent
         return $this->greedyActionFromState($state, $allowed, true);
     }
 
+    /** @param NDArray|array<int,float|int>|array<string,mixed> $observation */
     public function selectActionDeterministic(NDArray|array $observation) : int
     {
         [$state, $mask] = $this->parseObservation($observation);
         return $this->greedyActionFromState($state, $this->allowedActions($mask), false);
     }
 
-    /** @param int[] $allowed */
+    /**
+     * @param NDArray|array<int,float|int> $state
+     * @param array<int,int> $allowed
+     */
     private function greedyActionFromState(
         NDArray|array $state,
         array $allowed,
@@ -154,6 +163,10 @@ class TrueOnlineSarsaLambdaAgent
     }
 
     /** Performs one transition update and returns its TD error. */
+    /**
+     * @param NDArray|array<int,float|int>|array<string,mixed> $observation
+     * @param NDArray|array<int,float|int>|array<string,mixed> $nextObservation
+     */
     public function update(
         NDArray|array $observation,
         int $action,
@@ -235,6 +248,7 @@ class TrueOnlineSarsaLambdaAgent
         $this->startEpisode();
     }
 
+    /** @param array<int,int> $features */
     private function valueOfFeatures(array $features, int $action) : float
     {
         $value = 0.0;
@@ -249,18 +263,26 @@ class TrueOnlineSarsaLambdaAgent
         }
     }
 
-    /** @param ?array<int,bool> $mask @return int[] */
+    /**
+     * @param ?array<int,bool> $mask
+     * @return array<int,int>
+     */
     private function allowedActions(?array $mask) : array
     {
         if ($mask === null) return range(0, $this->numActions - 1);
         return array_keys(array_filter($mask, static fn(bool $allowed) : bool => $allowed));
     }
 
+    /** @return array<int,array<int,float>> */
     private function emptyTable() : array
     {
         return array_fill(0, $this->numActions, []);
     }
 
+    /**
+     * @param NDArray|array<int,float|int> $value
+     * @return NDArray|array<int,float|int>
+     */
     private function hostArray(NDArray|array $value) : NDArray|array
     {
         if (!$value instanceof NDArray || $this->nn === null) {

@@ -10,7 +10,10 @@ class TileCoder
     private int $cellsPerTiling;
     private int $featureCount;
 
-    /** @param float[] $low @param float[] $high */
+    /**
+     * @param array<int,float> $low
+     * @param array<int,float> $high
+     */
     public function __construct(
         private array $low,
         private array $high,
@@ -37,7 +40,10 @@ class TileCoder
     public function activeFeatureCount() : int { return $this->numTilings; }
     public function observationDimension() : int { return $this->dimensions; }
 
-    /** @return int[] */
+    /**
+     * @param NDArray|array<int,float|int> $observation
+     * @return array<int,int>
+     */
     public function encode(NDArray|array $observation) : array
     {
         $values = $observation instanceof NDArray ? $observation->toArray() : $observation;

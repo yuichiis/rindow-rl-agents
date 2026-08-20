@@ -18,6 +18,7 @@ class SACGSDEAgent
     private object $backend;
     private object $g;
     private int $actDim;
+    /** @var int|array<int,int> */
     private int|array $obsDim;
     private float $actLimit;
     public GSDEActor $actor;
@@ -28,7 +29,9 @@ class SACGSDEAgent
     private object $actorOpt;
     private object $criticOpt;
     private object $alphaOpt;
+    /** @var array<int,NDArray> */
     private array $lastActorGrads = [];
+    /** @var array<int,NDArray> */
     private array $lastCriticGrads = [];
     private ?Variable $lastLogPi = null;
     private ?Variable $lastQData = null;
@@ -38,6 +41,10 @@ class SACGSDEAgent
     private float $tau;
     private int $batchSize;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,
@@ -62,7 +69,7 @@ class SACGSDEAgent
         if ($featureLayers === []) $featureLayers = null;
         $observationShape = is_int($obsDim) ? [$obsDim] : array_values($obsDim);
         if ($observationShape === []
-            || array_filter($observationShape,static fn($dim)=>!is_int($dim) || $dim < 1)) {
+            || array_filter($observationShape,static fn(int $dim)=>$dim < 1)) {
             throw new \InvalidArgumentException('Invalid SAC observation dimensions.');
         }
         $this->actDim   = $actDim;
@@ -117,7 +124,7 @@ class SACGSDEAgent
         );
     }
 
-    public function summary()
+    public function summary() : void
     {
         echo "***** Actor Network *****\n";
         $this->actor->summary();
@@ -185,6 +192,7 @@ class SACGSDEAgent
         return $this->la->sqrt($this->la->scal(1.0/$count,$sumSquares));
     }
 
+    /** @return array<string,float|array<int,float>> */
     public function diagnostics() : array
     {
         // Keep diagnostics independent of a particular Gym environment.
@@ -398,6 +406,7 @@ class SACGSDEAgent
      * Updates critic, actor, and entropy coefficient with separate gradient
      * tapes so each optimizer only observes its own objective.
      */
+    /** @return array{critic_loss:float,actor_loss:float,alpha:float} */
     public function update(ReplayBuffer $buffer) : array
     {
         $g = $this->g;

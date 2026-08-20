@@ -18,6 +18,11 @@ class ActorCritic extends AbstractModel
     protected ?Variable $sdeLogStd = null;
     protected ?object $criticHead = null;
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,int> $hiddenLayers
+     * @param array<int,object>|null $featureLayers
+     */
     public function __construct(
         Builder $nn,
         int|array $obsDim,
@@ -26,7 +31,7 @@ class ActorCritic extends AbstractModel
         private bool $sharedBackbone = false,
         private bool $continuous = false,
         private bool $useSDE = false,
-        private float $sdeInitialLogStd = -2.0,
+        float $sdeInitialLogStd = -2.0,
         ?array $featureLayers = null,
     ) {
         parent::__construct($nn);
@@ -69,6 +74,10 @@ class ActorCritic extends AbstractModel
         $this->criticHead = $nn->layers->Dense(1);
     }
 
+    /**
+     * @param int|array<int,int> $obsDim
+     * @param array<int,int> $hiddenLayers
+     */
     private function mlp(
         Builder $nn,
         int|array $obsDim,
@@ -109,6 +118,7 @@ class ActorCritic extends AbstractModel
         return $this->criticHead->forward($this->features($observations, $training), $training);
     }
 
+    /** @return array<int,Variable> */
     public function call(Variable $observations, ?bool $training = null) : array
     {
         if (!$this->sharedBackbone) {
