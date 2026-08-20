@@ -167,18 +167,17 @@ class DQNAgent
         $batch = $this->la->copy($observation)->reshape(array_merge([1],$this->observationShape()));
         if ($this->la->isInt($batch)) $batch = $this->la->astype($batch, dtype:NDArray::float32);
         $qValues = $this->qNetwork->forward($this->g->Variable($batch),false)->value();
-        $values = $this->hostArray($qValues)[0]->toArray();
-        $allowed = $mask === null
-            ? range(0,$this->numActions-1)
-            : array_keys(array_filter(
-                $this->hostArray($mask)->toArray(),static fn($value)=>(bool)$value
-            ));
-        $best = $allowed[0];
-        foreach ($allowed as $action) {
-            $value = $values[$action];
-            if ($value > $values[$best]) $best = $action;
+        if ($mask !== null) {
+            $qValues = $this->la->masking(
+                $this->la->expandDims($mask,axis:0),
+                $this->la->copy($qValues),
+                fill:-1.0e9,
+            );
         }
-        return $best;
+        $best = $this->la->reduceArgMax(
+            $qValues,axis:1,dtype:NDArray::int32
+        );
+        return (int)$this->la->scalar($best)[0];
     }
 
     /** @return array{loss:float,q_value:float} */
