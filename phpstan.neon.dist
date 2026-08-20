@@ -1,0 +1,23 @@
+includes:
+	- phpstan-baseline.neon
+	- phpstan-interop.neon
+	
+parameters:
+	level: 6
+	paths:
+		- src
+	ignoreErrors:
+		-
+			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Model\\\\Model::forward\\(\\)#"
+		-
+			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Gradient\\\\Variable::value\\(\\)#"
+		-
+			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Builder\\\\Builder::with\\(\\)#"
+		-
+			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Builder\\\\Builder::gradient\\(\\)#"
+		-
+			message: "#^Access to an undefined property Rindow\\\\NeuralNetworks\\\\Builder\\\\Builder::\\$layers#"
+		-
+			message: "#^Access to an undefined property Rindow\\\\NeuralNetworks\\\\Builder\\\\Builder::\\$models#"
+		-
+			message: "#^Access to an undefined property Rindow\\\\NeuralNetworks\\\\Builder\\\\Builder::\\$optimizers#"
