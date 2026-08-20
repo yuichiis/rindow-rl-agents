@@ -50,13 +50,4 @@ class Critic extends AbstractModel
         );
     }
 
-    public function syncWeightCaches() : void
-    {
-        foreach ([$this->featureModel,$this->valueModel] as $model) {
-            if ($model === null) continue;
-            foreach ($model->submodules() as $module) {
-                $module->reverseSyncWeightVariables();
-            }
-        }
-    }
 }

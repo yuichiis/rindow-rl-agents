@@ -6,7 +6,7 @@ use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Model\AbstractModel;
 use Interop\Polite\Math\Matrix\NDArray;
 
-/** 離散方策、Gaussian方策、gSDE方策で共有するActor-Criticネットワーク。 */
+/** Actor-critic network shared by categorical, Gaussian, and gSDE policies. */
 class ActorCritic extends AbstractModel
 {
     private Builder $nnBuilder;
@@ -176,17 +176,4 @@ class ActorCritic extends AbstractModel
         return [$g->add($mean, $noiseTerm), $value, $std, $mean];
     }
 
-    public function syncWeightCaches() : void
-    {
-        $models = $this->sharedBackbone
-            ? ($this->continuous
-                ? array_filter([$this->trunk, $this->actorHead, $this->logStdHead, $this->criticHead])
-                : [$this->trunk, $this->actorHead, $this->criticHead])
-            : [$this->actor, $this->critic];
-        foreach ($models as $model) {
-            foreach ($model->submodules() as $module) {
-                $module->reverseSyncWeightVariables();
-            }
-        }
-    }
 }

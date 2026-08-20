@@ -87,9 +87,7 @@ class Runner
             );
     }
 
-    /**
-     * 評価ループ
-     */
+    /** Runs deterministic evaluation episodes. */
     public function evaluate(
         SACGSDEAgent $agent,
         int $nEpisodes,
@@ -111,7 +109,7 @@ class Runner
     ) : array
     {
         $la = $this->la;
-        // 評価用の開始状態列は学習用の乱数列から独立させる。
+        // Keep evaluation resets independent from the training random stream.
         $env = $this->evalEnv;
         $total = 0.0;
         $transformedTotal = 0.0;
@@ -151,9 +149,7 @@ class Runner
         ];
     }
 
-    /**
-     * メインループ
-     */
+    /** Runs the environment interaction and update loop. */
     public function train(
         int $totalSteps,
         int $startSteps,

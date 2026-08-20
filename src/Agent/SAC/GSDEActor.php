@@ -11,7 +11,7 @@ use Rindow\NeuralNetworks\Layer\Layer;
 /**
  * gSDE Actor
  * 
- *    PyTorch 版との対応:
+ * Correspondence with the PyTorch formulation:
  *        nn.Sequential(Linear, ReLU, ...)  → tf.keras.Sequential([Dense(...), ...])
  *        nn.Parameter(tensor)              → tf.Variable(..., trainable=True)
  * 
@@ -43,7 +43,7 @@ class GSDEActor extends AbstractModel
         $this->actDim    = $actDim;
         $this->latentsDim = $latentDim;
 
-        # 共有特徴抽出器  (PyTorch: phi_net)
+        // Shared feature extractor (phi_net).
         if ($featureLayers === []) $featureLayers = null;
         $layers = $featureLayers === null
             ? []
@@ -57,17 +57,17 @@ class GSDEActor extends AbstractModel
         $layers[] = $nn->layers->Dense($latentDim,activation:'relu');
         $this->phiNet = $nn->models->Sequential($layers);
 
-        // 平均ヘッド  (PyTorch: mu_head = nn.Linear)
+        // Mean-action head.
         $this->muHead = $nn->layers->Dense($actDim, input_shape:[$latentDim]);
 
-        // gSDE 対数標準偏差  (PyTorch: nn.Parameter)
+        // Trainable gSDE log standard deviation.
         $this->logStd = $this->g->Variable(
             $this->la->fill(-1.0,$this->la->alloc([$actDim, $latentDim],dtype:NDArray::float32)),
             trainable:True, name:"log_std"
         );
     }
 
-    // ── 共通特徴抽出 ────────────────────────────
+    // Shared features make both the mean and exploration scale state-dependent.
     private function phiAndMu(Variable $obs) : array
     {
         $phi = $this->phiNet->forward($obs);    # (B, latent_dim)
@@ -81,9 +81,8 @@ class GSDEActor extends AbstractModel
     }
 
     /**
-     * ── ① ノイズサンプル ────────────────────────
-     *    W_noise ~ N(0, std_W²) をサンプルして返す。
-     *    ループ変数として保持し、GSDE_RESET_FREQ ごとに再呼び出し。
+     * Samples W_noise ~ N(0, std_W^2). The runner retains this matrix and
+     * resamples it at the configured gSDE interval.
      *
      *    PyTorch: torch.randn_like(std) * std
      *    TF:      tf.random.normal(tf.shape(std)) * std
@@ -97,9 +96,8 @@ class GSDEActor extends AbstractModel
     }
 
     /**
-     * ── ② 推論パス（勾配なし） ──────────────────
+     * Inference path using a fixed exploration matrix without gradient tracking.
      *   PyTorch: with torch.no_grad(): ...
-     *   TF: tape 外から呼ぶことで自動的に勾配追跡なし
      */
     public function forwardInference(Variable $obs, Variable $wNoise) : Variable
     {
@@ -113,7 +111,7 @@ class GSDEActor extends AbstractModel
 
     public function forwardDeterministic(Variable $obs) : Variable
     {
-        // 評価用: gSDE の探索ノイズを使わず、tanh(mu(s)) を返す。
+        // Evaluation returns tanh(mu(s)) without gSDE exploration noise.
         [, $mu] = $this->phiAndMu($obs);
         return $this->g->tanh($mu);
     }
@@ -137,15 +135,7 @@ class GSDEActor extends AbstractModel
 
     public function resetLogStd(float $value = -1.0) : void
     {
-        $this->logStd->assign($this->la->fill($value, $this->la->alloc($this->logStd->shape(), dtype:NDArray::float32)));
-    }
-
-    public function syncWeightCaches() : void
-    {
-        foreach ($this->phiNet->submodules() as $module) {
-            $module->reverseSyncWeightVariables();
-        }
-        $this->muHead->reverseSyncWeightVariables();
+        $this->la->fill($value,$this->logStd->value());
     }
 
     public function diagnosticSigmaZ() : ?Variable
@@ -154,16 +144,15 @@ class GSDEActor extends AbstractModel
     }
 
     /**
-     * ── ③ 学習パス（GradientTape 内で呼ぶ） ─────
-     * 外部状態に依存しない自己完結パス。
-     * GradientTape スコープ内で呼ぶことで log_std への勾配が流れる。
+     * Self-contained training path. Calling it inside a GradientTape allows
+     * gradients to reach log_std.
      *
-     * PyTorch の reparameterization:
+     * PyTorch reparameterization:
      *     eps   = torch.randn(B, act_dim, latent_dim)
      *     W     = eps * std_W.unsqueeze(0)
      *     noise = torch.einsum("bl,bal->ba", phi, W)
      *
-     * TF の reparameterization:
+     * TensorFlow-equivalent reparameterization:
      *     eps   = tf.random.normal([B, act_dim, latent_dim])
      *     W     = eps * std_W[tf.newaxis, :, :]
      *     noise = tf.einsum("bl,bal->ba", phi, W)
@@ -213,7 +202,7 @@ class GSDEActor extends AbstractModel
         $yTSq = $g->square($yT);
         $tanhCorrInner = $g->sub(
             $g->constant(1.0+1e-6),$yTSq
-        ); # tanh 補正
+        ); // Change-of-variables correction for tanh squashing.
         $tanhCorr = $g->log($tanhCorrInner);
         $logProb = $g->sub($logProb, $tanhCorr);
         
@@ -223,7 +212,7 @@ class GSDEActor extends AbstractModel
     }
 
     /**
-     * tf.keras.Model の call は forward_train を使う
+     * The generic model call uses the differentiable training path.
      */
     public function call(Variable $obs) : array
     {

@@ -209,7 +209,6 @@ class DQNAgent
         $variables = $network->trainableVariables();
         $gradients = $this->clipGradients($tape->gradient($loss,$variables));
         $this->optimizer->update($variables,$gradients);
-        $network->syncWeightCaches();
         $this->updates++;
         if ($this->updates % $this->targetUpdateInterval === 0) $this->syncTargetNetwork();
         return ['loss'=>$this->scalar($loss),'q_value'=>$this->scalar($meanQ)];
@@ -254,9 +253,11 @@ class DQNAgent
     private function syncTargetNetwork() : void
     {
         foreach ($this->qNetwork->trainableVariables() as $i=>$source) {
-            $this->targetNetwork->trainableVariables()[$i]->assign($source);
+            $this->la->copy(
+                $source->value(),
+                $this->targetNetwork->trainableVariables()[$i]->value(),
+            );
         }
-        $this->targetNetwork->syncWeightCaches();
     }
 
     private function clipGradients(array $gradients) : array

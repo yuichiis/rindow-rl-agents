@@ -306,7 +306,6 @@ class A2CAgent
         $variables = $network->trainableVariables();
         $gradients = $this->clipGradients($tape->gradient($totalLoss, $variables));
         $this->optimizer->update($variables, $gradients);
-        $network->syncWeightCaches();
         return ['policy_loss'=>$this->scalar($policyLoss), 'value_loss'=>$this->scalar($valueLoss),
             'entropy'=>$this->scalar($entropy), 'std'=>$this->scalar($standardDeviation)];
     }

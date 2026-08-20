@@ -63,7 +63,7 @@ $agent = new PPOAgent(
     actionMin:$nn->deviceArray($actionSpace->low()),
     actionMax:$nn->deviceArray($actionSpace->high()),
     exploration:'gsde',
-    // SAC+gSDEで実績のある周期。-1ならロールアウトごとに固定される。
+    // Reuse the interval proven with SAC+gSDE; -1 keeps one noise sample per rollout.
     sdeSampleFreq:16,
     sdeInitialLogStd:-2.0,
 );

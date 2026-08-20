@@ -13,7 +13,7 @@ use Rindow\RL\Agents\Agent\SAC\Runner;
 use Rindow\RL\Agents\Env\Pendulum\DeviceWrapper;
 
 # ─────────────────────────────────────────────
-# ハイパーパラメータ
+# Hyperparameters
 # ─────────────────────────────────────────────
 const ENV_ID          = "Pendulum-v1";
 const SEED            = 42;

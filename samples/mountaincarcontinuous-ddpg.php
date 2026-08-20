@@ -67,12 +67,12 @@ $agent->summary();
  *
  *     r'(s,a,s') = r(s,a,s') + gamma * Phi(s') - Phi(s)
  *
- * PhiはMountainCarの正規化した高さと速度エネルギーから作る。速度の符号を
- * 消すことで、左右どちらへ振っていても運動エネルギーの蓄積を評価する。
- * 終端ではPhi(s')=0とし、元のGym報酬が定める最適方策を変えない。
+ * Phi combines normalized height and kinetic energy. Squaring velocity rewards
+ * energy accumulation in either direction. Setting Phi(s') to zero at a true
+ * terminal state preserves the optimal policy induced by the Gym reward.
  */
 //$mountainCarPotential = static function(float $position, float $velocity) : float {
-//    // sin(3p)を概ね[0,1]へ、速度をMountainCarの上限0.07で正規化する。
+//    // Map sin(3p) approximately to [0,1] and normalize by the 0.07 speed limit.
 //    $height = 0.5 * (sin(3.0 * $position) + 1.0);
 //    $normalizedVelocity = $velocity / 0.07;
 //    $velocityEnergy = 0.5 * $normalizedVelocity ** 2;
@@ -80,9 +80,9 @@ $agent->summary();
 //};
 
 /*
- * MountainCarの生報酬は成功するまで常に-1なので、初期方策には学習信号が
- * ほとんどない。旧版で収束を確認できた式をそのまま明示的に記述する。
- * ログにはGym生報酬(EvalReward)とこの報酬(EvalShaped)の両方を表示する。
+ * MountainCar returns -1 until success, which gives an initial policy little
+ * directional signal. Keep the known convergent shaping formulas explicit and
+ * log both the Gym reward (EvalReward) and shaped reward (EvalShaped).
  */
 $rewardFunction = static function(
     NDArray $obs,
@@ -100,7 +100,7 @@ $rewardFunction = static function(
     $nextVelocity = (float)$nextObs[1];
 
     // >>>>>>>>>>>>>>>>>>>>>>>>>
-    // 1.物理エネルギーの増加量を報酬とする。
+    // Option 1: reward the increase in mechanical energy.
     //$energy = sin(3.0 * $position) + 0.5 * $velocity ** 2;
     //$nextEnergy = sin(3.0 * $nextPosition) + 0.5 * $nextVelocity ** 2;
     //
@@ -111,13 +111,13 @@ $rewardFunction = static function(
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     // <<<<<<<<<<<<<<<<<<<<<<<<<<
-    // 2.速度の絶対値を直接報酬にする
+    // Option 2: reward absolute velocity directly.
     $velocityReward = 10.0 * abs($nextVelocity);
     return $velocityReward - 0.1 + ($terminated ? 100.0 : 0.0);
     // <<<<<<<<<<<<<<<<<<<<<<<<<<
 
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>
-    // 3. Potential-based shapingにする
+    // Option 3: potential-based shaping, which preserves the optimal policy.
     //$potential = $mountainCarPotential($position, $velocity);
     //$nextPotential = ($terminated || $truncated)
     //    ? 0.0

@@ -12,7 +12,7 @@ use Rindow\RL\Agents\Agent\SAC\Runner;
 use Rindow\RL\Agents\Env\ContinuousMountainCar\DeviceWrapper;
 
 # ─────────────────────────────────────────────
-# ハイパーパラメータ
+# Hyperparameters
 # ─────────────────────────────────────────────
 const ENV_ID          = "MountainCarContinuous-v0";
 const SEED            = 42;

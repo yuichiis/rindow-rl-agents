@@ -49,13 +49,4 @@ class QNetwork extends AbstractModel
         return $this->model->forward($x, $training);
     }
 
-    public function syncWeightCaches() : void
-    {
-        foreach ([$this->featureModel,$this->model] as $model) {
-            if ($model === null) continue;
-            foreach ($model->submodules() as $module) {
-                $module->reverseSyncWeightVariables();
-            }
-        }
-    }
 }

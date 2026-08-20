@@ -9,11 +9,7 @@ use Rindow\NeuralNetworks\Gradient\Variable;
 use Rindow\NeuralNetworks\Model\AbstractModel;
 
 
-/** 
- *
- * SAC + gSDE エージェント
- *
- */
+/** Soft Actor-Critic agent with generalized state-dependent exploration. */
 class SACGSDEAgent
 {
     private const CHECKPOINT_VERSION = 1;
@@ -87,7 +83,7 @@ class SACGSDEAgent
             $nn,$this->obsDim,$actDim,$hiddenDim,$featureLayers
         );
 
-        // ダミー入力で build してから weights をコピー
+        // Build every model before copying parameters into the target critic.
         $batchedObservationShape = array_merge([1],$observationShape);
         $dummyObs = $this->g->Variable($la->zeros(
             $la->alloc($batchedObservationShape,dtype:NDArray::float32)
@@ -105,13 +101,13 @@ class SACGSDEAgent
         $criticVars = $this->critic->variables();
 
 
-        $this->softUpdate($this->g, $this->critic, $this->criticTarget, 1.0);  // 完全コピー
+        $this->softUpdate($this->g, $this->critic, $this->criticTarget, 1.0);  // Exact initial copy.
 
         $this->actorOpt  = $nn->optimizers->Adam(lr: $lrActor);
         $this->criticOpt = $nn->optimizers->Adam(lr: $lrCritic);
         $this->alphaOpt  = $nn->optimizers->Adam(lr: $lrAlpha);
 
-        // 自動エントロピー調整
+        // Optimize log(alpha) to keep entropy near the target value.
         // PyTorch: torch.tensor(log(ALPHA_INIT), requires_grad=True)
         // TF:      tf.Variable(..., trainable=True)
         $this->targetEntropy = -(float)$actDim;
@@ -130,15 +126,7 @@ class SACGSDEAgent
         $this->critic->summary();
     }
 
-    /**
-     * ソフトアップデートユーティリティ
-     * 
-     * PyTorch:
-     *     for p, p_tgt in zip(src.parameters(), tgt.parameters()):
-     *         p_tgt.data.copy_(tau * p + (1-tau) * p_tgt)
-     * TF:
-     *     source.weights / target.weights をペアで assign
-     */
+    /** Applies target = tau*source + (1-tau)*target in place. */
     public function softUpdate(object $g, AbstractModel $source, AbstractModel $target, float $tau) : void
     {
         $srcVars = $source->trainableVariables();
@@ -148,7 +136,7 @@ class SACGSDEAgent
             $scaledSrc = $g->scale($tau, $srcW);
             $scaledTgt = $g->scale(1.0 - $tau, $tgtW);
             $newVal = $g->add($scaledSrc, $scaledTgt);
-            $tgtW->assign($newVal);
+            $this->la->copy($newVal->value(),$tgtW->value());
         }
     }
 
@@ -264,9 +252,7 @@ class SACGSDEAgent
     }
 
 
-    /**
-     * 行動選択
-     */
+    /** Samples a gSDE noise matrix for caller-managed exploration. */
     public function sampleNoise() : Variable
     {
         return $this->actor->sampleNoise();
@@ -292,7 +278,7 @@ class SACGSDEAgent
 
     public function selectActionDeterministic(NDArray $obs) : NDArray
     {
-        // 評価用: 探索ノイズなしで行動を選ぶ。
+        // Evaluation omits exploration noise.
         $obsT  = $this->g->Variable($this->la->expandDims($obs, 0));
         $actionVar = $this->actor->forwardDeterministic($obsT);
         $action = $actionVar->value();
@@ -304,11 +290,8 @@ class SACGSDEAgent
     }
 
     /**
-     * 学習済みの重みを1つのチェックポイントへ保存する。
-     *
-     * SACは複数のModelを持つため、各Modelの標準重み形式をまとめて保存する。
-     * ActorだけでなくTarget Criticとlog(alpha)も保存するので、同じ構成の
-     * エージェントを作成してから loadWeightsFromFile() を呼べば学習を再開できる。
+     * Saves all models and log(alpha) in one checkpoint. The target critic is
+     * included so loading the checkpoint can resume training exactly.
      */
     public function saveWeightsToFile(string $filepath, ?bool $portable = true) : void
     {
@@ -341,8 +324,7 @@ class SACGSDEAgent
         if (file_put_contents($temporary, $data, LOCK_EX) === false) {
             throw new \RuntimeException("Could not write checkpoint: {$temporary}");
         }
-        // Windowsでは既存ファイルへのrenameが失敗することがあるため、
-        // 一時ファイルの書き込み成功後にチェックポイントを置き換える。
+        // Commit through a temporary file; Windows cannot rename over an existing file.
         if (is_file($filepath) && !unlink($filepath)) {
             @unlink($temporary);
             throw new \RuntimeException("Could not replace checkpoint: {$filepath}");
@@ -353,9 +335,7 @@ class SACGSDEAgent
         }
     }
 
-    /**
-     * saveWeightsToFile() で保存したチェックポイントを復元する。
-     */
+    /** Restores a checkpoint produced by saveWeightsToFile(). */
     public function loadWeightsFromFile(string $filepath) : void
     {
         if (!is_file($filepath)) {
@@ -383,7 +363,12 @@ class SACGSDEAgent
         $this->actor->loadWeights($weights['actor']);
         $this->critic->loadWeights($weights['critic']);
         $this->criticTarget->loadWeights($weights['criticTarget']);
-        $this->logAlpha->assign($this->la->array($weights['logAlpha']));
+        $this->la->copy(
+            $this->la->array(
+                $weights['logAlpha'],dtype:$this->logAlpha->value()->dtype()
+            ),
+            $this->logAlpha->value(),
+        );
     }
     
     private function clipNdarray(NDArray $x, float $min, float $max) : NDArray
@@ -410,16 +395,8 @@ class SACGSDEAgent
 
 
     /**
-     * ** 学習 **********************************
-     * 
-     *   各ブロックが独立した GradientTape を持つ。
-     *
-     *   PyTorch → TF 対応:
-     *       optimizer.zero_grad()           (不要: TF は毎回新しい tape)
-     *       loss.backward()              →  grads = tape.gradient(loss, vars)
-     *       optimizer.step()             →  opt.apply_gradients(zip(grads, vars))
-     *       with torch.no_grad():        →  tape 外 + tf.stop_gradient()
-     *
+     * Updates critic, actor, and entropy coefficient with separate gradient
+     * tapes so each optimizer only observes its own objective.
      */
     public function update(ReplayBuffer $buffer) : array
     {
@@ -432,9 +409,7 @@ class SACGSDEAgent
         $nextObsV = $g->Variable($nextObs);
         $notDonesV = $g->sub($g->constant(1.0),$g->Variable($dones));
 
-        // ── [A] target_q (勾配不要) ──────────────
-        // tape 外で計算 → 自動的に勾配追跡なし
-        // tf.stop_gradient で念のため勾配を遮断
+        // The Bellman target must not propagate gradients into target networks.
         [$nextActions, $nextLogPi] = $this->actor->forwardTrain($nextObsV);
         $nextActionsSc = $g->mul($nextActions, $this->actLimit);
         
@@ -448,8 +423,7 @@ class SACGSDEAgent
         $targetQ = $g->stopGradient($g->add($rewardsV, $gammaDonesQNext));
         $this->lastTargetQ = $targetQ;
 
-        // ── [B] Critic 更新 ──────────────────────
-        // PyTorch: critic_loss.backward(); critic_opt.step()
+        // Fit both Q estimates to the entropy-adjusted Bellman target.
         $critic = $this->critic;
         $agent = $this;
         $criticLoss = $this->nn->with($tape = $g->GradientTape(), function()
@@ -468,9 +442,8 @@ class SACGSDEAgent
         $criticGrads = $tape->gradient($criticLoss, $criticVars);
         $this->lastCriticGrads = $criticGrads;
         $this->criticOpt->update($criticVars, $criticGrads);
-        $this->critic->syncWeightCaches();
 
-        // ── [C] Actor 更新 ───────────────────────
+        // Improve the policy against the smaller Q estimate to limit overestimation.
         $actLimit = $this->actLimit;
         $actor = $this->actor;
         $critic = $this->critic;
@@ -494,12 +467,11 @@ class SACGSDEAgent
         $this->lastLogPi = $logPi;
         $this->lastActorGrads = $actorGrads;
         $this->actorOpt->update($actorVars, $actorGrads);
-        $this->actor->syncWeightCaches();
         if (getenv('RL_FREEZE_LOG_STD') === '1') {
             $this->actor->resetLogStd();
         }
 
-        // ── [D] Alpha 更新 ───────────────────────
+        // Adapt the entropy coefficient toward targetEntropy.
         $logAlpha = $this->logAlpha;
         $targetEntropy = $this->targetEntropy;
         $alphaLoss = $this->nn->with($tape = $g->GradientTape(), function()
@@ -512,9 +484,8 @@ class SACGSDEAgent
         $alphaGrads = $tape->gradient($alphaLoss, $alphaVars);
         $this->alphaOpt->update($alphaVars, $alphaGrads);
 
-        // ── [E] Critic ソフトアップデート ────────
+        // Move the target critic slowly toward the updated critic.
         $this->softUpdate($this->g, $this->critic, $this->criticTarget, $this->tau);
-        $this->criticTarget->syncWeightCaches();
 
         return [
             "critic_loss" => $this->scalar($criticLoss),

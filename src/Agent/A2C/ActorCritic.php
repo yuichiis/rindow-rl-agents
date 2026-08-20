@@ -107,13 +107,4 @@ class ActorCritic extends AbstractModel
         return $outputs;
     }
 
-    /** Keep layer-side weight caches current after an optimiser update. */
-    public function syncWeightCaches() : void
-    {
-        foreach ([$this->features, $this->policyHead, $this->valueHead] as $model) {
-            foreach ($model->submodules() as $module) {
-                $module->reverseSyncWeightVariables();
-            }
-        }
-    }
 }

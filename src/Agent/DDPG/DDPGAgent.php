@@ -127,7 +127,6 @@ class DDPGAgent
         });
         $criticVars = $critic->trainableVariables();
         $this->criticOptimizer->update($criticVars,$criticTape->gradient($criticLoss,$criticVars));
-        $critic->syncWeightCaches();
 
         $actor = $this->actor; $actLimit = $this->actLimit;
         $actorLoss = $this->nn->with($actorTape=$g->GradientTape(), function() use($g,$actor,$critic,$obsV,$actLimit) {
@@ -136,12 +135,9 @@ class DDPGAgent
         });
         $actorVars = $actor->trainableVariables();
         $this->actorOptimizer->update($actorVars,$actorTape->gradient($actorLoss,$actorVars));
-        $actor->syncWeightCaches();
 
         $this->softUpdate($this->actor,$this->actorTarget,$this->tau);
         $this->softUpdate($this->critic,$this->criticTarget,$this->tau);
-        $this->actorTarget->syncWeightCaches();
-        $this->criticTarget->syncWeightCaches();
         return ['actor_loss'=>$this->scalar($actorLoss), 'critic_loss'=>$this->scalar($criticLoss)];
     }
 
@@ -149,8 +145,11 @@ class DDPGAgent
     {
         foreach ($source->trainableVariables() as $i=>$sourceWeight) {
             $targetWeight = $target->trainableVariables()[$i];
-            $targetWeight->assign($this->g->add($this->g->scale($tau,$sourceWeight),
-                $this->g->scale(1.0-$tau,$targetWeight)));
+            $newValue = $this->g->add(
+                $this->g->scale($tau,$sourceWeight),
+                $this->g->scale(1.0-$tau,$targetWeight),
+            );
+            $this->la->copy($newValue->value(),$targetWeight->value());
         }
     }
 

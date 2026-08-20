@@ -36,10 +36,4 @@ class Actor extends AbstractModel
         return $this->model->forward($obs, $training);
     }
 
-    public function syncWeightCaches() : void
-    {
-        foreach ($this->model->submodules() as $module) {
-            $module->reverseSyncWeightVariables();
-        }
-    }
 }

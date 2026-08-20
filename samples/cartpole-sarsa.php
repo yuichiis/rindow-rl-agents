@@ -20,7 +20,8 @@ const LEARNING_RATE = 0.1;
 const GAMMA = 0.99;
 const LAMBDA = 0.9;
 const EPSILON = 0.05;
-// 生報酬+1の割引無限期間価値 1/(1-GAMMA)。早期失敗を負のTD誤差にする。
+// Initialize to the infinite-horizon value 1/(1-GAMMA) of the +1 reward,
+// so an early failure produces a negative TD error.
 const INITIAL_VALUE = 100.0;
 const EVAL_EVERY = 25;
 const EVAL_EPISODES = 10;
@@ -47,9 +48,9 @@ if ($la->accelerated()) {
 }
 
 /*
- * CartPoleの速度と角速度の観測範囲は±INFなので、通常の運動範囲を
- * Tile Codingの有限境界として使用する。範囲外の値は端のタイルへ
- * 自動的にクリップされる。
+ * CartPole reports unbounded velocity and angular velocity. Use typical
+ * operating ranges as finite tile-coding bounds; outliers are clipped to the
+ * edge tiles.
  */
 $tileCoder = new TileCoder(
     low:[-2.4, -3.0, -0.2095, -3.5],

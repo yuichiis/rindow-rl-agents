@@ -9,8 +9,7 @@ use Rindow\NeuralNetworks\Model\AbstractModel;
  * ─────────────────────────────────────────────
  * Critic (Double Q)
  * ─────────────────────────────────────────────
- *   PyTorch の Critic(q1, q2) に対応。
- *   TF では Functional API で 2 つの独立したサブモデルを保持する。
+ * Twin independent Q networks used to reduce positive value bias.
  * 
  */
 class Critic extends AbstractModel
@@ -34,12 +33,6 @@ class Critic extends AbstractModel
     public function call(Variable $obs, Variable $action, ?bool $training=null) : array
     {
         return [$this->q1->forward($obs, $action, $training), $this->q2->forward($obs, $action, $training)];
-    }
-
-    public function syncWeightCaches() : void
-    {
-        $this->q1->syncWeightCaches();
-        $this->q2->syncWeightCaches();
     }
 }
 

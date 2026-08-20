@@ -102,7 +102,6 @@ class ReinforceAgent
         $variables = $network->trainableVariables();
         $gradients = $this->clipGradients($tape->gradient($totalLoss, $variables));
         $this->optimizer->update($variables, $gradients);
-        $network->syncWeightCaches();
         return ['policy_loss'=>$this->scalar($policyLoss), 'entropy'=>$this->scalar($entropy)];
     }
 

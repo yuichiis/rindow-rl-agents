@@ -6,7 +6,7 @@ use Rindow\NeuralNetworks\Builder\Builder;
 use Rindow\RL\Agents\Util\GradientClipping;
 use Rindow\RL\Agents\Util\ActionMask;
 
-/** 離散行動とGaussian/gSDE連続行動に対応するPPOエージェント。 */
+/** PPO agent supporting discrete actions and Gaussian or gSDE continuous actions. */
 class PPOAgent
 {
     private const CHECKPOINT_VERSION = 3;
@@ -413,7 +413,6 @@ class PPOAgent
         $variables = $network->trainableVariables();
         $gradients = $this->clipGradients($tape->gradient($totalLoss, $variables));
         $this->optimizer->update($variables, $gradients);
-        $network->syncWeightCaches();
         return [$this->scalar($policyLoss), $this->scalar($valueLoss), $this->scalar($entropy)];
     }
 

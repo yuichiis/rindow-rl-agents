@@ -39,10 +39,4 @@ class PolicyNetwork extends AbstractModel
         return $this->policy->forward($observations, $training);
     }
 
-    public function syncWeightCaches() : void
-    {
-        foreach ($this->policy->submodules() as $module) {
-            $module->reverseSyncWeightVariables();
-        }
-    }
 }
