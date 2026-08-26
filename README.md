@@ -232,13 +232,13 @@ The full reference manual starts at [docs/index.md](docs/index.md).
 Install development dependencies and run PHPUnit:
 
 ```bash
-vendor/bin/phpunit -c phpunit.xml
+vendor/bin/phpunit -c tests
 ```
 
 On Windows:
 
 ```powershell
-vendor\bin\phpunit.bat -c phpunit.xml
+vendor\bin\phpunit.bat -c tests
 ```
 
 The unit suite checks analytical update targets, losses, GAE, action masks,

@@ -24,6 +24,8 @@ const POTENTIAL_SCALE = 10.0;
 const MODEL_FILE = __DIR__.'/../models/mountaincarcontinuous-ppo-gsde-raw.weights';
 const HISTORY_FILE = __DIR__.'/../graphics/mountaincarcontinuous-ppo-gsde-rawhistory.png';
 const ANIMATION_FILE = __DIR__.'/../graphics/mountaincarcontinuous-ppo-gsde-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();

@@ -32,6 +32,10 @@ const EVAL_EVERY = 5_000;
 const EVAL_EPISODES = 5;
 const SOLVED_REWARD = 90.0;
 const MODEL_FILE = __DIR__.'/../models/mountaincarcontinuous-sac-gsde-image.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-image-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-image-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 const SCREEN_HEIGHT = 400;
 const SCREEN_WIDTH = 600;
@@ -157,6 +161,8 @@ $runner = new Runner(
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $startSteps = rlEnvInt('RL_START_STEPS',START_STEPS);
 $updateEvery = rlEnvInt('RL_UPDATE_EVERY',UPDATE_EVERY);
@@ -178,9 +184,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Gym evaluation reward');
         $plt->legend([$art],['Image SAC+gSDE']);
-        $plt->show(
-            filename:__DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-image-history.png'
-        );
+        $plt->show(filename:$historyFile);
     }
     $agent->saveWeightsToFile($modelFile);
     echo "Model saved: {$modelFile}\n";
@@ -208,8 +212,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
             $episode,$steps,$totalReward,$terminated ? 'yes' : 'no'
         );
     }
-    $filename = $env->show(
-        path:__DIR__.'/../graphics/mountaincarcontinuous-sac-gsde-image-trained.gif'
-    );
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

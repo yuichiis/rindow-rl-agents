@@ -30,6 +30,8 @@ const SOLVED_REWARD = -110.0;
 const MODEL_FILE = __DIR__.'/../models/mountaincar-ppo-shaped.weights';
 const HISTORY_FILE = __DIR__.'/../graphics/mountaincar-ppo-shaped-history.png';
 const ANIMATION_FILE = __DIR__.'/../graphics/mountaincar-ppo-shaped-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $epochs = rlEnvInt('RL_EPOCHS',EPOCHS);

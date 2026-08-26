@@ -30,7 +30,8 @@ const SOLVED_EVALUATIONS = 3;
 const MODEL_FILE = __DIR__.'/../models/cartpole-dqn.weights';
 const HISTORY_FILE = __DIR__.'/../graphics/cartpole-dqn-history.png';
 const ANIMATION_FILE = __DIR__.'/../graphics/cartpole-dqn-animation.gif';
-
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $nn = new NeuralNetworks($mo);

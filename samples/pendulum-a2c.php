@@ -23,6 +23,8 @@ const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/pendulum-a2c.weights';
 const HISTORY_FILE = __DIR__.'/../graphics/pendulum-a2c-history.png';
 const ANIMATION_FILE = __DIR__.'/../graphics/pendulum-a2c-trained.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();

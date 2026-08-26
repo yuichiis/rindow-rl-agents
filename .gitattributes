@@ -7,4 +7,3 @@
 .travis.yml export-ignore
 *.neon export-ignore
 *.neon.dist export-ignore
-phpunit.xml

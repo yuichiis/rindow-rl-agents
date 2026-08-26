@@ -25,6 +25,10 @@ const EVAL_EVERY = 25;
 const EVAL_EPISODES = 10;
 const SOLVED_REWARD = 475.0;
 const MODEL_FILE = __DIR__.'/../models/cartpole-qlearning.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/cartpole-qlearning-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/cartpole-qlearning-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -70,6 +74,8 @@ $runner = new Runner(
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -96,7 +102,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training episodes');
         $plt->ylabel('Raw reward');
         $plt->legend([$trainArt, $evalArt], ['Training reward', 'Evaluation reward']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-qlearning-history.png');
+        $plt->show(filename:$historyFile);
     }
 }
 
@@ -121,8 +127,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         printf("Test Episode %d | Steps=%d | RawReward=%+.1f\n",
             $episode, $steps, $totalReward);
     }
-    $filename = $env->show(
-        path:__DIR__.'/../graphics/cartpole-qlearning-trained.gif'
-    );
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

@@ -14,6 +14,11 @@ use Rindow\RL\Gym\ClassicControl\MountainCar\MountainCarV0;
 const SEED = 42;
 const TOTAL_EPISODES=2000, EVAL_EVERY=25, EVAL_EPISODES=10;
 const MODEL_FILE=__DIR__.'/../models/mountaincar-qlearning.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/mountaincar-qlearning-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/mountaincar-qlearning-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
+
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $nn = new NeuralNetworks($mo);
@@ -32,18 +37,37 @@ $coder=new TileCoder([-1.2,-0.07],[0.6,0.07],8,8);
 $agent=new QLearningAgent($la,$coder,$env->actionSpace()->n(),0.3,1.0,0.0,nn:$nn);
 $runner=new Runner($la,$env,$evalEnv,$agent,-110.0);
 $modelFile=rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
+$totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+
 if(is_file($modelFile)) { $agent->loadWeightsFromFile($modelFile); echo "Model loaded: {$modelFile}\n"; }
 else {
-    $runner->train(rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES),
-        rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY),$evalEpisodes,$modelFile);
-    if(is_file($modelFile)) $agent->loadWeightsFromFile($modelFile);
+    $runner->train(
+        $totalEpisodes,$evalEvery,$evalEpisodes,$modelFile
+    );
+    if(is_file($modelFile)) {
+        $agent->loadWeightsFromFile($modelFile);
+    }
 }
 if(!rlEnvBool('RL_SKIP_DEMO')) {
-    for($episode=1;$episode<=5;$episode++) { [$obs]=$env->reset(); $done=false; $total=0; $steps=0; $env->render();
-        while(!$done) { $action=$la->array($agent->selectActionDeterministic($obs),dtype:NDArray::int32);
-            [$obs,$reward,$terminated,$truncated]=$env->step($action); $done=$terminated||$truncated;
-            $total+=$reward; $steps++; $env->render(); }
-        printf("Test Episode %d | Steps=%d | RawReward=%+.1f\n",$episode,$steps,$total); }
-    echo 'filename: '.$env->show(path:__DIR__.'/../graphics/mountaincar-qlearning-trained.gif')."\n";
+    echo "Creating demo animation.\n";
+    for($episode=1;$episode<=5;$episode++) {
+        [$obs]=$env->reset();
+        $done=false;
+        $total=0;
+        $steps=0;
+        $env->render();
+        while(!$done) {
+            $action=$la->array($agent->selectActionDeterministic($obs),dtype:NDArray::int32);
+            [$obs,$reward,$terminated,$truncated]=$env->step($action);
+            $done=$terminated||$truncated;
+            $total+=$reward; $steps++;
+            $env->render();
+        }
+        printf("Test Episode %d | Steps=%d | RawReward=%+.1f\n",$episode,$steps,$total);
+    }
+    echo 'filename: '.$env->show(path:$animationFile)."\n";
 }

@@ -37,6 +37,8 @@ const SOLVED_REWARD   = -200.0;
 const MODEL_FILE       = __DIR__ . '/../models/pendulum-sac-gsde.weights';
 const HISTORY_FILE = __DIR__.'/../graphics/pendulum-sac-gsde-history.png';
 const ANIMATION_FILE = __DIR__.'/../graphics/pendulum-sac-gsde-trained.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();

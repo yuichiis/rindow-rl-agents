@@ -15,6 +15,11 @@ const SEED = 1234;
 const WIDTH=3, HEIGHT=3, EXIT_STATE=8, MAX_EPISODE_STEPS=100;
 const TOTAL_EPISODES=500, EVAL_EVERY=10, EVAL_EPISODES=10;
 const MODEL_FILE=__DIR__.'/../models/maze-qlearning.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/maze-qlearning-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/maze-qlearning-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
+
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
 $nn = new NeuralNetworks($mo);
@@ -54,14 +59,36 @@ $agent=new QLearningAgent($la,$coder,$env->actionSpace()->n(),0.2,1.0,0.1,
     stateField:'location',actionMaskField:'actionMask',nn:$nn);
 $runner=new Runner($la,$env,$evalEnv,$agent);
 $modelFile=rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile=rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile=rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
-if(is_file($modelFile)) { $agent->loadWeightsFromFile($modelFile); echo "Model loaded: {$modelFile}\n"; }
-else { $runner->train(rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES),
-    rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY),$evalEpisodes,$modelFile);
-    if(is_file($modelFile)) $agent->loadWeightsFromFile($modelFile); }
-if(!rlEnvBool('RL_SKIP_DEMO')) { [$obs]=$env->reset(); $done=false; $total=0; $steps=0; $env->render();
-    while(!$done) { $action=$la->array($agent->selectActionDeterministic($obs),dtype:NDArray::int32);
-        [$obs,$reward,$terminated,$truncated]=$env->step($action); $done=$terminated||$truncated;
-        $total+=$reward; $steps++; $env->render(); }
+$totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
+$evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
+
+if(is_file($modelFile)) {
+    $agent->loadWeightsFromFile($modelFile);
+    echo "Model loaded: {$modelFile}\n";
+} else {
+    $runner->train(
+        $totalEpisodes,$evalEvery,$evalEpisodes,$modelFile
+    );
+    if(is_file($modelFile)) {
+        $agent->loadWeightsFromFile($modelFile);
+    }
+}
+if(!rlEnvBool('RL_SKIP_DEMO')) {
+    [$obs]=$env->reset();
+    $done=false;
+    $total=0;
+    $steps=0;
+    $env->render();
+    while(!$done) {
+        $action=$la->array($agent->selectActionDeterministic($obs),dtype:NDArray::int32);
+        [$obs,$reward,$terminated,$truncated] = $env->step($action); $done=$terminated||$truncated;
+        $total+=$reward;
+        $steps++;
+        $env->render();
+    }
     printf("Test Episode 1 | Steps=%d | RawReward=%+.1f\n",$steps,$total);
-    echo 'filename: '.$env->show(path:__DIR__.'/../graphics/maze-qlearning-trained.gif',delay:100)."\n"; }
+    echo 'filename: '.$env->show(path:$animationFile,delay:100)."\n";
+}

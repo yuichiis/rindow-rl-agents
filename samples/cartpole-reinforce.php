@@ -20,6 +20,10 @@ const EVAL_EVERY = 50;
 const EVAL_EPISODES = 10;
 const SOLVED_REWARD = 475.0;
 const MODEL_FILE = __DIR__.'/../models/cartpole-reinforce.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/cartpole-reinforce-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/cartpole-reinforce-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -52,6 +56,8 @@ $agent = new ReinforceAgent(
 $agent->summary();
 $runner = new Runner($la, $env, $evalEnv, $agent, GAMMA, true, SOLVED_REWARD);
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalEpisodes = rlEnvInt('RL_TOTAL_EPISODES',TOTAL_EPISODES);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -68,7 +74,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training episodes');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$art], ['REINFORCE']);
-        $plt->show(filename:__DIR__.'/../graphics/cartpole-reinforce-history.png');
+        $plt->show(filename:$historyFile);
     }
     $agent->saveWeightsToFile($modelFile);
     echo "Model saved: {$modelFile}\n";
@@ -94,6 +100,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         }
         echo "Test Episode {$episode}, Steps: {$steps}, Total Reward: {$totalReward}\n";
     }
-    $filename = $env->show(path:__DIR__.'/../graphics/cartpole-reinforce-trained.gif');
+    $filename = $env->show(path:$animationFile);
     echo "filename: {$filename}\n";
 }

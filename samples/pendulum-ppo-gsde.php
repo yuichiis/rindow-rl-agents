@@ -18,6 +18,8 @@ const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/pendulum-ppo-gsde.weights';
 const HISTORY_FILE = __DIR__.'/../graphics/pendulum-ppo-gsde-history.png';
 const ANIMATION_FILE = __DIR__.'/../graphics/pendulum-ppo-gsde-trained.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();

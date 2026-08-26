@@ -21,6 +21,10 @@ const ROLLOUT_STEPS = 2048;
 const EVAL_EVERY = 2048;
 const EVAL_EPISODES = 10;
 const MODEL_FILE = __DIR__.'/../models/maze-ppo.weights';
+const HISTORY_FILE = __DIR__.'/../graphics/maze-ppo-history.png';
+const ANIMATION_FILE = __DIR__.'/../graphics/maze-ppo-animation.gif';
+@mkdir(__DIR__.'/../models',777,true);
+@mkdir(__DIR__.'/../graphics',777,true);
 
 $seed = rlEnvInt('RL_SEED',SEED);
 $mo = new MatrixOperator();
@@ -87,6 +91,8 @@ $runner = new Runner(
 );
 
 $modelFile = rlEnvString('RL_MODEL_FILE',MODEL_FILE);
+$historyFile = rlEnvString('RL_HISTORY_FILE',HISTORY_FILE);
+$animationFile = rlEnvString('RL_ANIMATION_FILE',ANIMATION_FILE);
 $evalEpisodes = rlEnvInt('RL_EVAL_EPISODES',EVAL_EPISODES);
 $totalSteps = rlEnvInt('RL_TOTAL_STEPS',TOTAL_STEPS);
 $evalEvery = rlEnvInt('RL_EVAL_EVERY',EVAL_EVERY);
@@ -107,7 +113,7 @@ if (is_file($modelFile)) {
         $plt->xlabel('Training steps');
         $plt->ylabel('Evaluation reward');
         $plt->legend([$rewardArt], ['PPO with action mask']);
-        $plt->show(filename:__DIR__.'/../graphics/maze-ppo-history.png');
+        $plt->show(filename:$historyFile);
     }
 }
 
@@ -129,6 +135,6 @@ if (!rlEnvBool('RL_SKIP_DEMO')) {
         $env->render();
     }
     printf("Test Episode 1, Steps: %d, Total Reward: %.1f\n", $steps, $totalReward);
-    $filename = $env->show(path:__DIR__.'/../graphics/maze-ppo-trained.gif', delay:100);
+    $filename = $env->show(path:$animationFile, delay:100);
     echo "filename: {$filename}\n";
 }

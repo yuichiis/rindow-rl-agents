@@ -3,7 +3,7 @@
 Run the PHPUnit suite from the repository root:
 
 ```powershell
-phpunit -c phpunit.xml
+phpunit -c tests
 ```
 
 Unit tests use fixed tensors and small networks. They cover replay layouts, GAE,
