@@ -17,7 +17,6 @@
         "rindow/rindow-math-matrix-matlibffi": "^1.1"
     },
     "require-dev": {
-        "rindow/rindow-rl-gym": "^0.2",
         "rindow/rindow-math-plot": "~1.0.6",
         "ext-pdo_sqlite": "*"
     },
