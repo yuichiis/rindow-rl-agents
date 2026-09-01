@@ -2,7 +2,7 @@
 <phpunit bootstrap="Bootstrap.php" colors="true">
     <testsuites>
         <testsuite name="rl-agent-unit">
-            <directory>Unit</directory>
+            <directory>./Unit</directory>
         </testsuite>
     </testsuites>
 </phpunit>
