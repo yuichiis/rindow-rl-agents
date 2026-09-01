@@ -14,7 +14,8 @@
     "require": {
         "php": "^8.1",
         "rindow/rindow-neuralnetworks": "^2.2",
-        "rindow/rindow-math-matrix-matlibffi": "^1.1"
+        "rindow/rindow-math-matrix-matlibffi": "^1.1",
+        "interop-phpobjects/polite-ai": "^1.1.1"
     },
     "require-dev": {
         "rindow/rindow-math-plot": "~1.0.6",
