@@ -2,8 +2,8 @@ parameters:
 	ignoreErrors:
 #		-
 #			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray::setPortableSerializeMode\\(\\)#"
-		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\AI\\\\RL\\\\Environment::reset\\(\\)#"
+#		-
+#			message: "#^Call to an undefined method Interop\\\\Polite\\\\AI\\\\RL\\\\Environment::reset\\(\\)#"
 		-
 			message: "#^Call to an undefined method Interop\\\\Polite\\\\AI\\\\RL\\\\Spaces\\\\Space::shape\\(\\)#"
 		-

@@ -13,8 +13,8 @@
     "license": "BSD-3-Clause",
     "require": {
         "php": "^8.1",
-        "rindow/rindow-neuralnetworks": "^2.0",
-        "rindow/rindow-math-matrix-matlibffi": "^1.0"
+        "rindow/rindow-neuralnetworks": "^2.2",
+        "rindow/rindow-math-matrix-matlibffi": "^1.1"
     },
     "require-dev": {
         "rindow/rindow-rl-gym": "^0.2",

@@ -36,10 +36,14 @@ class DeviceWrapper implements Environment
         return $this->env->actionSpace();
     }
 
-    /** @return array{array{location:NDArray,actionMask:NDArray},array<string,mixed>} */
+    /** 
+     * return array{NDArray $observation, array<string,mixed> $info}
+     * return array{array{location:NDArray,actionMask:NDArray},array<string,mixed>}
+     */
     public function reset(?int $seed=null) : array
     {
         [$observation, $info] = $this->env->reset($seed);
+        //$obs = ['location'=>$location, 'actionMask'=>$valid_actions];
         return [$this->deviceObservation($observation), $info];
     }
 
@@ -61,7 +65,10 @@ class DeviceWrapper implements Environment
         ];
     }
 
-    /** @return array{location:NDArray,actionMask:NDArray} */
+    /** 
+     * return array{location:NDArray,actionMask:NDArray}
+     * @return array<string,NDArray>
+     */
     private function deviceObservation(mixed $observation) : array
     {
         if (!is_array($observation)

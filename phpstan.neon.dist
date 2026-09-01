@@ -9,8 +9,8 @@ parameters:
 	ignoreErrors:
 		-
 			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Model\\\\Model::forward\\(\\)#"
-		-
-			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Gradient\\\\Variable::value\\(\\)#"
+		#-
+		#	message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Gradient\\\\Variable::value\\(\\)#"
 		-
 			message: "#^Call to an undefined method Rindow\\\\NeuralNetworks\\\\Builder\\\\Builder::with\\(\\)#"
 		-
