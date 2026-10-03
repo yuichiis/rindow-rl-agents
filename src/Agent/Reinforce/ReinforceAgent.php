@@ -48,26 +48,26 @@ class ReinforceAgent
 
     public function selectAction(NDArray $observation) : int
     {
-        $probs = $this->probabilities($observation);
-        $selected = $this->la->randomCategorical($probs);
+        $logits = $this->logits($observation);
+        $selected = $this->la->randomCategorical($logits);
         return (int)$this->la->scalar($selected)[0];
     }
 
     public function selectActionDeterministic(NDArray $observation) : int
     {
-        $probabilities = $this->probabilities($observation);
-        $best = $this->la->reduceArgMax($probabilities,axis:1);
+        $logits = $this->logits($observation);
+        $best = $this->la->reduceArgMax($logits,axis:1);
         return (int)$this->la->scalar($best)[0];
     }
 
-    private function probabilities(NDArray $observation) : NDArray
+    private function logits(NDArray $observation) : NDArray
     {
         if ($this->la->isInt($observation)) {
             $observation = $this->la->astype($observation, dtype:NDArray::float32);
         }
         $batch = $this->la->copy($observation)->reshape([1, $this->obsDim]);
         $logits = $this->network->forward($this->g->Variable($batch), false);
-        return $this->la->softmax($logits->value());
+        return $logits->value();
     }
 
     /** @return array{policy_loss:float,entropy:float} */

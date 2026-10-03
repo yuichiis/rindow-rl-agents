@@ -167,8 +167,8 @@ class A2CAgent
     public function selectActionFromState(NDArray $observation, ?NDArray $mask = null) : array
     {
         if ($this->continuous) return $this->selectContinuousAction($observation);
-        [$probs, $value] = $this->inference($observation, $mask);
-        $selected = $this->la->randomCategorical($probs);
+        [$logits, $value] = $this->inference($observation, $mask);
+        $selected = $this->la->randomCategorical($logits);
         return [$this->la->squeeze($selected,axis:0), $value];
     }
 
@@ -181,8 +181,8 @@ class A2CAgent
             [$mean] = $this->network->forward($this->g->Variable($batch), false);
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
-        [$probs] = $this->inference($observation, $mask);
-        $best = $this->la->reduceArgMax($probs,axis:1);
+        [$logits] = $this->inference($observation, $mask);
+        $best = $this->la->reduceArgMax($logits,axis:1);
         return (int)$this->la->scalar($best)[0];
     }
 
@@ -205,7 +205,7 @@ class A2CAgent
             $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
         }
         return [
-            $this->la->softmax($logits),
+            $logits,
             $this->la->copy($value->value())->reshape([]),
         ];
     }

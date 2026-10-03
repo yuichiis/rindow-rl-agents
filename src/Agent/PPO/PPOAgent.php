@@ -177,8 +177,9 @@ class PPOAgent
     public function selectActionFromState(NDArray $observation, ?NDArray $mask = null) : array
     {
         if ($this->continuous) return $this->selectContinuousAction($observation);
-        [$probs, $value] = $this->inference($observation, $mask);
-        $selected = $this->la->randomCategorical($probs);
+        [$logits, $value] = $this->inference($observation, $mask);
+        $selected = $this->la->randomCategorical($logits);
+        $probs = $this->la->softmax($logits);
         $selectedProbability = $this->la->gather($probs,$selected,axis:1);
         $logProbability = $this->la->log($this->la->maximum(
             $this->la->copy($selectedProbability),1.0e-8
@@ -227,8 +228,8 @@ class PPOAgent
             [$mean] = $this->network->forward($this->g->Variable($batch), false);
             return $this->clipAction($this->la->squeeze($mean->value(), axis:0));
         }
-        [$probs] = $this->inference($observation, $mask);
-        $best = $this->la->reduceArgMax($probs,axis:1);
+        [$logits] = $this->inference($observation, $mask);
+        $best = $this->la->reduceArgMax($logits,axis:1);
         return (int)$this->la->scalar($best)[0];
     }
 
@@ -271,8 +272,7 @@ class PPOAgent
             $batchMask = $this->la->expandDims($mask, axis:0);
             $logits = $this->la->masking($batchMask, $this->la->copy($logits), fill:-1.0e9);
         }
-        $probs = $this->la->softmax($logits);
-        return [$probs,$this->la->copy($value->value())->reshape([])];
+        return [$logits,$this->la->copy($value->value())->reshape([])];
     }
 
     private function asBatch(NDArray $observation) : NDArray
