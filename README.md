@@ -128,14 +128,15 @@ The exact PHP extensions and native libraries required for acceleration depend
 on the selected Rindow Math Matrix backend. A CPU backend is sufficient to use
 the package.
 
-## Sample code execution
+Sample code execution
+---------------------
 
 ```powershell
 PS1> php samples/cartpole-dqn.php
 ```
 
-
-## Choosing an algorithm
+Choosing an algorithm
+---------------------
 
 | Algorithm | Action space | Data model | Typical use |
 |---|---|---|---|
@@ -148,7 +149,8 @@ PS1> php samples/cartpole-dqn.php
 | Q-learning | Discrete | Per transition | Linear tile-coded value learning |
 | True Online Sarsa(lambda) | Discrete | Per transition | On-policy learning with Dutch traces |
 
-## CPU and GPU execution
+CPU and GPU execution
+---------------------
 
 Rindow Neural Networks selects the numerical backend. For example, an OpenCL
 GPU backend can be selected before starting PHP:
@@ -163,7 +165,8 @@ PS> php samples/cartpole-dqn.php
 > Executions on CPU and GPU do not necessarily follow identical stochastic trajectories. Rather than expecting bit-for-bit identical training logs, you should compare results across multiple seed values ​​or look at task-level statistics.
 
 
-## Quick start: CartPole with DDQN
+Quick start: CartPole with DDQN
+-------------------------------
 
 The following example assumes that a CartPole environment implementing
 `Interop\Polite\AI\RL\Environment` is available. The environment and evaluation
@@ -236,7 +239,8 @@ $history = $runner->train(
 Reinforcement learning is stochastic. Treat the values above as a complete API
 example, not as a convergence guarantee for every backend or random seed.
 
-## Action masks
+Action masks
+------------
 
 DQN, A2C, PPO, Q-learning, and True Online Sarsa(λ) support discrete action
 masks. Configure dictionary fields when creating the agent:
@@ -254,13 +258,15 @@ $agent = new DQNAgent(
 Each mask must contain one value per action and enable at least one action.
 Disabled actions are excluded during both exploration and greedy selection.
 
-## Reward transformation
+Reward transformation
+---------------------
 
 Some runners accept a `rewardFunction` callback; this modifies the reward stored for learning without altering the raw reward reported during evaluation. While this feature is useful for experiments involving controlled reward shaping, arbitrary shaping can alter the optimal policy.
 
 Truncation due to time limits and true MDP termination are handled separately. Standard runners typically bootstrap upon truncation, whereas they use a bootstrap value of zero upon true termination.
 
-## Checkpoints
+Checkpoints
+-----------
 
 Agents expose a common persistence pattern:
 
@@ -271,7 +277,8 @@ $agent->loadWeightsFromFile(__DIR__.'/agent.weights');
 
 Neural network checkpoints include the online model and the target networks required to resume training; in the case of SAC, the learned entropy coefficient is also saved. Since existing model buffers are updated in-place, checkpointing and target synchronization remain compatible with compiled Rindow Neural Networks function pipelines.
 
-## Samples
+Samples
+-------
 
 The `samples/` directory contains complete programs for:
 
@@ -290,7 +297,8 @@ php samples/cartpole-ppo.php
 
 For some samples, you can use `RL_*` environment variables to specify parameters such as the seed value, training duration, evaluation interval, model path, and demo controls. Please check the sections where constants or environment variables are referenced at the beginning of each sample.
 
-## Documentation
+Documentation
+-------------
 
 The full reference manual starts at [docs/index.md](docs/index.md).
 
@@ -303,7 +311,8 @@ The full reference manual starts at [docs/index.md](docs/index.md).
 - [CPU and GPU backends](docs/backends/cpu-and-gpu.md)
 - [API index](docs/api-index.md)
 
-## Testing
+Testing
+-------
 
 Install development dependencies and run PHPUnit:
 
