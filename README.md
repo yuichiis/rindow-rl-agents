@@ -1,13 +1,21 @@
-# Rindow RL Agents
+Rindow RL Agents
+================
 
 Reinforcement-learning agents and training utilities for
 [Rindow Neural Networks](https://github.com/rindow/rindow-neuralnetworks).
 
-The package provides discrete and continuous-control algorithms, replay and
-rollout buffers, training runners, action-mask support, checkpoint persistence,
-and CPU/GPU-compatible tensor operations.
+Overview
+--------
 
-## Features
+This package provides discrete and continuous control algorithms, replay and rollout buffers, training execution capabilities, action mask support, checkpoint saving functionality, and CPU/GPU-compatible tensor operations.
+
+Website:
+- Rindow project: [https://rindow.github.io/](https://rindow.github.io/)
+- Rindow Neural Networks: [https://rindow.github.io/neuralnetworks/reinforcement-learning.html](https://rindow.github.io/neuralnetworks/reinforcement-learning.html)
+- Documentation: [https://rindow.github.io/rl-agents/](https://rindow.github.io/rl-agents/)
+
+Features
+--------
 
 - Advantage Actor-Critic (A2C)
 - Deep Q-Network and Double DQN (DQN/DDQN)
@@ -23,12 +31,90 @@ and CPU/GPU-compatible tensor operations.
 - Best-model checkpoints and deterministic evaluation
 - Host and OpenCL accelerator backends
 
-## Installation
+Linked library
+--------------
+- Rindow Neural Networks: Machine Learning & Deep Learning library for PHP
+- Rindow Math Matrix: Scientific calculation library
+- Rindow Matlib: A fast matrix calculation library suitable for machine learning
+- OpenBLAS: Fast Matrix Arithmetic Library
+- Rindow Math Plot: Visualize machine learning results
+- OpenCL: GPU computational programming interface
+- CLBlast: High-speed matrix calculation library using OpenCL
+
+Required environment
+--------------------
+
+- PHP 8.1 or later
+- Windows, Linux, macOS
+
+Installation
+------------
+
+### 1. Install OpenBLAS
+
+For Windows, download the binary and set the execution path.
+- https://github.com/OpenMathLib/OpenBLAS/releases
+
+For Linux, install OpenBLAS using the package manager.
+```bash
+$ sudo apt install libopenblas0 liblapacke
+```
+
+For macOS, OpenBLAS is not required; the veclib included with macOS is used.
+
+### 2. Install Rindow-Matlib
+
+For Windows, download the binary and set the execution path.
+
+- https://github.com/rindow/rindow-matlib/releases
+
+For Linux, download and install Rindow-Matlib using the package manager.
+
+- https://github.com/rindow/rindow-matlib/releases
+
+```bash
+$ sudo apt install ./rindow-matlib_X.X.X-XX.XX_amd64.deb
+```
+
+For macOS, download and install Rindow-Matlib using the package manager.
+
+- https://github.com/rindow/rindow-matlib/releases
+
+```bash
+$ tar xvf rindow-matlib-X.X.X-Darwin-XXXX.tar.gz
+$ sudo cp -r usr/include /usr/local/
+$ sudo cp -r usr/lib /usr/local/
+```
+
+### 3. Install CLBlast (Optional)
+
+For GPU acceleration, download and install CLBlast using the package manager or just extract the package.
+
+- https://github.com/CNugteren/CLBlast/releases
+
+The GPU driver is the standard Windows version, and the integrated GPU also functions.
+
+For Linux, install CLBlast using the package manager.
+```bash
+$ sudo apt install clinfo intel-opencl-icd libclblast1
+```
+
+Linux standard OpenCL drivers include:
+
+- mesa-opencl-icd
+- beignet-opencl-icd
+- intel-opencl-icd
+- nvidia-opencl-icd-xxx
+- pocl-opencl-icd
+
+For macOS, the GPU is not supported.
+
+### 4. Install Rindow-RL-Agent
 
 Install the package with Composer:
 
 ```bash
-composer require rindow/rindow-rl-agents
+$ composer require rindow/rindow-rl-agents
 ```
 
 Composer installs Rindow RL Agents and its declared runtime dependencies. Your
@@ -41,6 +127,41 @@ require __DIR__.'/vendor/autoload.php';
 The exact PHP extensions and native libraries required for acceleration depend
 on the selected Rindow Math Matrix backend. A CPU backend is sufficient to use
 the package.
+
+## Sample code execution
+
+```powershell
+PS1> php samples/cartpole-dqn.php
+```
+
+
+## Choosing an algorithm
+
+| Algorithm | Action space | Data model | Typical use |
+|---|---|---|---|
+| A2C | Discrete or continuous | On-policy rollout | Compact synchronous actor-critic |
+| DQN/DDQN | Discrete | Replay buffer | Discrete value-based control |
+| PPO | Discrete or continuous | On-policy rollout | Clipped policy optimization |
+| DDPG | Continuous | Replay buffer | Deterministic continuous control |
+| SAC+gSDE | Continuous | Replay buffer | Entropy-regularized continuous control |
+| REINFORCE | Discrete | Complete episode | Basic Monte Carlo policy gradient |
+| Q-learning | Discrete | Per transition | Linear tile-coded value learning |
+| True Online Sarsa(lambda) | Discrete | Per transition | On-policy learning with Dutch traces |
+
+## CPU and GPU execution
+
+Rindow Neural Networks selects the numerical backend. For example, an OpenCL
+GPU backend can be selected before starting PHP:
+
+```powershell
+PS> $env:RINDOW_NEURALNETWORKS_BACKEND = "rindowclblast::GPU"
+PS> php samples/cartpole-dqn.php
+```
+
+> The agent's backend `NDArray` objects are used for observations, replay storage, and action masks. The included device wrapper transfers observations from the environment to the configured device and returns actions to the host environment. Environment stepping and runner control flow are handled on the PHP host. Batched network operations, loss calculations, reductions, masking, replay data collection, and optimizer updates are executed on the selected backend.
+
+> Executions on CPU and GPU do not necessarily follow identical stochastic trajectories. Rather than expecting bit-for-bit identical training logs, you should compare results across multiple seed values ​​or look at task-level statistics.
+
 
 ## Quick start: CartPole with DDQN
 
@@ -115,41 +236,6 @@ $history = $runner->train(
 Reinforcement learning is stochastic. Treat the values above as a complete API
 example, not as a convergence guarantee for every backend or random seed.
 
-## Choosing an algorithm
-
-| Algorithm | Action space | Data model | Typical use |
-|---|---|---|---|
-| A2C | Discrete or continuous | On-policy rollout | Compact synchronous actor-critic |
-| DQN/DDQN | Discrete | Replay buffer | Discrete value-based control |
-| PPO | Discrete or continuous | On-policy rollout | Clipped policy optimization |
-| DDPG | Continuous | Replay buffer | Deterministic continuous control |
-| SAC+gSDE | Continuous | Replay buffer | Entropy-regularized continuous control |
-| REINFORCE | Discrete | Complete episode | Basic Monte Carlo policy gradient |
-| Q-learning | Discrete | Per transition | Linear tile-coded value learning |
-| True Online Sarsa(λ) | Discrete | Per transition | On-policy learning with Dutch traces |
-
-## CPU and GPU execution
-
-Rindow Neural Networks selects the numerical backend. For example, an OpenCL
-GPU backend can be selected before starting PHP:
-
-```powershell
-$env:RINDOW_NEURALNETWORKS_BACKEND = "rindowclblast::GPU"
-php samples/cartpole-dqn.php
-```
-
-Use the agent backend's `NDArray` objects for observations, replay storage, and
-action masks. The bundled device wrappers transfer environment observations to
-the configured device and actions back to the host environment.
-
-Environment stepping and runner control flow remain on the PHP host. Batched
-network operations, losses, reductions, masking, replay gathers, and optimizer
-updates execute on the selected backend.
-
-CPU and GPU runs need not follow identical stochastic trajectories. Compare
-multiple seeds and task-level statistics rather than expecting bitwise-identical
-training logs.
-
 ## Action masks
 
 DQN, A2C, PPO, Q-learning, and True Online Sarsa(λ) support discrete action
@@ -170,14 +256,9 @@ Disabled actions are excluded during both exploration and greedy selection.
 
 ## Reward transformation
 
-Several runners accept a `rewardFunction` callback. It changes the reward stored
-for training without changing the raw reward reported by evaluation. This is
-useful for controlled reward-shaping experiments, but arbitrary shaping can
-change the optimal policy.
+Some runners accept a `rewardFunction` callback; this modifies the reward stored for learning without altering the raw reward reported during evaluation. While this feature is useful for experiments involving controlled reward shaping, arbitrary shaping can alter the optimal policy.
 
-Time-limit truncation and true MDP termination are handled separately. The
-bundled runners normally bootstrap at truncation and use zero bootstrap value at
-true termination.
+Truncation due to time limits and true MDP termination are handled separately. Standard runners typically bootstrap upon truncation, whereas they use a bootstrap value of zero upon true termination.
 
 ## Checkpoints
 
@@ -188,10 +269,7 @@ $agent->saveWeightsToFile(__DIR__.'/agent.weights');
 $agent->loadWeightsFromFile(__DIR__.'/agent.weights');
 ```
 
-Neural checkpoints include the online models and any target networks needed to
-resume training. SAC also stores its learned entropy coefficient. Existing model
-buffers are updated in place so checkpoints and target synchronization remain
-compatible with compiled Rindow Neural Networks function pipelines.
+Neural network checkpoints include the online model and the target networks required to resume training; in the case of SAC, the learned entropy coefficient is also saved. Since existing model buffers are updated in-place, checkpointing and target synchronization remain compatible with compiled Rindow Neural Networks function pipelines.
 
 ## Samples
 
@@ -210,9 +288,7 @@ from the project root:
 php samples/cartpole-ppo.php
 ```
 
-Some samples accept `RL_*` environment variables for seeds, training length,
-evaluation intervals, model paths, and demo control. See the constants and
-environment lookups at the top of each sample.
+For some samples, you can use `RL_*` environment variables to specify parameters such as the seed value, training duration, evaluation interval, model path, and demo controls. Please check the sections where constants or environment variables are referenced at the beginning of each sample.
 
 ## Documentation
 
@@ -241,14 +317,5 @@ On Windows:
 vendor\bin\phpunit.bat -c tests
 ```
 
-The unit suite checks analytical update targets, losses, GAE, action masks,
-buffer layouts, action bounds, target-network synchronization, Polyak updates,
-and checkpoint behavior. Learning convergence is intentionally kept outside the
-unit-test contract; the scripts under `tests/` are experiment and smoke-test
-drivers.
+This unit test suite verifies analytical updates, loss, GAE, action masking, buffer layout, action bounds, target network synchronization, Polyak updates, and checkpointing behavior. Training convergence is intentionally excluded from the scope of these unit tests (the contract). The scripts under `tests/` are intended for running experiments and smoke tests.
 
-## Package
-
-Composer package name: `rindow/rindow-rl-agents`
-
-Primary namespace: `Rindow\RL\Agents`
